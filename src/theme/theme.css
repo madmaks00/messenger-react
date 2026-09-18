@@ -1,0 +1,68 @@
+:root {
+  /* Основные акценты */
+  --color-accent: #1E9BEB;
+  --tg-accent: #00AFF4;
+  --accent-muted: #155B8A;
+  --text-muted: #7D8494;
+
+  /* Фоны колонок MainWindow */
+  --bg-nav: #0F1319;
+  --bg-list: #161A23;
+  --bg-chat: #11141B;
+  --divider-color: #1E232F;
+
+  /* Баблы сообщений */
+  --my-bubble-bg: #16699B;
+  --other-bubble-bg: #1C212D;
+  --bubble-received: #232836;
+  --my-time-color: rgba(255, 255, 255, 0.7);
+  --other-time-color: #6B7B8C;
+
+  /* Оверлеи и диалоги */
+  --overlay-backdrop: rgba(0, 0, 0, 0.5);
+  --modal-container-bg: #161A23;
+  --passcode-overlay: #0C1017;
+  --destructive-action: #FF3B30;
+
+  /* Поля ввода и поиск */
+  --input-border: #232836;
+  --sidebar-search-bg: #1C212D;
+  --sidebar-search-focus-bg: #232836;
+
+  /* Индикаторы */
+  --unread-badge: #E74C3C;
+  --online-indicator: #4CAF50;
+  --active-chat-highlight: #232836;
+  --hover-chat-highlight: #1C212D;
+}
+
+/* Глобальный сброс для точного совпадения со шрифтами WPF */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-chat);
+  color: #FFFFFF;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Кастомный тонкий плавный скроллбар (как в ScrollViewer WPF) */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
