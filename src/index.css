@@ -1,17 +1,92 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+:root {
+  /* ================= ОСНОВНЫЕ ЦВЕТА ПРИЛОЖЕНИЯ ================= */
+  --app-accent: #1E9BEB;
+  --tg-accent: #00AFF4;
+  --accent-muted: #155B8A;
+  --text-muted: #7D8494;
+  --text-primary: #FFFFFF;
+
+  /* ================= ТРИ ГЛАВНЫЕ КОЛОНКИ WPF ================= */
+  --bg-nav: #0F1319;       /* Колонка 1: Ультра-узкая навигация (66px) */
+  --bg-list: #161A23;      /* Колонка 2: Сайдбар чатов (340px) */
+  --bg-chat: #11141B;      /* Колонка 3: Область сообщений */
+  --divider-color: #1E232F; /* Разделительные линии */
+
+  /* ================= ШАПКА ЧАТА (CHAT HEADER) ================= */
+  --chat-header-bg: #161A23;
+  --chat-header-border: #1F2533;
+  --chat-header-title: #FFFFFF;
+
+  /* ================= СООБЩЕНИЯ И БАБЛЫ ================= */
+  --my-bubble-bg: #16699B;
+  --other-bubble-bg: #1C212D;
+  --bubble-received: #232836;
+  --my-time-color: rgba(255, 255, 255, 0.7);
+  --other-time-color: #6B7B8C;
+  --tg-checkmark: #80BFFF;
+
+  --message-selection-bg: rgba(94, 146, 206, 0.1);
+  --message-selection-border: #5E92CE;
+  --message-author-name: #5E92CE;
+
+  /* ================= ПУСТОЙ ЧАТ И ИНДИКАТОРЫ ================= */
+  --empty-chat-icon-bg: #232A3B;
+  --empty-chat-title: #FFFFFF;
+  --online-indicator: #4CAF50;
+  --unread-badge: #E74C3C;
+  --muted-unread-badge: #6C757D;
+
+  /* ================= КНОПКА СКРОЛЛА ВНИЗ ================= */
+  --scroll-bottom-bg: #232A3B;
+  --scroll-bottom-border: #2A303C;
+  --scroll-bottom-icon: #FFFFFF;
+
+  /* ================= ПОИСК И СПИСКИ В САЙДБАРЕ ================= */
+  --sidebar-search-bg: #1C212D;
+  --sidebar-search-focus-bg: #232836;
+  --sidebar-search-text: #FFFFFF;
+  --chat-item-hover: #1C212D;
+  --chat-item-active: #232836;
+
+  /* ================= КОНТЕКСТНЫЕ МЕНЮ И ДИАЛОГИ ================= */
+  --context-menu-bg: #1C212D;
+  --context-menu-border: #2A303C;
+  --context-menu-hover: #232A3B;
+  --destructive-action: #FF3B30;
+  --modal-bg: #161A23;
+  --overlay-dim: rgba(0, 0, 0, 0.6);
+  --passcode-overlay: #0C1017;
 }
 
-html,
-body,
-#root {
-  width: 100%;
-  height: 100%;
+/* Применение глобального шрифта и фона из WPF MainWindow */
+html, body, #root {
   margin: 0;
   padding: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  background-color: #0e1621; /* Основной темный фон */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-chat);
+  color: var(--text-primary);
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Кастомный тонкий скроллбар в стиле WPF SmoothScrollViewer */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
 }

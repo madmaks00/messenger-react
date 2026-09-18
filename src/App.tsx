@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import './theme/theme.css'; // Гарантируем импорт темы
+
 import { NavigationRail } from './components/layout/NavigationRail';
 import { SidebarChatsView } from './components/sidebar/SidebarChatsView';
 import { SidebarAccountsView } from './components/accounts/SidebarAccountsView';
@@ -56,11 +58,9 @@ export const App: React.FC = () => {
   const { initialize: initTodo } = useTodoStore();
   const { initialize: initNotes } = useNotesStore();
 
-  // Состояние блокировки ПИН-кодом (IsAppLocked)
   const [isAppLocked, setIsAppLocked] = useState(SecurityService.isPasscodeSet());
   const [isPasscodeSetupOpen, setIsPasscodeSetupOpen] = useState(false);
 
-  // Состояния всплывающих диалогов
   const [confirmDialog, setConfirmDialog] = useState<any>({ isOpen: false });
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [pinDialog, setPinDialog] = useState<any>({ isOpen: false });
@@ -68,13 +68,11 @@ export const App: React.FC = () => {
   const [joinGroupData, setJoinGroupData] = useState<JoinGroupPreviewData | null>(null);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
 
-  // Оверлеи медиа и историй
   const [photoViewer, setPhotoViewer] = useState<{ isOpen: boolean; list: IAttachment[]; index: number }>({ isOpen: false, list: [], index: 0 });
   const [videoViewer, setVideoViewer] = useState<{ isOpen: boolean; url: string; fileHeader?: string; senderMeta?: string }>({ isOpen: false, url: '' });
   const [imageEditor, setImageEditor] = useState<{ isOpen: boolean; src: string; onDone?: (res: string) => void }>({ isOpen: false, src: '' });
   const [storyEditor, setStoryEditor] = useState<{ isOpen: boolean; image: string }>({ isOpen: false, image: '' });
 
-  // 1. Инициализация авторизации
   useEffect(() => {
     checkAuth(authService, userService).then((isAuth) => {
       if (isAuth && !isAppLocked) {
@@ -85,7 +83,6 @@ export const App: React.FC = () => {
     });
   }, [isAppLocked]);
 
-  // 2. Глобальные слушатели EventBus для открытия модалок
   useEffect(() => {
     const unbindConfirm = eventBus.on('OpenConfirmDialogMessage' as any, (data: any) => {
       setConfirmDialog({
@@ -142,12 +139,25 @@ export const App: React.FC = () => {
         width: '100vw',
         height: '100vh',
         overflow: 'hidden',
-        backgroundColor: '#0E1621',
-        color: '#FFFFFF',
-        fontFamily: 'Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif',
+        backgroundColor: 'var(--bg-chat)', // Точный фон #11141B
+        color: 'var(--text-primary)',
+        fontFamily: "'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
         position: 'relative',
       }}
     >
+      {/* Верхний 1px-бордер из WPF MainWindow (Panel.ZIndex="500") */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 1,
+          backgroundColor: 'var(--divider-color)',
+          zIndex: 500,
+        }}
+      />
+
       {/* 1. ЭКРАН БЛОКИРОВКИ ПИН-КОДОМ */}
       <PasscodeLockView
         isLocked={isAppLocked}
@@ -159,16 +169,27 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* 2. УЛЬТРА-УЗКАЯ НАВИГАЦИЯ (66px) */}
-      <NavigationRail />
+      {/* 2. УЛЬТРА-УЗКАЯ НАВИГАЦИЯ (66px, фон BgNav = #0F1319) */}
+      <div
+        style={{
+          width: 66,
+          height: '100%',
+          backgroundColor: 'var(--bg-nav)',
+          borderRight: '1px solid var(--divider-color)',
+          flexShrink: 0,
+          zIndex: 10,
+        }}
+      >
+        <NavigationRail />
+      </div>
 
-      {/* 3. САЙДБАР ТЕКУЩЕЙ ВКЛАДКИ (340px) */}
+      {/* 3. САЙДБАР ТЕКУЩЕЙ ВКЛАДКИ (340px, фон BgList = #161A23) */}
       <div
         style={{
           width: 340,
           height: '100%',
-          backgroundColor: '#111B21',
-          borderRight: '1px solid #17212B',
+          backgroundColor: 'var(--bg-list)',
+          borderRight: '1px solid var(--divider-color)',
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
@@ -181,16 +202,15 @@ export const App: React.FC = () => {
         {currentTab === MainTab.Tasks && <SidebarTasksView />}
         {currentTab === MainTab.Games && <SidebarGamesView />}
 
-        {/* Плавающий плеер музыки внизу сайдбара */}
         <MusicPlayerView />
       </div>
 
-      {/* 4. РАБОЧАЯ ОБЛАСТЬ (КОНТЕНТ ВЫБРАННОЙ ВКЛАДКИ) */}
+      {/* 4. РАБОЧАЯ ОБЛАСТЬ (КОНТЕНТ ВКЛАДКИ, фон BgChat = #11141B) */}
       <div
         style={{
           flex: 1,
           height: '100%',
-          backgroundColor: '#0B141B',
+          backgroundColor: 'var(--bg-chat)',
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
@@ -201,7 +221,7 @@ export const App: React.FC = () => {
           <>
             <ChatWorkspaceView />
             {selectedChatUser && (
-              <div style={{ padding: '0 20px 16px 20px', zIndex: 20 }}>
+              <div style={{ padding: '0 30px 20px 30px', zIndex: 20 }}>
                 <MessageInputUserControl />
               </div>
             )}
@@ -220,7 +240,6 @@ export const App: React.FC = () => {
       </div>
 
       {/* ================= ВСЕ ДИАЛОГИ И ОВЕРЛЕИ ================= */}
-      {/* Профиль пользователя и группы */}
       {isProfileOpen && currentUser && (
         <ProfileView
           isOpen={isProfileOpen}
@@ -230,7 +249,6 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Просмотр фото и видео */}
       <PhotoViewerView
         isOpen={photoViewer.isOpen}
         mediaList={photoViewer.list}
@@ -244,8 +262,6 @@ export const App: React.FC = () => {
         senderMeta={videoViewer.senderMeta}
         onClose={() => setVideoViewer((prev) => ({ ...prev, isOpen: false }))}
       />
-
-      {/* Редакторы изображений и историй */}
       <ImageEditorView
         isOpen={imageEditor.isOpen}
         imageSrc={imageEditor.src}
@@ -258,11 +274,8 @@ export const App: React.FC = () => {
         onClose={() => setStoryEditor((p) => ({ ...p, isOpen: false }))}
       />
       <StoryViewerView />
-
-      {/* Аудио/видео вызовы */}
       <CallModal />
 
-      {/* Всплывающие диалоги действий */}
       <ConfirmDialogView
         isOpen={confirmDialog.isOpen}
         targetTitle={confirmDialog.targetTitle}
@@ -304,7 +317,6 @@ export const App: React.FC = () => {
         onClose={() => setIsPasscodeSetupOpen(false)}
       />
 
-      {/* Всплывающие уведомления приложения */}
       <InAppNotification />
     </div>
   );

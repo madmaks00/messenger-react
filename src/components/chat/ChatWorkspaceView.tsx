@@ -27,10 +27,8 @@ export const ChatWorkspaceView: React.FC = () => {
   const [viewportHeight, setViewportHeight] = useState(600);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
 
-  // Анимация плавного скролла
   const animFrameRef = useRef<number | null>(null);
 
-  // 1. Безопасный расчет геометрического лейаута баблов
   const { layoutItems, totalContentHeight } = useMemo(() => {
     const msgs = currentChatMessages || [];
     if (!msgs || msgs.length === 0) {
@@ -56,15 +54,8 @@ export const ChatWorkspaceView: React.FC = () => {
         return { layoutItems: [], totalContentHeight: 0 };
       }
 
-      // Поддержка разных вариантов полей (layoutItems, items или просто массив)
-      const items =
-  (result as any).items ||
-  (result as any).layoutItems ||
-  (Array.isArray(result) ? result : []);
-const height =
-  (result as any).totalHeight ??
-  (result as any).totalContentHeight ??
-  0;
+      const items = (result as any).items || (result as any).layoutItems || [];
+      const height = (result as any).totalHeight ?? (result as any).totalContentHeight ?? 0;
 
       return {
         layoutItems: Array.isArray(items) ? items : [],
@@ -76,7 +67,6 @@ const height =
     }
   }, [currentChatMessages, selectedChatUser]);
 
-  // 2. Определение видимого окна (Virtualizing Panel binary search)
   const visibleItems = useMemo(() => {
     const items = layoutItems || [];
     if (items.length === 0 || viewportHeight <= 0) return [];
@@ -111,7 +101,6 @@ const height =
     return items.slice(firstIndex, lastIndex + 1);
   }, [layoutItems, scrollTop, viewportHeight]);
 
-  // 3. Плавный V-Sync скролл к целевому смещению
   const scrollToOffsetAnimated = useCallback((targetOffset: number, durationMs: number = 240) => {
     if (!scrollRef.current) return;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -157,13 +146,11 @@ const height =
     const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
     setShowScrollBottomBtn(distanceFromBottom > 80);
 
-    // Догрузка старых сообщений при скролле к самому верху
     if (target.scrollTop < 50 && !isHistoryLoading) {
       loadOlderMessages();
     }
   };
 
-  // Автоскролл вниз при смене чата
   useEffect(() => {
     if (scrollRef.current && totalContentHeight > 0) {
       scrollRef.current.scrollTop = totalContentHeight;
@@ -181,10 +168,12 @@ const height =
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // ЗАГЛУШКА: НЕ ВЫБРАН ЧАТ (WarningBarBgBrush = #1C212D)
   if (!selectedChatUser) {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0F172A', color: '#64748B' }}>
-        <div style={{ padding: '10px 20px', borderRadius: 20, background: '#1E293B', fontSize: 15 }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-chat)' }}>
+        <div style={{ padding: '10px 20px', borderRadius: 20, background: 'var(--other-bubble-bg)', color: 'var(--text-primary)', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ color: 'var(--app-accent)', fontSize: 20 }}>💬</span>
           Select a chat to start messaging
         </div>
       </div>
@@ -194,43 +183,55 @@ const height =
   const msgs = currentChatMessages || [];
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: '#0B141B', position: 'relative' }}>
-      {/* 1. ШАПКА ЧАТА */}
-      <div style={{ height: 54, background: '#1E293B', borderBottom: '1px solid #334155', display: 'flex', alignItems: 'center', padding: '0 16px', zIndex: 10 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-chat)', position: 'relative' }}>
+      
+      {/* 1. ШАПКА ЧАТА (ChatHeaderBackgroundBrush: #161A23, Border: #1F2533) */}
+      <div style={{ 
+        height: 54, 
+        background: 'var(--chat-header-bg)', 
+        borderBottom: '1px solid var(--chat-header-border)', 
+        display: 'flex', 
+        alignItems: 'center', 
+        padding: '0 16px', 
+        zIndex: 10 
+      }}>
         {isSelectionMode ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <button onClick={clearSelection} style={iconBtnStyle}>✕</button>
-              <span style={{ fontWeight: 'bold', fontSize: 16 }}>Selected: {selectedCount}</span>
+              <span style={{ fontWeight: 'bold', fontSize: 18, color: '#FFFFFF' }}>Selected: {selectedCount}</span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => forwardMessages(msgs.filter((m) => m.isSelected))} style={actionBtnStyle}>
                 ↗ Forward
               </button>
-              <button onClick={() => msgs.filter((m) => m.isSelected).forEach((m) => deleteMessage(m, true))} style={{ ...actionBtnStyle, color: '#EF4444' }}>
+              <button onClick={() => msgs.filter((m) => m.isSelected).forEach((m) => deleteMessage(m, true))} style={{ ...actionBtnStyle, color: 'var(--destructive-action)' }}>
                 🗑 Delete
               </button>
             </div>
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 20, background: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', fontWeight: 'bold' }}>
+            {/* Аватарка */}
+            <div style={{ width: 40, height: 40, borderRadius: 20, background: 'var(--app-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', fontWeight: 'bold' }}>
               {selectedChatUser.avatarPath ? (
                 <img src={selectedChatUser.avatarPath} alt="" style={{ width: '100%', height: '100%', borderRadius: 20, objectFit: 'cover' }} />
               ) : (
                 (selectedChatUser.nickName || 'U').charAt(0).toUpperCase()
               )}
             </div>
+            
+            {/* Имя и статус собеседника */}
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 15, color: '#F8FAFC' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 15, color: 'var(--chat-header-title)' }}>
                 {selectedChatUser.isSecretChat && <span>🔒</span>}
                 <span>{selectedChatUser.nickName || 'Chat'}</span>
               </div>
-              <div style={{ fontSize: 12, color: '#94A3B8' }}>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
                 {selectedChatUser.isTyping ? (
-                  <span style={{ color: '#38BDF8', fontWeight: 600 }}>typing...</span>
+                  <span style={{ color: 'var(--app-accent)', fontWeight: 600 }}>typing...</span>
                 ) : selectedChatUser.isOnline ? (
-                  <span style={{ color: '#38BDF8' }}>online</span>
+                  <span style={{ color: 'var(--app-accent)' }}>online</span>
                 ) : selectedChatUser.isGroup ? (
                   `${selectedChatUser.memberCount || 1} members`
                 ) : (
@@ -253,11 +254,11 @@ const height =
           paddingBottom: 20,
         }}
       >
-        {/* Карточка секретного чата E2EE при отсутствии сообщений */}
+        {/* Заглушка секретного чата E2EE */}
         {selectedChatUser.isSecretChat && msgs.length === 0 && (
           <div
             style={{
-              maxWidth: 360,
+              maxWidth: 380,
               margin: '60px auto',
               background: '#1E293B',
               border: '1px solid #334155',
@@ -266,23 +267,38 @@ const height =
               textAlign: 'center',
             }}
           >
-            <div style={{ width: 54, height: 54, borderRadius: 27, background: '#166534', color: '#4ADE80', fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+            <div style={{ width: 60, height: 60, borderRadius: 30, background: '#166534', color: '#4ADE80', fontSize: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
               🔒
             </div>
-            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#F8FAFC', marginBottom: 8 }}>Secret Chat</div>
-            <div style={{ fontSize: 13, color: '#94A3B8', textAlign: 'left', margin: '0 auto', maxWidth: 260 }}>
-              <div>• End-to-end encryption (E2EE)</div>
-              <div>• Leave no traces on server</div>
-              <div>• Messages stored on device only</div>
+            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#F8FAFC', marginBottom: 10 }}>Secret Chat</div>
+            <div style={{ fontSize: 13, color: '#94A3B8', textAlign: 'left', margin: '0 auto', maxWidth: 280, lineHeight: '22px' }}>
+              <div>✓ End-to-end encryption (E2EE)</div>
+              <div>✓ Leave no traces on server</div>
+              <div>✓ Messages stored on device only</div>
             </div>
             {selectedChatUser.keyFingerprint && (
-              <div style={{ marginTop: 16, padding: '8px 12px', background: '#0F172A', borderRadius: 8 }}>
-                <div style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#F8FAFC' }}>
+              <div style={{ marginTop: 15, padding: '12px 6px', background: '#0F172A', borderRadius: 8 }}>
+                <div style={{ fontFamily: 'Consolas, monospace', fontWeight: 'bold', color: '#F8FAFC', fontSize: 14 }}>
                   {selectedChatUser.keyFingerprint}
                 </div>
-                <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>Encryption Key Fingerprint</div>
+                <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>Encryption Key Fingerprint</div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Заглушка пустого чата без сообщений (EmptyChatIconContainerBgBrush: #232A3B) */}
+        {!selectedChatUser.isSecretChat && msgs.length === 0 && !isHistoryLoading && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginTop: 100 }}>
+            <div style={{ width: 100, height: 100, borderRadius: 50, background: 'var(--empty-chat-icon-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+              <span style={{ fontSize: 44, color: 'var(--app-accent)' }}>✉</span>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 'bold', color: 'var(--empty-chat-title)', marginBottom: 8 }}>
+              No messages yet
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+              Send a message to start the conversation
+            </div>
           </div>
         )}
 
@@ -308,26 +324,25 @@ const height =
         </div>
       </div>
 
-      {/* 3. КНОПКА БЫСТРОГО СПУСКА ВНИЗ */}
+      {/* 3. КНОПКА БЫСТРОГО СПУСКА ВНИЗ (ScrollToBottomButtonBgBrush: #232A3B, Border: #2A303C) */}
       {showScrollBottomBtn && (
         <button
           onClick={scrollToBottom}
           style={{
             position: 'absolute',
-            right: 24,
+            right: 34,
             bottom: 80,
             width: 44,
             height: 44,
             borderRadius: 22,
-            background: '#1E293B',
-            border: '1.2px solid #475569',
-            color: '#F8FAFC',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            background: 'var(--scroll-bottom-bg)',
+            border: '1.2px solid var(--scroll-bottom-border)',
+            color: 'var(--scroll-bottom-icon)',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 20,
+            fontSize: 22,
             zIndex: 30,
           }}
         >
@@ -341,7 +356,7 @@ const height =
 const iconBtnStyle: React.CSSProperties = {
   background: 'transparent',
   border: 'none',
-  color: '#FFF',
+  color: '#FFFFFF',
   fontSize: 18,
   cursor: 'pointer',
 };
@@ -349,7 +364,7 @@ const iconBtnStyle: React.CSSProperties = {
 const actionBtnStyle: React.CSSProperties = {
   background: 'transparent',
   border: 'none',
-  color: '#38BDF8',
+  color: 'var(--app-accent)',
   fontSize: 14,
   fontWeight: 600,
   cursor: 'pointer',
