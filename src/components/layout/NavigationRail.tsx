@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Icon from '@mdi/react';
+// Импортируем только чистые векторные пути из @mdi/js (без глючного @mdi/react)
 import {
   mdiSendVariant,
   mdiChatOutline,
@@ -26,6 +26,29 @@ import { useNavigationStore } from '../../stores/navigationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { MainTab } from '../../types/enums';
 
+// 🟢 Нативный компонент Icon: идеальный SVG без багов CommonJS/Rollup
+interface MdiIconProps {
+  path: string;
+  size?: number | string;
+  color?: string;
+  style?: React.CSSProperties;
+}
+
+const Icon: React.FC<MdiIconProps> = ({ path, size = '24px', color = 'currentColor', style }) => {
+  const pixelSize = typeof size === 'number' ? `${size}px` : size;
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={pixelSize}
+      height={pixelSize}
+      fill={color}
+      style={{ display: 'inline-block', flexShrink: 0, ...style }}
+    >
+      <path d={path} />
+    </svg>
+  );
+};
+
 export const NavigationRail: React.FC = () => {
   const {
     currentTab,
@@ -45,7 +68,7 @@ export const NavigationRail: React.FC = () => {
       style={{
         width: 66,
         height: '100%',
-        backgroundColor: '#0F1319', // BgNav в точности из WPF
+        backgroundColor: '#0F1319', // BgNav из WPF
         borderRight: '1px solid #1E232F', // DividerColor
         display: 'flex',
         flexDirection: 'column',
@@ -272,7 +295,7 @@ export const NavigationRail: React.FC = () => {
           </button>
         )}
 
-        {/* Переключатель темы (Moon / Sun с плавным переходом) */}
+        {/* Переключатель темы */}
         <button
           onClick={toggleTheme}
           title={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -304,7 +327,6 @@ export const NavigationRail: React.FC = () => {
   );
 };
 
-// Стили NavMenuButtonStyle
 const getNavTabStyle = (isActive: boolean): React.CSSProperties => ({
   height: 50,
   width: '100%',
