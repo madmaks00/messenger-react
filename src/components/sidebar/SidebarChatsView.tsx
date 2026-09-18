@@ -3,7 +3,6 @@ import {
   mdiChatOutline,
   mdiMagnify,
   mdiCloseCircle,
-  mdiArrowLeft,
   mdiMessageTextOutline,
   mdiPinOutline,
   mdiPin,
@@ -33,7 +32,7 @@ import { useChatFolderStore, IChatFolder } from '../../stores/chatFolderStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { MessagePreviewHelper } from '../../utils/helpers';
-import { IChatListItem, IUserSearchResult, IMessage } from '../../types/models';
+import { IChatListItem, IUserSearchResult } from '../../types/models';
 import { LastMessageType } from '../../types/enums';
 import { chatService } from '../../services/chat.service';
 import { BASE_SERVER_URL } from '../../services/apiClient';
@@ -55,11 +54,9 @@ const MdiIcon: React.FC<{ path: string; size?: number | string; color?: string; 
   );
 };
 
-// Конвертер цвета аватарки из WPF AvatarColorConverter
 const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AE9', '#6EC9CB', '#FAA774'];
 const getAvatarColor = (id: number = 0) => AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
 
-// Умный нормализатор аватарок: понимает и серверные пути, и чистый Base64 из C#
 const normalizeAvatarUrl = (url?: string | null) => {
   if (!url) return null;
   if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
@@ -70,6 +67,9 @@ const normalizeAvatarUrl = (url?: string | null) => {
   }
   return `${BASE_SERVER_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
 };
+
+// Кривая CubicEaseOut из твоего WPF XAML
+const CUBIC_EASE_OUT = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
 
 export const SidebarChatsView: React.FC = () => {
   const { allChats, openChat, togglePinChat, toggleMuteChat, deleteChat, clearChatHistory, selectedChatUser } = useSidebarChatsStore();
@@ -103,7 +103,7 @@ export const SidebarChatsView: React.FC = () => {
 
   const isSearchActive = isSearchInputFocused || searchText.length > 0;
 
-  // Функция полного закрытия поиска (аналог CloseSearch из C#)
+  // Закрытие режима поиска (CloseSearch из C#)
   const handleCloseSearch = () => {
     setSearchText('');
     setIsSearchInputFocused(false);
@@ -113,12 +113,12 @@ export const SidebarChatsView: React.FC = () => {
     }
   };
 
-  // Слушатель клика вне области поиска (аналог OnGlobalPreviewMouseDown в C#)
+  // Клик вне поиска закрывает его (OnGlobalPreviewMouseDown из C#)
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
         if (!searchText.trim()) {
-          setIsSearchInputFocused(false);
+          handleCloseSearch();
         }
       }
     };
@@ -126,7 +126,6 @@ export const SidebarChatsView: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [searchText]);
 
-  // Обычный список чатов (по выбранной папке)
   const filteredChats = useMemo(() => {
     let result = allChats;
     if (selectedFolderId && selectedFolderId > 0) {
@@ -184,7 +183,7 @@ export const SidebarChatsView: React.FC = () => {
       style={{
         width: 340,
         height: '100%',
-        backgroundColor: '#161A23', // BgList
+        backgroundColor: '#161A23',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
@@ -192,7 +191,7 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* ================= РЯД 0: ШАПКА САЙДБАРА ================= */}
+      {/* ================= РЯД 0: ШАПКА САЙДБАРА (Анимация Y: 0 -> -20, Opacity: 1 -> 0) ================= */}
       <div
         style={{
           height: 52,
@@ -202,6 +201,12 @@ export const SidebarChatsView: React.FC = () => {
           justifyContent: 'space-between',
           padding: '0 16px',
           boxSizing: 'border-box',
+          transform: isSearchActive ? 'translateY(-20px)' : 'translateY(0)',
+          opacity: isSearchActive ? 0 : 1,
+          transition: isSearchActive
+            ? `transform 200ms ${CUBIC_EASE_OUT}, opacity 150ms ease-out`
+            : `transform 220ms ${CUBIC_EASE_OUT}, opacity 180ms ease-out`,
+          pointerEvents: isSearchActive ? 'none' : 'auto',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -210,8 +215,18 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 1: СТРОКА ПОИСКА (1 в 1 как SearchBorder в WPF) ================= */}
-      <div style={{ padding: '0 6px 8px 6px', boxSizing: 'border-box', zIndex: 15 }}>
+      {/* ================= РЯД 1: СТРОКА ПОИСКА (Анимация SearchBoxTransform.Y: 0 -> -52px) ================= */}
+      <div
+        style={{
+          padding: '0 6px 8px 6px',
+          boxSizing: 'border-box',
+          zIndex: 15,
+          transform: isSearchActive ? 'translateY(-52px)' : 'translateY(0)',
+          transition: isSearchActive
+            ? `transform 250ms ${CUBIC_EASE_OUT}`
+            : `transform 220ms ${CUBIC_EASE_OUT}`,
+        }}
+      >
         <div
           style={{
             height: 40,
@@ -250,28 +265,29 @@ export const SidebarChatsView: React.FC = () => {
             }}
           />
 
-          {/* Справа крестик CloseCircle: виден ВСЕГДА, пока поиск открыт (как BtnClearSearch в WPF) */}
-          {isSearchActive && (
-            <button
-              onClick={handleCloseSearch}
-              title="Close Search (Esc)"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: 0,
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              <MdiIcon path={mdiCloseCircle} size={18} color="#7D8494" />
-            </button>
-          )}
+          {/* Крестик очистки BtnClearSearch (плавное появление за 0.2s) */}
+          <button
+            onClick={handleCloseSearch}
+            title="Close Search (Esc)"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              opacity: isSearchActive ? 1 : 0,
+              pointerEvents: isSearchActive ? 'auto' : 'none',
+              transition: isSearchActive ? 'opacity 200ms ease-out' : 'opacity 100ms ease-out',
+            }}
+          >
+            <MdiIcon path={mdiCloseCircle} size={18} color="#7D8494" />
+          </button>
         </div>
       </div>
 
-      {/* ================= РЯД 2: ПАПКИ ЧАТОВ (Скрыты при поиске или если папок <= 1) ================= */}
-      {!isSearchActive && chatFolders.length > 1 && (
+      {/* ================= РЯД 2: ПАПКИ ЧАТОВ (Анимация FoldersPanel Opacity: 1 -> 0) ================= */}
+      {chatFolders.length > 1 && (
         <div
           style={{
             height: 45,
@@ -281,6 +297,9 @@ export const SidebarChatsView: React.FC = () => {
             padding: '0 10px',
             overflowX: 'auto',
             scrollbarWidth: 'none',
+            opacity: isSearchActive ? 0 : 1,
+            pointerEvents: isSearchActive ? 'none' : 'auto',
+            transition: isSearchActive ? 'opacity 150ms ease-out' : 'opacity 200ms ease-out',
           }}
         >
           {chatFolders.map((folder: IChatFolder, idx: number) => {
@@ -338,354 +357,365 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       )}
 
-      {/* ================= РЕЖИМ 1: ПАНЕЛЬ РЕЗУЛЬТАТОВ ПОИСКА (SearchResultsPanel из WPF) ================= */}
-      {isSearchActive ? (
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '0 12px',
-            position: 'relative',
-            zIndex: 10,
-          }}
-        >
-          {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ (RecentSearchesBlock) — когда строка пуста */}
-          {searchText.trim().length === 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 5px' }}>
-                <span style={{ color: '#7D8494', fontSize: 14, fontWeight: 600 }}>Recent Searches</span>
-                {recentUsers.length > 0 && (
-                  <button
-                    onClick={clearRecentSearches}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#7D8494',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      textDecoration: 'underline',
-                      padding: 0,
-                    }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-
-              {recentUsers.length === 0 ? (
-                <div style={{ color: '#7D8494', fontSize: 14, textAlign: 'center', margin: '20px 0' }}>
-                  No recent searches
-                </div>
-              ) : (
-                recentUsers.map((user) => (
-                  <UserSearchCard
-                    key={user.id}
-                    user={user}
-                    onSelect={() => {
-                      selectUser(user);
-                      handleCloseSearch();
-                    }}
-                  />
-                ))
-              )}
-            </div>
-          )}
-
-          {/* БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК (GlobalSearchBlock) — когда введен текст */}
-          {searchText.trim().length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              {isSearching ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: '80px 0' }}>
-                  <div style={{ color: '#1E9BEB', fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Searching...</div>
-                </div>
-              ) : (
-                <>
-                  <div style={{ color: '#7D8494', fontSize: 14, fontWeight: 600, margin: '5px 0 12px 5px' }}>
-                    Global Search
-                  </div>
-
-                  {foundUsers.length === 0 && foundMessages.length === 0 ? (
-                    <div style={{ color: '#7D8494', fontSize: 14, textAlign: 'center', margin: '40px 0' }}>
-                      No results found
-                    </div>
-                  ) : (
-                    foundUsers.map((user) => (
-                      <UserSearchCard
-                        key={user.id}
-                        user={user}
-                        onSelect={() => {
-                          selectUser(user);
-                          handleCloseSearch();
-                        }}
-                      />
-                    ))
-                  )}
-
-                  {/* БЛОК 3: НАЙДЕННЫЕ СООБЩЕНИЯ */}
-                  {foundMessages.length > 0 && (
-                    <div style={{ marginTop: 16 }}>
-                      <div style={{ color: '#7D8494', fontSize: 14, fontWeight: 600, margin: '5px 0 12px 5px' }}>
-                        Messages
-                      </div>
-                      {foundMessages.map((msg) => (
-                        <div
-                          key={msg.id || msg.serverId}
-                          onClick={() => {
-                            jumpToMessage(msg);
-                            handleCloseSearch();
-                          }}
-                          style={{
-                            padding: '10px 12px',
-                            marginBottom: 8,
-                            backgroundColor: '#1C212D',
-                            borderRadius: 12,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                            <span style={{ color: '#FFFFFF', fontSize: 14, fontWeight: 600 }}>{msg.senderName || 'Chat'}</span>
-                            <span style={{ color: '#7D8494', fontSize: 11.5 }}>
-                              {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                            </span>
-                          </div>
-                          <div style={{ color: '#7D8494', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                            {msg.text}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* ================= РЕЖИМ 2: ОБЫЧНЫЙ СПИСОК ЧАТОВ ================= */
-        <div
-          ref={containerRef}
-          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-          style={{ flex: 1, overflowY: 'auto', position: 'relative' }}
-        >
-          {filteredChats.length === 0 && (
+      {/* ================= РЯД 3: ОСНОВНОЙ СПИСОК ЧАТОВ (ChatsScrollViewer Opacity: 1 -> 0) ================= */}
+      <div
+        ref={containerRef}
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          position: 'relative',
+          opacity: isSearchActive ? 0 : 1,
+          pointerEvents: isSearchActive ? 'none' : 'auto',
+          transition: isSearchActive ? 'opacity 150ms ease-out' : 'opacity 200ms ease-out',
+        }}
+      >
+        {filteredChats.length === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              margin: '140px 20px 0 20px',
+              zIndex: 5,
+            }}
+          >
             <div
               style={{
+                width: 80,
+                height: 80,
+                borderRadius: 40,
+                backgroundColor: '#1C212D',
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'flex-start',
-                margin: '140px 20px 0 20px',
-                zIndex: 5,
+                justifyContent: 'center',
+                marginBottom: 15,
               }}
             >
-              <div
-                style={{
-                  width: 80,
-                  height: 80,
-                  borderRadius: 40,
-                  backgroundColor: '#1C212D',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: 15,
-                }}
-              >
-                <MdiIcon path={mdiMessageTextOutline} size={40} color="#7D8494" style={{ opacity: 0.5 }} />
-              </div>
-
-              <div style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', textAlign: 'center' }}>
-                No Chats
-              </div>
+              <MdiIcon path={mdiMessageTextOutline} size={40} color="#7D8494" style={{ opacity: 0.5 }} />
             </div>
-          )}
 
-          {filteredChats.length > 0 && (
-            <div style={{ height: `${totalHeight}px`, position: 'relative', width: '100%' }}>
-              {visibleChats.map((chat, idx) => {
-                const actualIndex = firstIndex + idx;
-                const topOffset = actualIndex * ITEM_HEIGHT;
-                const isSelected = selectedChatUser?.id === (chat.isGroup ? chat.groupId : chat.userId);
-                const isHovered = hoveredChatId === (chat.id || actualIndex);
+            <div style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', textAlign: 'center' }}>
+              No Chats
+            </div>
+          </div>
+        )}
 
-                const [preview] = MessagePreviewHelper.formatPreview(
-                  chat.lastMessage,
-                  chat.lastMessageType,
-                  chat.userId,
-                  0,
-                  chat.isLastMessageDeletedForMe
-                );
+        {filteredChats.length > 0 && (
+          <div style={{ height: `${totalHeight}px`, position: 'relative', width: '100%' }}>
+            {visibleChats.map((chat, idx) => {
+              const actualIndex = firstIndex + idx;
+              const topOffset = actualIndex * ITEM_HEIGHT;
+              const isSelected = selectedChatUser?.id === (chat.isGroup ? chat.groupId : chat.userId);
+              const isHovered = hoveredChatId === (chat.id || actualIndex);
 
-                const msgIcon = getLastMessageIcon(chat.lastMessageType);
-                const chatAvatarSrc = normalizeAvatarUrl(chat.avatarPath);
+              const [preview] = MessagePreviewHelper.formatPreview(
+                chat.lastMessage,
+                chat.lastMessageType,
+                chat.userId,
+                0,
+                chat.isLastMessageDeletedForMe
+              );
 
-                return (
-                  <div
-                    key={chat.id || actualIndex}
-                    onClick={() => openChat(chat)}
-                    onContextMenu={(e) => handleContextMenu(e, chat)}
-                    onMouseEnter={() => setHoveredChatId(chat.id || actualIndex)}
-                    onMouseLeave={() => setHoveredChatId(null)}
-                    style={{
-                      position: 'absolute',
-                      top: `${topOffset}px`,
-                      left: 8,
-                      right: 0,
-                      height: `${ITEM_HEIGHT}px`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '10px 15px',
-                      borderRadius: 12,
-                      cursor: 'pointer',
-                      backgroundColor: isSelected ? '#232836' : isHovered ? '#1C212D' : 'transparent',
-                      boxSizing: 'border-box',
-                      transition: 'background-color 0.12s ease',
-                    }}
-                  >
-                    {/* Аватарка */}
-                    <div style={{ position: 'relative', width: 46, height: 46, marginRight: 12, flexShrink: 0 }}>
+              const msgIcon = getLastMessageIcon(chat.lastMessageType);
+              const chatAvatarSrc = normalizeAvatarUrl(chat.avatarPath);
+
+              return (
+                <div
+                  key={chat.id || actualIndex}
+                  onClick={() => openChat(chat)}
+                  onContextMenu={(e) => handleContextMenu(e, chat)}
+                  onMouseEnter={() => setHoveredChatId(chat.id || actualIndex)}
+                  onMouseLeave={() => setHoveredChatId(null)}
+                  style={{
+                    position: 'absolute',
+                    top: `${topOffset}px`,
+                    left: 8,
+                    right: 0,
+                    height: `${ITEM_HEIGHT}px`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '10px 15px',
+                    borderRadius: 12,
+                    cursor: 'pointer',
+                    backgroundColor: isSelected ? '#232836' : isHovered ? '#1C212D' : 'transparent',
+                    boxSizing: 'border-box',
+                    transition: 'background-color 0.12s ease',
+                  }}
+                >
+                  <div style={{ position: 'relative', width: 46, height: 46, marginRight: 12, flexShrink: 0 }}>
+                    <div
+                      style={{
+                        width: 46,
+                        height: 46,
+                        borderRadius: 23,
+                        backgroundColor: getAvatarColor(chat.isGroup ? chat.groupId || 0 : chat.userId || 0),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#FFFFFF',
+                        fontWeight: 600,
+                        fontSize: 16,
+                        overflow: 'hidden',
+                        position: 'relative',
+                      }}
+                    >
+                      <span>{((chat.isGroup ? chat.groupName : chat.nickName) || 'U').charAt(0).toUpperCase()}</span>
+                      {chatAvatarSrc && (
+                        <img
+                          src={chatAvatarSrc}
+                          alt=""
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      )}
+                    </div>
+
+                    {chat.isOnline && !chat.isGroup && (
                       <div
                         style={{
-                          width: 46,
-                          height: 46,
-                          borderRadius: 23,
-                          backgroundColor: getAvatarColor(chat.isGroup ? chat.groupId || 0 : chat.userId || 0),
+                          position: 'absolute',
+                          bottom: 0,
+                          right: 0,
+                          width: 12,
+                          height: 12,
+                          borderRadius: 6,
+                          backgroundColor: '#4CAF50',
+                          border: '2px solid #1C212D',
+                        }}
+                      />
+                    )}
+
+                    {chat.isGroup && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: -3,
+                          right: -3,
+                          width: 20,
+                          height: 20,
+                          borderRadius: 9,
+                          backgroundColor: '#1E9BEB',
+                          border: '2px solid #1C212D',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           color: '#FFFFFF',
-                          fontWeight: 600,
-                          fontSize: 16,
-                          overflow: 'hidden',
-                          position: 'relative',
                         }}
                       >
-                        <span>{((chat.isGroup ? chat.groupName : chat.nickName) || 'U').charAt(0).toUpperCase()}</span>
-
-                        {chatAvatarSrc && (
-                          <img
-                            src={chatAvatarSrc}
-                            alt=""
-                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                          />
-                        )}
+                        <MdiIcon path={chat.isChannel ? mdiBullhornOutline : mdiAccountGroup} size={12} color="#FFFFFF" />
                       </div>
+                    )}
+                  </div>
 
-                      {chat.isOnline && !chat.isGroup && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            bottom: 0,
-                            right: 0,
-                            width: 12,
-                            height: 12,
-                            borderRadius: 6,
-                            backgroundColor: '#4CAF50',
-                            border: '2px solid #1C212D',
-                          }}
-                        />
-                      )}
-
-                      {chat.isGroup && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            bottom: -3,
-                            right: -3,
-                            width: 20,
-                            height: 20,
-                            borderRadius: 9,
-                            backgroundColor: '#1E9BEB',
-                            border: '2px solid #1C212D',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#FFFFFF',
-                          }}
-                        >
-                          <MdiIcon path={chat.isChannel ? mdiBullhornOutline : mdiAccountGroup} size={12} color="#FFFFFF" />
-                        </div>
-                      )}
+                  <div style={{ flex: 1, minWidth: 0, margin: '2px 10px 2px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                      {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
+                      <span
+                        style={{
+                          color: '#FFFFFF',
+                          fontSize: 15,
+                          fontWeight: 600,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {chat.isGroup ? chat.groupName : chat.nickName}
+                      </span>
                     </div>
 
-                    {/* Текст */}
-                    <div style={{ flex: 1, minWidth: 0, margin: '2px 10px 2px 0' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                        {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
-                        <span
-                          style={{
-                            color: '#FFFFFF',
-                            fontSize: 15,
-                            fontWeight: 600,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {chat.isGroup ? chat.groupName : chat.nickName}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {msgIcon && <MdiIcon path={msgIcon} size={14} color="#7D8494" />}
-                        <span
-                          style={{
-                            color: '#7D8494',
-                            fontSize: 13,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            fontStyle: chat.lastMessageType === LastMessageType.Deleted ? 'italic' : 'normal',
-                          }}
-                        >
-                          {chat.isTyping ? <span style={{ color: '#1E9BEB' }}>typing...</span> : preview}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Время и бейдж */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {chat.isMuted && <MdiIcon path={mdiBellOffOutline} size={14} color="#7D8494" />}
-                        {chat.isPinned && (
-                          <div style={{ transform: 'rotate(45deg)', display: 'flex', alignItems: 'center' }}>
-                            <MdiIcon path={mdiPin} size={14} color="#7D8494" />
-                          </div>
-                        )}
-                        <span style={{ color: '#7D8494', fontSize: 12 }}>
-                          {chat.lastMessageTime ? new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </span>
-                      </div>
-
-                      {chat.unreadCount > 0 && (
-                        <div
-                          style={{
-                            marginTop: 5,
-                            backgroundColor: chat.isMuted ? '#6C757D' : '#1E9BEB',
-                            color: '#FFFFFF',
-                            borderRadius: 10,
-                            minWidth: 20,
-                            height: 20,
-                            padding: '0 5px',
-                            fontSize: 11,
-                            fontWeight: 'bold',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            boxSizing: 'border-box',
-                          }}
-                        >
-                          {chat.unreadCount}
-                        </div>
-                      )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {msgIcon && <MdiIcon path={msgIcon} size={14} color="#7D8494" />}
+                      <span
+                        style={{
+                          color: '#7D8494',
+                          fontSize: 13,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          fontStyle: chat.lastMessageType === LastMessageType.Deleted ? 'italic' : 'normal',
+                        }}
+                      >
+                        {chat.isTyping ? <span style={{ color: '#1E9BEB' }}>typing...</span> : preview}
+                      </span>
                     </div>
                   </div>
-                );
-              })}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {chat.isMuted && <MdiIcon path={mdiBellOffOutline} size={14} color="#7D8494" />}
+                      {chat.isPinned && (
+                        <div style={{ transform: 'rotate(45deg)', display: 'flex', alignItems: 'center' }}>
+                          <MdiIcon path={mdiPin} size={14} color="#7D8494" />
+                        </div>
+                      )}
+                      <span style={{ color: '#7D8494', fontSize: 12 }}>
+                        {chat.lastMessageTime ? new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                      </span>
+                    </div>
+
+                    {chat.unreadCount > 0 && (
+                      <div
+                        style={{
+                          marginTop: 5,
+                          backgroundColor: chat.isMuted ? '#6C757D' : '#1E9BEB',
+                          color: '#FFFFFF',
+                          borderRadius: 10,
+                          minWidth: 20,
+                          height: 20,
+                          padding: '0 5px',
+                          fontSize: 11,
+                          fontWeight: 'bold',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        {chat.unreadCount}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ================= РЕЗУЛЬТАТЫ ПОИСКА (SearchResultsPanel: Анимация Y: 15 -> 0, Opacity: 0 -> 1) ================= */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 48,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          overflowY: 'auto',
+          padding: '0 12px',
+          zIndex: 10,
+          opacity: isSearchActive ? 1 : 0,
+          transform: isSearchActive ? 'translateY(0)' : 'translateY(15px)',
+          pointerEvents: isSearchActive ? 'auto' : 'none',
+          visibility: isSearchActive ? 'visible' : 'hidden',
+          transition: isSearchActive
+            ? `opacity 200ms ease-out, transform 200ms ${CUBIC_EASE_OUT}`
+            : 'opacity 120ms ease-out, transform 120ms ease-in, visibility 0ms 120ms',
+        }}
+      >
+        {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ (RecentSearchesBlock) */}
+        {searchText.trim().length === 0 && (
+          <div style={{ marginTop: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 5px' }}>
+              <span style={{ color: '#7D8494', fontSize: 14, fontWeight: 600 }}>Recent Searches</span>
+              {recentUsers.length > 0 && (
+                <button
+                  onClick={clearRecentSearches}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#7D8494',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    padding: 0,
+                  }}
+                >
+                  Clear
+                </button>
+              )}
             </div>
-          )}
-        </div>
-      )}
+
+            {recentUsers.length === 0 ? (
+              <div style={{ color: '#7D8494', fontSize: 14, textAlign: 'center', margin: '20px 0' }}>
+                No recent searches
+              </div>
+            ) : (
+              recentUsers.map((user) => (
+                <UserSearchCard
+                  key={user.id}
+                  user={user}
+                  onSelect={() => {
+                    selectUser(user);
+                    handleCloseSearch();
+                  }}
+                />
+              ))
+            )}
+          </div>
+        )}
+
+        {/* БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК (GlobalSearchBlock) */}
+        {searchText.trim().length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            {isSearching ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: '80px 0' }}>
+                <div style={{ color: '#1E9BEB', fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Searching...</div>
+              </div>
+            ) : (
+              <>
+                <div style={{ color: '#7D8494', fontSize: 14, fontWeight: 600, margin: '5px 0 12px 5px' }}>
+                  Global Search
+                </div>
+
+                {foundUsers.length === 0 && foundMessages.length === 0 ? (
+                  <div style={{ color: '#7D8494', fontSize: 14, textAlign: 'center', margin: '40px 0' }}>
+                    No results found
+                  </div>
+                ) : (
+                  foundUsers.map((user) => (
+                    <UserSearchCard
+                      key={user.id}
+                      user={user}
+                      onSelect={() => {
+                        selectUser(user);
+                        handleCloseSearch();
+                      }}
+                    />
+                  ))
+                )}
+
+                {/* БЛОК 3: НАЙДЕННЫЕ СООБЩЕНИЯ */}
+                {foundMessages.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ color: '#7D8494', fontSize: 14, fontWeight: 600, margin: '5px 0 12px 5px' }}>
+                      Messages
+                    </div>
+                    {foundMessages.map((msg) => (
+                      <div
+                        key={msg.id || msg.serverId}
+                        onClick={() => {
+                          jumpToMessage(msg);
+                          handleCloseSearch();
+                        }}
+                        style={{
+                          padding: '10px 12px',
+                          marginBottom: 8,
+                          backgroundColor: '#1C212D',
+                          borderRadius: 12,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                          <span style={{ color: '#FFFFFF', fontSize: 14, fontWeight: 600 }}>{msg.senderName || 'Chat'}</span>
+                          <span style={{ color: '#7D8494', fontSize: 11.5 }}>
+                            {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </span>
+                        </div>
+                        <div style={{ color: '#7D8494', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                          {msg.text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ================= КОНТЕКСТНОЕ МЕНЮ ЧАТА ================= */}
       {contextMenu && (
@@ -818,7 +848,7 @@ export const SidebarChatsView: React.FC = () => {
   );
 };
 
-// 🟢 Карточка найденного пользователя (UserSearchResultTemplate из WPF)
+// Карточка пользователя UserSearchResultTemplate из WPF
 const UserSearchCard: React.FC<{ user: IUserSearchResult; onSelect: () => void }> = ({ user, onSelect }) => {
   const avatarSrc = normalizeAvatarUrl(user.avatarPath || user.avatar);
   const [isHovered, setIsHovered] = useState(false);
