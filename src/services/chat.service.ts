@@ -21,8 +21,10 @@ const LINK_REGEX = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)|(\/[a-zA-Z
 
 // Хелпер вычисления SHA-256 через нативный браузерный Web Crypto API
 async function computeSha256(data: ArrayBuffer | Uint8Array | string): Promise<string> {
-  const buffer = typeof data === 'string' ? new TextEncoder().encode(data) : data;
-  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const buffer: BufferSource = typeof data === 'string'
+  ? new TextEncoder().encode(data)
+  : (data as unknown as BufferSource);
+const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
@@ -225,7 +227,7 @@ export class ChatService implements IChatService {
         }));
 
         if (existing && existing.id) {
-          await db.messages.update(existing.id, {
+          await (db.messages.update as any)(existing.id, {
             text: msg.text,
             isPinned: msg.isPinned,
             isRead: msg.isRead,
@@ -315,7 +317,7 @@ export class ChatService implements IChatService {
         );
 
         if (realId > 0 && msg.id) {
-          await db.messages.update(msg.id, { serverId: realId, isSentToServer: true });
+          await (db.messages.update as any)(msg.id, { serverId: realId, isSentToServer: true });
           sentCount++;
         }
       } catch (ex) {
@@ -645,7 +647,7 @@ export class ChatService implements IChatService {
       .toArray();
 
     for (const m of unread) {
-      if (m.id) await db.messages.update(m.id, { isRead: true });
+      if (m.id) await (db.messages.update as any)(m.id, { isRead: true });
     }
   }
 
@@ -668,11 +670,11 @@ export class ChatService implements IChatService {
       .first();
 
     if (target && target.id) {
-      await db.messages.update(target.id, {
-        text: newText,
-        editedAt: editedAt || new Date().toISOString(),
-        attachments: attachments || [],
-      });
+      await (db.messages.update as any)(target.id, {
+  text: newText,
+  editedAt: editedAt || new Date().toISOString(),
+  attachments: attachments || [],
+});
     }
   }
 

@@ -128,7 +128,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
 
     if ('isGroup' in target && 'groupName' in target) {
       // Это IChatListItem
-      const ci = target as IChatListItem;
+      const ci = target as unknown as IChatListItem;
       sidebarItem = ci;
       resolvedUser = {
         id: ci.isGroup ? ci.groupId ?? 0 : ci.userId ?? 0,
@@ -137,7 +137,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
         avatarPath: ci.avatarPath,
         isOnline: ci.isOnline,
         lastSeen: ci.lastSeen,
-        isGroup: ci.isGroup,
+        isGroup: Boolean(ci.isGroup),
         memberCount: ci.memberCount,
         onlineCount: ci.onlineCount,
         isTyping: false,
@@ -164,8 +164,8 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
         if (fresh) {
           set((state) => ({
             selectedChatUser: state.selectedChatUser?.id === fresh.id
-              ? { ...state.selectedChatUser, lastSeen: fresh.lastSeen, isOnline: fresh.isOnline }
-              : state.selectedChatUser,
+  ? ({ ...state.selectedChatUser, lastSeen: fresh.lastSeen, isOnline: fresh.isOnline } as unknown as IUserSearchResult)
+  : state.selectedChatUser,
           }));
         }
       });

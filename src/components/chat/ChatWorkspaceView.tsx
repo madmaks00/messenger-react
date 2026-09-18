@@ -58,13 +58,13 @@ export const ChatWorkspaceView: React.FC = () => {
 
       // Поддержка разных вариантов полей (layoutItems, items или просто массив)
       const items =
-        result.layoutItems ||
-        (result as any).items ||
-        (Array.isArray(result) ? result : []);
-      const height =
-        result.totalContentHeight ??
-        (result as any).totalHeight ??
-        0;
+  (result as any).items ||
+  (result as any).layoutItems ||
+  (Array.isArray(result) ? result : []);
+const height =
+  (result as any).totalHeight ??
+  (result as any).totalContentHeight ??
+  0;
 
       return {
         layoutItems: Array.isArray(items) ? items : [],

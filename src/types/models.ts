@@ -28,6 +28,8 @@ export interface IAttachment {
   durationSeconds: number;
   waveform?: string | null;
   isSelected?: boolean;
+  isSilentVideo?: boolean;
+  isDownloaded?: boolean; 
 }
 
 export class AttachmentHelper {
@@ -120,7 +122,12 @@ export interface IMessage {
   secretChatId?: string | null;
   viewsCount: number;
   attachments?: IAttachment[];
-  repliedMessages?: IMessage[];
+  repliedMessages?: any[];
+  isCallMessage?: boolean;
+  callTitle?: string;
+  callArrowKind?: string;
+  callArrowColor?: string;
+  callTimeAndDuration?: string;
 }
 
 export class MessageHelper {
@@ -281,6 +288,7 @@ export class MessageHelper {
 // =========================================================================
 export interface IChatListItem {
   id: number;
+  isGroup?: boolean;
   isSecretChat: boolean;
   secretChatId?: string | null;
   keyFingerprint?: string | null;

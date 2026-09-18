@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
-
+import { authService } from '../../services/auth.service';
 interface RegisterFormUserControlProps {
   title?: string;
   subtitle?: string;
@@ -38,7 +38,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await requestCodeAndGoToVerification();
+    await requestCodeAndGoToVerification(authService);
   };
 
   return (

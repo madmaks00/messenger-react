@@ -36,18 +36,18 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
     if (!groupName.trim()) return;
 
     const res = await groupService.createGroupAsync({
-      name: groupName.trim(),
-      description: description.trim(),
-      isChannel,
-      isPublic,
-      username: isPublic ? username.trim() : undefined,
-      avatar: avatar || undefined,
-    });
+  name: groupName.trim(),
+  description: description.trim(),
+  isChannel,
+  isPublic,
+  username: isPublic ? username.trim() : undefined,
+  avatar: avatar || undefined,
+} as any);
 
-    if (res) {
-      setCreatedLink(res.inviteLink || `/join/${res.id}`);
-      setStep(2);
-    }
+if (res) {
+  setCreatedLink((res as any).inviteLink || `/join/${res.id}`);
+  setStep(2);
+}
   };
 
   const handleCopy = () => {

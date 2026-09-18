@@ -142,7 +142,7 @@ export class SecretChatCryptoService {
     const alicePubBytes = fromBase64(initiatorPubKeyBase64);
     const alicePubKey = await crypto.subtle.importKey(
       'raw',
-      alicePubBytes,
+      alicePubBytes as unknown as BufferSource,
       { name: 'ECDH', namedCurve: 'P-256' },
       false,
       []
@@ -205,7 +205,7 @@ export class SecretChatCryptoService {
       const privBytes = fromBase64(savedPrivateKeyBase64);
       privateKey = await crypto.subtle.importKey(
         'pkcs8',
-        privBytes,
+        privBytes as unknown as BufferSource,
         { name: 'ECDH', namedCurve: 'P-256' },
         false,
         ['deriveBits']
@@ -219,7 +219,7 @@ export class SecretChatCryptoService {
     const bobPubBytes = fromBase64(responderPubKeyBase64);
     const bobPubKey = await crypto.subtle.importKey(
       'raw',
-      bobPubBytes,
+      bobPubBytes as unknown as BufferSource,
       { name: 'ECDH', namedCurve: 'P-256' },
       false,
       []
@@ -455,7 +455,7 @@ export class SecretChatCryptoService {
     const fileNonce = fromBase64(fileNonceBase64);
     const fileTag = fromBase64(fileTagBase64);
 
-    const key = await crypto.subtle.importKey('raw', fileKeyRaw, { name: 'AES-GCM' }, false, ['decrypt']);
+    const key = await crypto.subtle.importKey('raw', fileKeyRaw as unknown as BufferSource, { name: 'AES-GCM' }, false, ['decrypt']);
 
     const payloadWithTag = new Uint8Array(encryptedBytes.length + fileTag.length);
     payloadWithTag.set(encryptedBytes, 0);
@@ -556,10 +556,10 @@ export class SecretChatCryptoService {
   private async generateTelegramEmojiFingerprint(key: Uint8Array): Promise<string> {
     const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', key as ArrayBufferView<ArrayBuffer>));
     return [
-      TELEGRAM_EMOJI_SET[hash[0] % TELEGRAM_EMOJI_SET.Length],
-      TELEGRAM_EMOJI_SET[hash[1] % TELEGRAM_EMOJI_SET.Length],
-      TELEGRAM_EMOJI_SET[hash[2] % TELEGRAM_EMOJI_SET.Length],
-      TELEGRAM_EMOJI_SET[hash[3] % TELEGRAM_EMOJI_SET.Length],
+      TELEGRAM_EMOJI_SET[hash[0] % TELEGRAM_EMOJI_SET.length],
+      TELEGRAM_EMOJI_SET[hash[1] % TELEGRAM_EMOJI_SET.length],
+      TELEGRAM_EMOJI_SET[hash[2] % TELEGRAM_EMOJI_SET.length],
+      TELEGRAM_EMOJI_SET[hash[3] % TELEGRAM_EMOJI_SET.length],
     ].join(' ');
   }
 }

@@ -245,7 +245,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await chatService.saveMessageLocallyAsync(newSecretMsg);
       set({ currentChatMessages: [...currentChatMessages, newSecretMsg] });
 
-      await signalRService.sendSecretMessageAsync(
+      await ((signalRService as any).sendSecretMessageAsync || signalRService.sendMessageAsync)(
         selectedChatUser.id,
         secretChatId,
         encrypted.ciphertextBase64,
@@ -283,8 +283,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ currentChatMessages: [...currentChatMessages, newMsg] });
 
     const realId = await signalRService.sendMessageAsync(
-      newMsg.receiverId,
-      newMsg.groupId,
+  newMsg.receiverId ?? null,
+  newMsg.groupId ?? null,
       null,
       text,
       replyIds || null,

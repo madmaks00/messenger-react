@@ -96,7 +96,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                     {chat.avatarPath ? (
                       <img src={chat.avatarPath} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
-                      (chat.isGroup ? chat.groupName : chat.nickName || 'U').charAt(0).toUpperCase()
+                      ((chat.isGroup ? chat.groupName : chat.nickName) || 'U').charAt(0).toUpperCase()
                     )}
                   </div>
                   {/* Зеленая галочка выбора */}
