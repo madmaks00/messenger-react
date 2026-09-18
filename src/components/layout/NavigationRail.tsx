@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-// Импортируем только чистые векторные пути из @mdi/js (без глючного @mdi/react)
 import {
   mdiSendVariant,
   mdiChatOutline,
@@ -25,8 +24,8 @@ import {
 import { useNavigationStore } from '../../stores/navigationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { MainTab } from '../../types/enums';
+import { BASE_SERVER_URL } from '../../services/apiClient';
 
-// 🟢 Нативный компонент Icon: идеальный SVG без багов CommonJS/Rollup
 interface MdiIconProps {
   path: string;
   size?: number | string;
@@ -49,6 +48,18 @@ const Icon: React.FC<MdiIconProps> = ({ path, size = '24px', color = 'currentCol
   );
 };
 
+// Конвертер цвета аватарки точно из WPF AvatarColorConverter
+const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AE9', '#6EC9CB', '#FAA774'];
+const getAvatarColor = (id: number = 0) => AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
+
+const normalizeAvatarUrl = (url?: string | null) => {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  return `${BASE_SERVER_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
+};
+
 export const NavigationRail: React.FC = () => {
   const {
     currentTab,
@@ -62,6 +73,8 @@ export const NavigationRail: React.FC = () => {
 
   const { currentUser } = useAuthStore();
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
+
+  const avatarSrc = normalizeAvatarUrl(currentUser?.avatar || currentUser?.avatarPath);
 
   return (
     <div
@@ -79,8 +92,8 @@ export const NavigationRail: React.FC = () => {
       }}
     >
       {/* ================= ВЕРХ ================= */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 20 }}>
-        {/* 1. Статичный логотип SendVariant (-20° с подсветкой) */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 20, flexShrink: 0 }}>
+        {/* Логотип SendVariant */}
         <div
           style={{
             color: '#1E9BEB',
@@ -96,7 +109,7 @@ export const NavigationRail: React.FC = () => {
           <Icon path={mdiSendVariant} size="38px" />
         </div>
 
-        {/* 2. Аватарка пользователя 54x54 */}
+        {/* Аватарка: 54x54 круглая рамка #1E9BEB */}
         <div style={{ position: 'relative', width: 54, height: 54 }}>
           <div
             onClick={openProfile}
@@ -106,34 +119,46 @@ export const NavigationRail: React.FC = () => {
               height: 54,
               borderRadius: 27,
               border: '2px solid #1E9BEB',
-              backgroundColor: 'transparent',
+              backgroundColor: getAvatarColor(currentUser?.id || 0),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
               overflow: 'hidden',
+              position: 'relative',
               boxSizing: 'border-box',
             }}
           >
-            {currentUser?.avatar ? (
-              <img src={currentUser.avatar} alt="" style={{ width: 46, height: 46, borderRadius: 23, objectFit: 'cover' }} />
-            ) : (
-              <div
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 23,
-                  backgroundColor: '#1E9BEB',
-                  color: '#FFFFFF',
-                  fontSize: 18,
-                  fontWeight: 'bold',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+            {/* Слой 1: Инициалы пользователя (всегда под фото, как в WPF) */}
+            <div
+              style={{
+                color: '#FFFFFF',
+                fontSize: 18,
+                fontWeight: 'bold',
+                userSelect: 'none',
+              }}
+            >
+              {(currentUser?.nickName || currentUser?.username || 'U').charAt(0).toUpperCase()}
+            </div>
+
+            {/* Слой 2: Фото пользователя (скрывается при 404, не ломая интерфейс) */}
+            {avatarSrc && (
+              <img
+                src={avatarSrc}
+                alt=""
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
                 }}
-              >
-                {(currentUser?.nickName || 'U').charAt(0).toUpperCase()}
-              </div>
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: 27,
+                  objectFit: 'cover',
+                }}
+              />
             )}
           </div>
 
@@ -166,9 +191,8 @@ export const NavigationRail: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= ЦЕНТР: ВКЛАДКИ (50px) ================= */}
+      {/* ================= ЦЕНТР: ВКЛАДКИ ================= */}
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10, flex: 1 }}>
-        {/* 1. Чаты */}
         <div
           onClick={() => switchTab(MainTab.Chats)}
           onMouseEnter={() => setHoveredBtn('chats')}
@@ -185,10 +209,8 @@ export const NavigationRail: React.FC = () => {
           </div>
         </div>
 
-        {/* Разделитель 2px */}
         <div style={railDividerStyle} />
 
-        {/* 2. Заметки */}
         <div
           onClick={() => switchTab(MainTab.Notes)}
           onMouseEnter={() => setHoveredBtn('notes')}
@@ -202,7 +224,6 @@ export const NavigationRail: React.FC = () => {
           </span>
         </div>
 
-        {/* 3. Задачи */}
         <div
           onClick={() => switchTab(MainTab.Tasks)}
           onMouseEnter={() => setHoveredBtn('tasks')}
@@ -219,7 +240,6 @@ export const NavigationRail: React.FC = () => {
           </div>
         </div>
 
-        {/* 4. Игры */}
         <div
           onClick={() => switchTab(MainTab.Games)}
           onMouseEnter={() => setHoveredBtn('games')}
@@ -233,10 +253,8 @@ export const NavigationRail: React.FC = () => {
           </span>
         </div>
 
-        {/* Разделитель 2px */}
         <div style={railDividerStyle} />
 
-        {/* 5. Смена аккаунта */}
         <div
           onClick={() => switchTab(MainTab.AccountSwitch)}
           onMouseEnter={() => setHoveredBtn('acc')}
@@ -251,9 +269,8 @@ export const NavigationRail: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= НИЗ: ДЕЙСТВИЯ (50px) ================= */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20, marginTop: 'auto' }}>
-        {/* Кнопка создания группы (Chats) */}
+      {/* ================= НИЗ: ДЕЙСТВИЯ ================= */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20, marginTop: 'auto', flexShrink: 0 }}>
         {currentTab === MainTab.Chats && (
           <>
             <button
@@ -273,7 +290,6 @@ export const NavigationRail: React.FC = () => {
           </>
         )}
 
-        {/* Кнопка создания заметки (Notes) */}
         {currentTab === MainTab.Notes && (
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('CreateNewNote'))}
@@ -284,7 +300,6 @@ export const NavigationRail: React.FC = () => {
           </button>
         )}
 
-        {/* Кнопка создания списка задач (Tasks) */}
         {currentTab === MainTab.Tasks && (
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('CreateNewTaskList'))}
@@ -295,7 +310,6 @@ export const NavigationRail: React.FC = () => {
           </button>
         )}
 
-        {/* Переключатель темы */}
         <button
           onClick={toggleTheme}
           title={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -314,7 +328,6 @@ export const NavigationRail: React.FC = () => {
           </div>
         </button>
 
-        {/* Настройки */}
         <button
           onClick={openProfile}
           title="Settings"
