@@ -68,14 +68,14 @@ export const NavigationRail: React.FC = () => {
       style={{
         width: 66,
         height: '100%',
-        backgroundColor: '#0F1319', // BgNav из WPF
-        borderRight: '1px solid #1E232F', // DividerColor
+        backgroundColor: '#0F1319',
+        borderRight: '1px solid #1E232F',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
         userSelect: 'none',
         position: 'relative',
         zIndex: 50,
+        boxSizing: 'border-box',
       }}
     >
       {/* ================= ВЕРХ ================= */}
@@ -167,7 +167,7 @@ export const NavigationRail: React.FC = () => {
       </div>
 
       {/* ================= ЦЕНТР: ВКЛАДКИ (50px) ================= */}
-      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10, flex: 1 }}>
         {/* 1. Чаты */}
         <div
           onClick={() => switchTab(MainTab.Chats)}
@@ -252,7 +252,7 @@ export const NavigationRail: React.FC = () => {
       </div>
 
       {/* ================= НИЗ: ДЕЙСТВИЯ (50px) ================= */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20, marginTop: 'auto' }}>
         {/* Кнопка создания группы (Chats) */}
         {currentTab === MainTab.Chats && (
           <>
