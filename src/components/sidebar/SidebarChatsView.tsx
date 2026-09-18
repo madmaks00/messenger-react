@@ -210,41 +210,22 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 1: СТРОКА ПОИСКА (Margin="6,0,6,0") ================= */}
+      {/* ================= РЯД 1: СТРОКА ПОИСКА (1 в 1 как SearchBorder в WPF) ================= */}
       <div style={{ padding: '0 6px 8px 6px', boxSizing: 'border-box', zIndex: 15 }}>
         <div
           style={{
             height: 40,
-            backgroundColor: '#1C212D', // SidebarSearchInputBgBrush
+            backgroundColor: '#1C212D',
             borderRadius: 12,
             display: 'flex',
             alignItems: 'center',
-            padding: '0 10px',
+            padding: '0 12px',
             border: '1.2px solid transparent',
             boxSizing: 'border-box',
           }}
         >
-          {/* Иконка слева: лупа в покое / стрелка «Назад» при поиске */}
-          {isSearchActive ? (
-            <button
-              onClick={handleCloseSearch}
-              title="Close Search (Esc)"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: 0,
-                marginRight: 8,
-                display: 'flex',
-                alignItems: 'center',
-                color: '#1E9BEB',
-              }}
-            >
-              <MdiIcon path={mdiArrowLeft} size={20} color="#1E9BEB" />
-            </button>
-          ) : (
-            <MdiIcon path={mdiMagnify} size={18} color="#7D8494" style={{ marginRight: 8 }} />
-          )}
+          {/* Слева ВСЕГДА только лупа */}
+          <MdiIcon path={mdiMagnify} size={18} color="#7D8494" style={{ marginRight: 10 }} />
 
           <input
             ref={searchInputRef}
@@ -269,14 +250,19 @@ export const SidebarChatsView: React.FC = () => {
             }}
           />
 
-          {/* Крестик очистки */}
-          {searchText.length > 0 && (
+          {/* Справа крестик CloseCircle: виден ВСЕГДА, пока поиск открыт (как BtnClearSearch в WPF) */}
+          {isSearchActive && (
             <button
-              onClick={() => {
-                setSearchText('');
-                if (searchInputRef.current) searchInputRef.current.focus();
+              onClick={handleCloseSearch}
+              title="Close Search (Esc)"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
               }}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
             >
               <MdiIcon path={mdiCloseCircle} size={18} color="#7D8494" />
             </button>
