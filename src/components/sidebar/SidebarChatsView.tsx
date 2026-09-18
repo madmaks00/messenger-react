@@ -221,7 +221,7 @@ export const SidebarChatsView: React.FC = () => {
           padding: '0 6px 8px 6px',
           boxSizing: 'border-box',
           zIndex: 15,
-          transform: isSearchActive ? 'translateY(-52px)' : 'translateY(0)',
+          transform: isSearchActive ? 'translateY(-44px)' : 'translateY(0)',
           transition: isSearchActive
             ? `transform 250ms ${CUBIC_EASE_OUT}`
             : `transform 220ms ${CUBIC_EASE_OUT}`,
