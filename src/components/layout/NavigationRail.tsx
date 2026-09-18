@@ -1,106 +1,30 @@
 import React, { useState } from 'react';
+import Icon from '@mdi/react';
+import {
+  mdiSendVariant,
+  mdiChatOutline,
+  mdiChat,
+  mdiBookmarkOutline,
+  mdiBookmark,
+  mdiClipboardListOutline,
+  mdiClipboardList,
+  mdiGamepadVariantOutline,
+  mdiGamepadVariant,
+  mdiAccountSwitchOutline,
+  mdiAccountSwitch,
+  mdiPencilPlusOutline,
+  mdiFolderPlusOutline,
+  mdiFileDocumentPlusOutline,
+  mdiClipboardPlusOutline,
+  mdiWeatherNight,
+  mdiWhiteBalanceSunny,
+  mdiCogOutline,
+  mdiPlus,
+} from '@mdi/js';
+
 import { useNavigationStore } from '../../stores/navigationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { MainTab } from '../../types/enums';
-
-// Векторные Material Design иконки из MainWindow.xaml
-const Icons = {
-  SendVariant: () => (
-    <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M3 20V4l19 8l-19 8zm2-3l11.85-5L5 7v3.5l6 1.5l-6 1.5V17z" />
-    </svg>
-  ),
-  ChatOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 3c5.5 0 10 3.6 10 8c0 2.2-1.1 4.2-3 5.6V21l-3.2-1.6c-1.2.4-2.5.6-3.8.6c-5.5 0-10-3.6-10-8s4.5-8 10-8m0 2c-4.4 0-8 2.7-8 6s3.6 6 8 6c1.1 0 2.2-.2 3.2-.6l.6-.2l1.9 1v-2.2l.6-.5c1.1-.9 1.7-2.1 1.7-3.5c0-3.3-3.6-6-8-6z" />
-    </svg>
-  ),
-  ChatFilled: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 3c5.5 0 10 3.6 10 8c0 2.2-1.1 4.2-3 5.6V21l-3.2-1.6c-1.2.4-2.5.6-3.8.6c-5.5 0-10-3.6-10-8s4.5-8 10-8z" />
-    </svg>
-  ),
-  BookmarkOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3l7 3V5c0-1.1-.9-2-2-2m0 15l-5-2.18L7 18V5h10v13z" />
-    </svg>
-  ),
-  BookmarkFilled: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3l7 3V5c0-1.1-.9-2-2-2z" />
-    </svg>
-  ),
-  ClipboardListOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-7-.25c.41 0 .75.34.75.75s-.34.75-.75.75s-.75-.34-.75-.75s.34-.75.75-.75M19 19H5V5h14v14M7 8h10v2H7V8m0 4h10v2H7v-2m0 4h7v2H7v-2z" />
-    </svg>
-  ),
-  ClipboardListFilled: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-7-.25c.41 0 .75.34.75.75s-.34.75-.75.75s-.75-.34-.75-.75s.34-.75.75-.75M7 8h10v2H7V8m0 4h10v2H7v-2m0 4h7v2H7v-2z" />
-    </svg>
-  ),
-  GamepadVariantOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M7 6h10a6 6 0 0 1 6 6a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6a6 6 0 0 1 6-6m0 2a4 4 0 0 0-4 4a4 4 0 0 0 4 4h10a4 4 0 0 0 4-4a4 4 0 0 0-4-4H7m3 3v2h2v2H8v-2H6v-2h2V9h2m6 1a1 1 0 1 1-1 1a1 1 0 0 1 1-1m2 2a1 1 0 1 1-1 1a1 1 0 0 1 1-1m-2 2a1 1 0 1 1-1 1a1 1 0 0 1 1-1m-2-2a1 1 0 1 1-1 1a1 1 0 0 1 1-1z" />
-    </svg>
-  ),
-  GamepadVariantFilled: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M17 6H7a6 6 0 0 0-6 6a6 6 0 0 0 6 6h10a6 6 0 0 0 6-6a6 6 0 0 0-6-6m-7 5v2h2v2H8v-2H6v-2h2V9h2m6 1a1 1 0 1 1-1 1a1 1 0 0 1 1-1m2 2a1 1 0 1 1-1 1a1 1 0 0 1 1-1m-2 2a1 1 0 1 1-1 1a1 1 0 0 1 1-1m-2-2a1 1 0 1 1-1 1a1 1 0 0 1 1-1z" />
-    </svg>
-  ),
-  AccountSwitchOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 4a3 3 0 1 1-3 3a3 3 0 0 1 3-3m0 2a1 1 0 1 0 1 1a1 1 0 0 0-1-1m4 7a4 4 0 0 1 4 4v1H4v-1a4 4 0 0 1 4-4h8m-8 2a2 2 0 0 0-2 2h12a2 2 0 0 0-2-2H8m10-7h2v2h-2v2h-2V8h2V6z" />
-    </svg>
-  ),
-  AccountSwitchFilled: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 4a3 3 0 1 1-3 3a3 3 0 0 1 3-3m4 7a4 4 0 0 1 4 4v1H4v-1a4 4 0 0 1 4-4h8m10-7h2v2h-2v2h-2V8h2V6z" />
-    </svg>
-  ),
-  PencilPlusOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M14.06 9l.94.94L5.92 19H5v-.92L14.06 9m3.6-6c-.25 0-.51.1-.7.29l-1.83 1.83l3.75 3.75l1.82-1.81c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.7-.29m-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75M19 13v3h3v2h-3v3h-2v-3h-3v-2h3v-3h2z" />
-    </svg>
-  ),
-  FolderPlusOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M13 19c0 .34.04.67.09 1H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6l2 2h8a2 2 0 0 1 2 2v5.81c-.61-.51-1.3-.9-2.09-1.14V8H4v10h9.09c-.05.33-.09.66-.09 1m7-4v3h3v2h-3v3h-2v-3h-3v-2h3v-3h2z" />
-    </svg>
-  ),
-  FileDocumentPlusOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h7.81c-.51-.61-.9-1.3-1.14-2.09H6V4h7v5h5v2.81c.71.18 1.36.49 1.94.92.04-.24.06-.49.06-.73l-6-6M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3h-2m-10 0v-2h5v2H8m0 4v-2h3.09c.12.72.37 1.39.72 2H8m0-8V9h8v2H8z" />
-    </svg>
-  ),
-  ClipboardPlusOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h7.81c-.51-.61-.9-1.3-1.14-2.09H5V5h14v6.81c.71.18 1.36.49 1.94.92.04-.24.06-.49.06-.73V5c0-1.1-.9-2-2-2m-7-.25c.41 0 .75.34.75.75s-.34.75-.75.75s-.75-.34-.75-.75s.34-.75.75-.75M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3h-2z" />
-    </svg>
-  ),
-  Moon: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2A10 10 0 0 0 2 12A10 10 0 0 0 12 22A10 10 0 0 0 21.6 15.6A8.5 8.5 0 0 1 12 5.1A8.5 8.5 0 0 1 12.8 2.05A10 10 0 0 0 12 2Z" />
-    </svg>
-  ),
-  Sun: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 7a5 5 0 1 0 0 10a5 5 0 0 0 0-10zm0-5a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V3a1 1 0 0 0-1-1zm0 18a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0v-2a1 1 0 0 0-1-1zm8.66-14.66a1 1 0 0 0-1.41 0l-1.42 1.41a1 1 0 1 0 1.42 1.42l1.41-1.42a1 1 0 0 0 0-1.41zM6.17 17.83a1 1 0 0 0-1.41 0l-1.42 1.41a1 1 0 1 0 1.42 1.42l1.41-1.42a1 1 0 0 0 0-1.41zm14.49 4.17a1 1 0 0 0 0-1.41l-1.41-1.42a1 1 0 1 0-1.42 1.42l1.42 1.41a1 1 0 0 0 1.41 0zM4.75 6.17a1 1 0 0 0 0-1.41l-1.41-1.42a1 1 0 1 0-1.42 1.42l1.42 1.41a1 1 0 0 0 1.41 0zM22 11h-2a1 1 0 0 0 0 2h2a1 1 0 0 0 0-2zM4 11H2a1 1 0 0 0 0 2h2a1 1 0 0 0 0-2z" />
-    </svg>
-  ),
-  CogOutline: () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8zm0 6a2 2 0 1 1 0-4a2 2 0 0 1 0 4zm7.94-2.88l-1.37-.8l.1-.92a6.9 6.9 0 0 0 0-1.6l-.1-.92l1.37-.8a1 1 0 0 0 .36-1.37l-1.5-2.6a1 1 0 0 0-1.28-.43l-1.49.57l-.76-.53a7.1 7.1 0 0 0-1.38-.8l-.88-.34L14.3 2.1a1 1 0 0 0-1-.87h-3a1 1 0 0 0-1 .87l-.2 1.57l-.88.34a7.1 7.1 0 0 0-1.38.8l-.76.53l-1.49-.57a1 1 0 0 0-1.28.43l-1.5 2.6a1 1 0 0 0 .36 1.37l1.37.8l-.1.92a6.9 6.9 0 0 0 0 1.6l.1.92l-1.37.8a1 1 0 0 0-.36 1.37l1.5 2.6a1 1 0 0 0 1.28.43l1.49-.57l.76.53c.43.32.9.59 1.38.8l.88.34l.2 1.57a1 1 0 0 0 1 .87h3a1 1 0 0 0 1-.87l.2-1.57l.88-.34c.48-.21.95-.48 1.38-.8l.76-.53l1.49.57a1 1 0 0 0 1.28-.43l1.5-2.6a1 1 0 0 0-.36-1.37z" />
-    </svg>
-  ),
-  Plus: () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-    </svg>
-  ),
-};
 
 export const NavigationRail: React.FC = () => {
   const {
@@ -133,7 +57,7 @@ export const NavigationRail: React.FC = () => {
     >
       {/* ================= ВЕРХ ================= */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 20 }}>
-        {/* 1. Статичный логотип SendVariant под углом -20° */}
+        {/* 1. Статичный логотип SendVariant (-20° с подсветкой) */}
         <div
           style={{
             color: '#1E9BEB',
@@ -146,7 +70,7 @@ export const NavigationRail: React.FC = () => {
             cursor: 'default',
           }}
         >
-          <Icons.SendVariant />
+          <Icon path={mdiSendVariant} size="38px" />
         </div>
 
         {/* 2. Аватарка пользователя 54x54 */}
@@ -190,7 +114,7 @@ export const NavigationRail: React.FC = () => {
             )}
           </div>
 
-          {/* Кнопка создания истории (+) 20x20 */}
+          {/* Плюсик создания истории 20x20 */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -214,31 +138,31 @@ export const NavigationRail: React.FC = () => {
               padding: 0,
             }}
           >
-            <Icons.Plus />
+            <Icon path={mdiPlus} size="14px" />
           </button>
         </div>
       </div>
 
-      {/* ================= ЦЕНТР: РАДИОКНОПКИ ТАБОВ (50px) ================= */}
+      {/* ================= ЦЕНТР: ВКЛАДКИ (50px) ================= */}
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10 }}>
         {/* 1. Чаты */}
         <div
           onClick={() => switchTab(MainTab.Chats)}
           onMouseEnter={() => setHoveredBtn('chats')}
           onMouseLeave={() => setHoveredBtn(null)}
-          style={getNavButtonStyle(currentTab === MainTab.Chats)}
+          style={getNavTabStyle(currentTab === MainTab.Chats)}
           title="Chats"
         >
           {currentTab === MainTab.Chats && <div style={activeBarIndicatorStyle} />}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ color: currentTab === MainTab.Chats ? '#1E9BEB' : hoveredBtn === 'chats' ? '#FFFFFF' : '#7D8494' }}>
-              {currentTab === MainTab.Chats ? <Icons.ChatFilled /> : <Icons.ChatOutline />}
+              <Icon path={currentTab === MainTab.Chats ? mdiChat : mdiChatOutline} size="24px" />
             </span>
             {hasUnreadChats && <div style={unreadDotBadgeStyle} />}
           </div>
         </div>
 
-        {/* Разделитель 2px, margin 25, 15 */}
+        {/* Разделитель 2px */}
         <div style={railDividerStyle} />
 
         {/* 2. Заметки */}
@@ -246,12 +170,12 @@ export const NavigationRail: React.FC = () => {
           onClick={() => switchTab(MainTab.Notes)}
           onMouseEnter={() => setHoveredBtn('notes')}
           onMouseLeave={() => setHoveredBtn(null)}
-          style={getNavButtonStyle(currentTab === MainTab.Notes)}
+          style={getNavTabStyle(currentTab === MainTab.Notes)}
           title="Notes"
         >
           {currentTab === MainTab.Notes && <div style={activeBarIndicatorStyle} />}
           <span style={{ color: currentTab === MainTab.Notes ? '#1E9BEB' : hoveredBtn === 'notes' ? '#FFFFFF' : '#7D8494' }}>
-            {currentTab === MainTab.Notes ? <Icons.BookmarkFilled /> : <Icons.BookmarkOutline />}
+            <Icon path={currentTab === MainTab.Notes ? mdiBookmark : mdiBookmarkOutline} size="24px" />
           </span>
         </div>
 
@@ -260,13 +184,13 @@ export const NavigationRail: React.FC = () => {
           onClick={() => switchTab(MainTab.Tasks)}
           onMouseEnter={() => setHoveredBtn('tasks')}
           onMouseLeave={() => setHoveredBtn(null)}
-          style={getNavButtonStyle(currentTab === MainTab.Tasks)}
+          style={getNavTabStyle(currentTab === MainTab.Tasks)}
           title="Tasks"
         >
           {currentTab === MainTab.Tasks && <div style={activeBarIndicatorStyle} />}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ color: currentTab === MainTab.Tasks ? '#1E9BEB' : hoveredBtn === 'tasks' ? '#FFFFFF' : '#7D8494' }}>
-              {currentTab === MainTab.Tasks ? <Icons.ClipboardListFilled /> : <Icons.ClipboardListOutline />}
+              <Icon path={currentTab === MainTab.Tasks ? mdiClipboardList : mdiClipboardListOutline} size="24px" />
             </span>
             {hasDueTasks && <div style={unreadDotBadgeStyle} />}
           </div>
@@ -277,12 +201,12 @@ export const NavigationRail: React.FC = () => {
           onClick={() => switchTab(MainTab.Games)}
           onMouseEnter={() => setHoveredBtn('games')}
           onMouseLeave={() => setHoveredBtn(null)}
-          style={getNavButtonStyle(currentTab === MainTab.Games)}
+          style={getNavTabStyle(currentTab === MainTab.Games)}
           title="Games"
         >
           {currentTab === MainTab.Games && <div style={activeBarIndicatorStyle} />}
           <span style={{ color: currentTab === MainTab.Games ? '#1E9BEB' : hoveredBtn === 'games' ? '#FFFFFF' : '#7D8494' }}>
-            {currentTab === MainTab.Games ? <Icons.GamepadVariantFilled /> : <Icons.GamepadVariantOutline />}
+            <Icon path={currentTab === MainTab.Games ? mdiGamepadVariant : mdiGamepadVariantOutline} size="24px" />
           </span>
         </div>
 
@@ -294,19 +218,19 @@ export const NavigationRail: React.FC = () => {
           onClick={() => switchTab(MainTab.AccountSwitch)}
           onMouseEnter={() => setHoveredBtn('acc')}
           onMouseLeave={() => setHoveredBtn(null)}
-          style={getNavButtonStyle(currentTab === MainTab.AccountSwitch)}
+          style={getNavTabStyle(currentTab === MainTab.AccountSwitch)}
           title="Switch Account"
         >
           {currentTab === MainTab.AccountSwitch && <div style={activeBarIndicatorStyle} />}
           <span style={{ color: currentTab === MainTab.AccountSwitch ? '#1E9BEB' : hoveredBtn === 'acc' ? '#FFFFFF' : '#7D8494' }}>
-            {currentTab === MainTab.AccountSwitch ? <Icons.AccountSwitchFilled /> : <Icons.AccountSwitchOutline />}
+            <Icon path={currentTab === MainTab.AccountSwitch ? mdiAccountSwitch : mdiAccountSwitchOutline} size="24px" />
           </span>
         </div>
       </div>
 
-      {/* ================= НИЗ: КНОПКИ ДЕЙСТВИЙ (50px) ================= */}
+      {/* ================= НИЗ: ДЕЙСТВИЯ (50px) ================= */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20 }}>
-        {/* Кнопки контекста для вкладок из NavActionButtonStyle */}
+        {/* Кнопка создания группы (Chats) */}
         {currentTab === MainTab.Chats && (
           <>
             <button
@@ -314,39 +238,41 @@ export const NavigationRail: React.FC = () => {
               title="Create Group"
               style={navActionBtnStyle}
             >
-              <Icons.PencilPlusOutline />
+              <Icon path={mdiPencilPlusOutline} size="24px" />
             </button>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('OpenCreateFolderDialog'))}
               title="Create Folder"
               style={navActionBtnStyle}
             >
-              <Icons.FolderPlusOutline />
+              <Icon path={mdiFolderPlusOutline} size="24px" />
             </button>
           </>
         )}
 
+        {/* Кнопка создания заметки (Notes) */}
         {currentTab === MainTab.Notes && (
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('CreateNewNote'))}
             title="Create Note"
             style={navActionBtnStyle}
           >
-            <Icons.FileDocumentPlusOutline />
+            <Icon path={mdiFileDocumentPlusOutline} size="24px" />
           </button>
         )}
 
+        {/* Кнопка создания списка задач (Tasks) */}
         {currentTab === MainTab.Tasks && (
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('CreateNewTaskList'))}
             title="Create Task List"
             style={navActionBtnStyle}
           >
-            <Icons.ClipboardPlusOutline />
+            <Icon path={mdiClipboardPlusOutline} size="24px" />
           </button>
         )}
 
-        {/* Тумблер темы (Moon/Sun) */}
+        {/* Переключатель темы (Moon / Sun с плавным переходом) */}
         <button
           onClick={toggleTheme}
           title={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -361,7 +287,7 @@ export const NavigationRail: React.FC = () => {
               justifyContent: 'center',
             }}
           >
-            {isDarkTheme ? <Icons.Moon /> : <Icons.Sun />}
+            <Icon path={isDarkTheme ? mdiWeatherNight : mdiWhiteBalanceSunny} size="24px" />
           </div>
         </button>
 
@@ -371,15 +297,15 @@ export const NavigationRail: React.FC = () => {
           title="Settings"
           style={navActionBtnStyle}
         >
-          <Icons.CogOutline />
+          <Icon path={mdiCogOutline} size="24px" />
         </button>
       </div>
     </div>
   );
 };
 
-// Стили, в точности повторяющие NavMenuButtonStyle из MainWindow.xaml
-const getNavButtonStyle = (isActive: boolean): React.CSSProperties => ({
+// Стили NavMenuButtonStyle
+const getNavTabStyle = (isActive: boolean): React.CSSProperties => ({
   height: 50,
   width: '100%',
   backgroundColor: isActive ? 'rgba(30, 155, 235, 0.1)' : 'transparent',
@@ -408,12 +334,12 @@ const unreadDotBadgeStyle: React.CSSProperties = {
   width: 8,
   height: 8,
   borderRadius: 4,
-  backgroundColor: '#E74C3C', // UnreadBadgeBrush
+  backgroundColor: '#E74C3C',
 };
 
 const railDividerStyle: React.CSSProperties = {
   height: 2,
-  backgroundColor: '#1C212D', // OtherBubbleBg
+  backgroundColor: '#1C212D',
   margin: '15px 25px',
 };
 
@@ -422,7 +348,7 @@ const navActionBtnStyle: React.CSSProperties = {
   height: 50,
   background: 'transparent',
   border: 'none',
-  color: '#7D8494', // TextMuted
+  color: '#7D8494',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
