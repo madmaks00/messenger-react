@@ -52,11 +52,18 @@ const Icon: React.FC<MdiIconProps> = ({ path, size = '24px', color = 'currentCol
 const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AE9', '#6EC9CB', '#FAA774'];
 const getAvatarColor = (id: number = 0) => AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
 
+// ✅ СТАЛО: умная функция, которая понимает и серверный URL, и чистый Base64 из C#
 const normalizeAvatarUrl = (url?: string | null) => {
   if (!url) return null;
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+  // Если уже готовая data-ссылка или web-ссылка
+  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
+  // Если это чистый Base64 из C# (начинается с характерных заголовков JPEG/PNG или длинная строка)
+  if (url.startsWith('/9j/') || url.startsWith('iVBOR') || url.startsWith('R0lGOD') || url.length > 200) {
+    return `data:image/jpeg;base64,${url}`;
+  }
+  // Если это относительный путь с сервера (/uploads/...)
   return `${BASE_SERVER_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
 };
 

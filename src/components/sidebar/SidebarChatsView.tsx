@@ -1,8 +1,9 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   mdiChatOutline,
   mdiMagnify,
   mdiCloseCircle,
+  mdiArrowLeft,
   mdiMessageTextOutline,
   mdiPinOutline,
   mdiPin,
@@ -39,6 +40,7 @@ import { BASE_SERVER_URL } from '../../services/apiClient';
 
 const ITEM_HEIGHT = 68;
 
+// 🟢 Векторная иконка Material Design (PackIcon)
 const MdiIcon: React.FC<{ path: string; size?: number | string; color?: string; style?: React.CSSProperties }> = ({
   path,
   size = 18,
@@ -53,13 +55,18 @@ const MdiIcon: React.FC<{ path: string; size?: number | string; color?: string; 
   );
 };
 
+// Конвертер цвета аватарки из WPF AvatarColorConverter
 const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AE9', '#6EC9CB', '#FAA774'];
 const getAvatarColor = (id: number = 0) => AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
 
+// Умный нормализатор аватарок: понимает и серверные пути, и чистый Base64 из C#
 const normalizeAvatarUrl = (url?: string | null) => {
   if (!url) return null;
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
     return url;
+  }
+  if (url.startsWith('/9j/') || url.startsWith('iVBOR') || url.startsWith('R0lGOD') || url.length > 200) {
+    return `data:image/jpeg;base64,${url}`;
   }
   return `${BASE_SERVER_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
 };
@@ -67,9 +74,8 @@ const normalizeAvatarUrl = (url?: string | null) => {
 export const SidebarChatsView: React.FC = () => {
   const { allChats, openChat, togglePinChat, toggleMuteChat, deleteChat, clearChatHistory, selectedChatUser } = useSidebarChatsStore();
   const { chatFolders, selectedFolderId, selectFolder, reorderFolders, toggleChatInFolder } = useChatFolderStore();
-  const { isChatSearchMode } = useChatStore();
+  const { isChatSearchMode, exitSearch } = useChatStore();
 
-  // Стор поиска из WPF SearchViewModel
   const {
     searchText,
     isSearching,
@@ -82,19 +88,45 @@ export const SidebarChatsView: React.FC = () => {
     jumpToMessage,
   } = useSearchStore();
 
+  const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   const [hoveredChatId, setHoveredChatId] = useState<number | null>(null);
   const [draggedFolderIndex, setDraggedFolderIndex] = useState<number | null>(null);
+
+  // Контекстное меню
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chat: IChatListItem } | null>(null);
   const [isFolderSubmenuOpen, setIsFolderSubmenuOpen] = useState(false);
-  const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
 
-  // Активен ли режим поиска
-  const isSearchActive = isSearchInputFocused || searchText.trim().length > 0;
+  const isSearchActive = isSearchInputFocused || searchText.length > 0;
 
-  // Обычный список чатов по папке
+  // Функция полного закрытия поиска (аналог CloseSearch из C#)
+  const handleCloseSearch = () => {
+    setSearchText('');
+    setIsSearchInputFocused(false);
+    exitSearch();
+    if (searchInputRef.current) {
+      searchInputRef.current.blur();
+    }
+  };
+
+  // Слушатель клика вне области поиска (аналог OnGlobalPreviewMouseDown в C#)
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        if (!searchText.trim()) {
+          setIsSearchInputFocused(false);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [searchText]);
+
+  // Обычный список чатов (по выбранной папке)
   const filteredChats = useMemo(() => {
     let result = allChats;
     if (selectedFolderId && selectedFolderId > 0) {
@@ -148,10 +180,11 @@ export const SidebarChatsView: React.FC = () => {
 
   return (
     <div
+      ref={searchContainerRef}
       style={{
         width: 340,
         height: '100%',
-        backgroundColor: '#161A23',
+        backgroundColor: '#161A23', // BgList
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
@@ -182,22 +215,49 @@ export const SidebarChatsView: React.FC = () => {
         <div
           style={{
             height: 40,
-            backgroundColor: '#1C212D',
+            backgroundColor: '#1C212D', // SidebarSearchInputBgBrush
             borderRadius: 12,
             display: 'flex',
             alignItems: 'center',
-            padding: '0 12px',
+            padding: '0 10px',
             border: '1.2px solid transparent',
             boxSizing: 'border-box',
           }}
         >
-          <MdiIcon path={mdiMagnify} size={18} color="#7D8494" style={{ marginRight: 10 }} />
+          {/* Иконка слева: лупа в покое / стрелка «Назад» при поиске */}
+          {isSearchActive ? (
+            <button
+              onClick={handleCloseSearch}
+              title="Close Search (Esc)"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                marginRight: 8,
+                display: 'flex',
+                alignItems: 'center',
+                color: '#1E9BEB',
+              }}
+            >
+              <MdiIcon path={mdiArrowLeft} size={20} color="#1E9BEB" />
+            </button>
+          ) : (
+            <MdiIcon path={mdiMagnify} size={18} color="#7D8494" style={{ marginRight: 8 }} />
+          )}
+
           <input
+            ref={searchInputRef}
             type="text"
             placeholder={isChatSearchMode ? 'Search in messages...' : 'Search Chat'}
             value={searchText}
             onFocus={() => setIsSearchInputFocused(true)}
             onChange={(e) => setSearchText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                handleCloseSearch();
+              }
+            }}
             style={{
               background: 'transparent',
               border: 'none',
@@ -208,11 +268,13 @@ export const SidebarChatsView: React.FC = () => {
               fontFamily: 'Segoe UI, sans-serif',
             }}
           />
+
+          {/* Крестик очистки */}
           {searchText.length > 0 && (
             <button
               onClick={() => {
                 setSearchText('');
-                setIsSearchInputFocused(false);
+                if (searchInputRef.current) searchInputRef.current.focus();
               }}
               style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
             >
@@ -222,7 +284,7 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 2: ПАПКИ ЧАТОВ (Скрыты, если папок <= 1 или активен поиск) ================= */}
+      {/* ================= РЯД 2: ПАПКИ ЧАТОВ (Скрыты при поиске или если папок <= 1) ================= */}
       {!isSearchActive && chatFolders.length > 1 && (
         <div
           style={{
@@ -301,7 +363,7 @@ export const SidebarChatsView: React.FC = () => {
             zIndex: 10,
           }}
         >
-          {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ (RecentSearchesBlock) — когда в поле пусто */}
+          {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ (RecentSearchesBlock) — когда строка пуста */}
           {searchText.trim().length === 0 && (
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 5px' }}>
@@ -330,7 +392,14 @@ export const SidebarChatsView: React.FC = () => {
                 </div>
               ) : (
                 recentUsers.map((user) => (
-                  <UserSearchCard key={user.id} user={user} onSelect={() => selectUser(user)} />
+                  <UserSearchCard
+                    key={user.id}
+                    user={user}
+                    onSelect={() => {
+                      selectUser(user);
+                      handleCloseSearch();
+                    }}
+                  />
                 ))
               )}
             </div>
@@ -355,7 +424,14 @@ export const SidebarChatsView: React.FC = () => {
                     </div>
                   ) : (
                     foundUsers.map((user) => (
-                      <UserSearchCard key={user.id} user={user} onSelect={() => selectUser(user)} />
+                      <UserSearchCard
+                        key={user.id}
+                        user={user}
+                        onSelect={() => {
+                          selectUser(user);
+                          handleCloseSearch();
+                        }}
+                      />
                     ))
                   )}
 
@@ -368,7 +444,10 @@ export const SidebarChatsView: React.FC = () => {
                       {foundMessages.map((msg) => (
                         <div
                           key={msg.id || msg.serverId}
-                          onClick={() => jumpToMessage(msg)}
+                          onClick={() => {
+                            jumpToMessage(msg);
+                            handleCloseSearch();
+                          }}
                           style={{
                             padding: '10px 12px',
                             marginBottom: 8,
@@ -494,10 +573,8 @@ export const SidebarChatsView: React.FC = () => {
                           position: 'relative',
                         }}
                       >
-                        {/* Буква-заглушка */}
                         <span>{((chat.isGroup ? chat.groupName : chat.nickName) || 'U').charAt(0).toUpperCase()}</span>
 
-                        {/* Фото (если есть) */}
                         {chatAvatarSrc && (
                           <img
                             src={chatAvatarSrc}
@@ -777,7 +854,6 @@ const UserSearchCard: React.FC<{ user: IUserSearchResult; onSelect: () => void }
         transition: 'background-color 0.15s ease',
       }}
     >
-      {/* Аватар 40x40 */}
       <div
         style={{
           width: 40,
@@ -806,7 +882,6 @@ const UserSearchCard: React.FC<{ user: IUserSearchResult; onSelect: () => void }
         )}
       </div>
 
-      {/* Имя и @username */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {user.nickName || 'User'}
