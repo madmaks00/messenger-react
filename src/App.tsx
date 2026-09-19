@@ -42,6 +42,7 @@ import { useChatStore } from './stores/chatStore';
 import { useSidebarChatsStore } from './stores/sidebarChatsStore';
 import { useTodoStore } from './stores/todoStore';
 import { useNotesStore } from './stores/notesStore';
+import { useSidebarResize } from './hooks/useSidebarResize';
 import { SecurityService } from './services/security.service';
 import { authService } from './services/auth.service';
 import { userService } from './services/user.service';
@@ -58,6 +59,18 @@ export const App: React.FC = () => {
   const { initialize: initTodo } = useTodoStore();
   const { initialize: initNotes } = useNotesStore();
 
+  // 🟢 Логика растягивания и сплиттера 1 в 1 из MainWindow.xaml.cs
+  const {
+    sidebarWidth,
+    sidebarOpacity,
+    isCollapsed,
+    isDragging,
+    isHovered,
+    setIsHovered,
+    onMouseDown,
+    onDoubleClick,
+  } = useSidebarResize();
+
   const [isAppLocked, setIsAppLocked] = useState(SecurityService.isPasscodeSet());
   const [isPasscodeSetupOpen, setIsPasscodeSetupOpen] = useState(false);
 
@@ -73,11 +86,9 @@ export const App: React.FC = () => {
   const [imageEditor, setImageEditor] = useState<{ isOpen: boolean; src: string; onDone?: (res: string) => void }>({ isOpen: false, src: '' });
   const [storyEditor, setStoryEditor] = useState<{ isOpen: boolean; image: string }>({ isOpen: false, image: '' });
 
-  // 1. Инициализация при старте приложения
   useEffect(() => {
     checkAuth(authService, userService).then(async (isAuth) => {
       if (isAuth && !isAppLocked) {
-        console.log('[App] Успешная авторизация, загружаем чаты и модули...');
         await loadChats(chatService, true);
         initTodo();
         initNotes();
@@ -95,9 +106,7 @@ export const App: React.FC = () => {
   }, [isAppLocked]);
 
   useEffect(() => {
-    // 🟢 В ТОЧНОСТИ КАК В C# MainViewModel.cs: реакция на смену аккаунта
     const unbindAccountSwitched = eventBus.on('AccountSwitchedMessage' as any, async () => {
-      console.log('[App] Получено событие AccountSwitchedMessage: перезагружаем чаты, заметки и задачи...');
       await loadChats(chatService, true);
       initTodo();
       initNotes();
@@ -163,6 +172,8 @@ export const App: React.FC = () => {
         color: 'var(--text-primary)',
         fontFamily: "'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
         position: 'relative',
+        cursor: isDragging ? 'col-resize' : 'default',
+        userSelect: isDragging ? 'none' : 'auto',
       }}
     >
       <div
@@ -187,6 +198,7 @@ export const App: React.FC = () => {
         }}
       />
 
+      {/* КОЛОНКА 1: НАВИГАЦИЯ (66px) */}
       <div
         style={{
           width: 66,
@@ -200,9 +212,12 @@ export const App: React.FC = () => {
         <NavigationRail />
       </div>
 
+      {/* КОЛОНКА 2: САЙДБАР С ДИНАМИЧЕСКОЙ ШИРИНОЙ (SidebarColumn & MainSplitter) */}
       <div
         style={{
-          width: 340,
+          width: sidebarWidth,
+          minWidth: isCollapsed ? 6 : undefined,
+          maxWidth: 1100,
           height: '100%',
           backgroundColor: 'var(--bg-list)',
           borderRight: '1px solid var(--divider-color)',
@@ -210,17 +225,65 @@ export const App: React.FC = () => {
           flexDirection: 'column',
           position: 'relative',
           flexShrink: 0,
+          overflow: 'hidden',
+          transition: isDragging ? 'none' : 'width 0.15s ease-out',
         }}
       >
-        {currentTab === MainTab.Chats && <SidebarChatsView />}
-        {currentTab === MainTab.AccountSwitch && <SidebarAccountsView />}
-        {currentTab === MainTab.Notes && <SidebarNotesView />}
-        {currentTab === MainTab.Tasks && <SidebarTasksView />}
-        {currentTab === MainTab.Games && <SidebarGamesView />}
+        {/* Контейнер элементов сайдбара с плавной прозрачностью при сжатии */}
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            opacity: sidebarOpacity,
+            display: isCollapsed ? 'none' : 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          {currentTab === MainTab.Chats && <SidebarChatsView />}
+          {currentTab === MainTab.AccountSwitch && <SidebarAccountsView />}
+          {currentTab === MainTab.Notes && <SidebarNotesView />}
+          {currentTab === MainTab.Tasks && <SidebarTasksView />}
+          {currentTab === MainTab.Games && <SidebarGamesView />}
 
-        <MusicPlayerView />
+          <MusicPlayerView />
+        </div>
+
+        {/* 🟢 СПЛИТТЕР (1 в 1 с MainSplitter из MainWindow.xaml: Width=6, HoverLine=2, Cursor=SizeWE) */}
+        <div
+          onMouseDown={onMouseDown}
+          onDoubleClick={onDoubleClick}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          title="Двойной клик — скрыть/показать панель"
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 6,
+            height: '100%',
+            cursor: 'col-resize',
+            zIndex: 100,
+            background: 'transparent',
+          }}
+        >
+          {/* Синяя линия подсветки HoverLine (Width=2, Opacity 0 -> 1) */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              width: 2,
+              height: '100%',
+              backgroundColor: 'var(--app-accent)',
+              opacity: isHovered || isDragging ? 1 : 0,
+              transition: isDragging ? 'none' : 'opacity 0.15s ease',
+            }}
+          />
+        </div>
       </div>
 
+      {/* КОЛОНКА 3: ОКНО ЧАТА / РАБОЧАЯ ОБЛАСТЬ (flex: 1) */}
       <div
         style={{
           flex: 1,
@@ -230,6 +293,7 @@ export const App: React.FC = () => {
           flexDirection: 'column',
           position: 'relative',
           overflow: 'hidden',
+          minWidth: 430, // 🟢 MinChatWorkspaceWidth = 430 из C#
         }}
       >
         {currentTab === MainTab.Chats && (
@@ -254,6 +318,7 @@ export const App: React.FC = () => {
         )}
       </div>
 
+      {/* ДИАЛОГИ И ОВЕРЛЕИ */}
       {isProfileOpen && currentUser && (
         <ProfileView
           isOpen={isProfileOpen}

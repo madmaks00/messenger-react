@@ -79,18 +79,17 @@ export const NavigationRail: React.FC = () => {
         boxSizing: 'border-box',
       }}
     >
-      {/* ================= ВЕРХ (Смещение на 44px: 24px TitleBarHeight + 20px Margin) ================= */}
+      {/* ================= ВЕРХ (Сверху 20px как было!) ================= */}
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          paddingTop: 44, // 🟢 Точное смещение 24 + 20 из MainWindow.xaml
-          paddingBottom: 10,
+          paddingTop: 20, // 🟢 Сверху вернули 20px
           flexShrink: 0,
         }}
       >
-        {/* 1. Статичный логотип SendVariant с наклоном -20deg и свечением */}
+        {/* 1. Логотип SendVariant */}
         <div
           style={{
             color: '#1E9BEB',
@@ -108,8 +107,8 @@ export const NavigationRail: React.FC = () => {
           <Icon path={mdiSendVariant} size="38px" />
         </div>
 
-        {/* 2. Аватарка: Внешнее кольцо 54x54, внутри фото 46x46 (1 в 1 с WPF) */}
-        <div style={{ position: 'relative', width: 54, height: 54 }}>
+        {/* 2. Аватарка (54x54 внешнее кольцо, 46x46 фото) */}
+        <div style={{ position: 'relative', width: 54, height: 54, marginBottom: 22 /* 🟢 УВЕЛИЧЕН ОТСТУП ПОД АВАТАРКОЙ */ }}>
           <div
             onClick={openProfile}
             title="Open Profile"
@@ -126,7 +125,6 @@ export const NavigationRail: React.FC = () => {
               boxSizing: 'border-box',
             }}
           >
-            {/* Внутренний круг 46x46 строго по XAML */}
             <div
               style={{
                 width: 46,
@@ -140,7 +138,6 @@ export const NavigationRail: React.FC = () => {
                 position: 'relative',
               }}
             >
-              {/* Заглушка (инициалы) */}
               <span
                 style={{
                   color: '#FFFFFF',
@@ -152,7 +149,6 @@ export const NavigationRail: React.FC = () => {
                 {(currentUser?.nickName || currentUser?.username || 'U').charAt(0).toUpperCase()}
               </span>
 
-              {/* Фото */}
               {avatarSrc && (
                 <img
                   src={avatarSrc}
@@ -172,7 +168,7 @@ export const NavigationRail: React.FC = () => {
             </div>
           </div>
 
-          {/* Плюсик на аватарке: 20x20, Margin="0,0,-2,-2", иконка 14px */}
+          {/* Плюсик на аватарке */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -201,8 +197,8 @@ export const NavigationRail: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= ЦЕНТР: ВКЛАДКИ (Margin="0,10,0,0") ================= */}
-      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10, flex: 1 }}>
+      {/* ================= ЦЕНТР: ВКЛАДКИ ================= */}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
         {/* 1. Чаты */}
         <div
           onClick={() => switchTab(MainTab.Chats)}
@@ -284,7 +280,7 @@ export const NavigationRail: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= НИЗ: ДЕЙСТВИЯ (Margin="0,0,0,20") ================= */}
+      {/* ================= НИЗ ================= */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20, marginTop: 'auto', flexShrink: 0 }}>
         {currentTab === MainTab.Chats && (
           <>
@@ -325,7 +321,6 @@ export const NavigationRail: React.FC = () => {
           </button>
         )}
 
-        {/* Кнопка смены темы (анимация поворота -90 to 0) */}
         <button
           onClick={toggleTheme}
           title={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -344,7 +339,6 @@ export const NavigationRail: React.FC = () => {
           </div>
         </button>
 
-        {/* Настройки */}
         <button
           onClick={openProfile}
           title="Settings"
@@ -357,7 +351,6 @@ export const NavigationRail: React.FC = () => {
   );
 };
 
-// 🟢 NavMenuButtonStyle: Height="50", BgHighlight Opacity="0.1"
 const getNavTabStyle = (isActive: boolean): React.CSSProperties => ({
   height: 50,
   width: '100%',
@@ -369,7 +362,6 @@ const getNavTabStyle = (isActive: boolean): React.CSSProperties => ({
   position: 'relative',
 });
 
-// 🟢 ActiveIndicator: Width="4", CornerRadius="2"
 const activeBarIndicatorStyle: React.CSSProperties = {
   position: 'absolute',
   left: 0,
@@ -390,14 +382,12 @@ const unreadDotBadgeStyle: React.CSSProperties = {
   backgroundColor: '#E74C3C',
 };
 
-// 🟢 Разделитель: Height="2", Margin="25,15", Background OtherBubbleBg (#1C212D)
 const railDividerStyle: React.CSSProperties = {
   height: 2,
   backgroundColor: '#1C212D',
   margin: '15px 25px',
 };
 
-// 🟢 NavActionButtonStyle: Height="50"
 const navActionBtnStyle: React.CSSProperties = {
   width: '100%',
   height: 50,
