@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import {
   mdiChatOutline,
   mdiMagnify,
@@ -80,13 +80,32 @@ export const SidebarChatsView: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chat: IChatListItem } | null>(null);
   const [isFolderSubmenuOpen, setIsFolderSubmenuOpen] = useState(false);
 
+  // Состояние оверлейного скроллбара
+  const [isListHovered, setIsListHovered] = useState(false);
+  const [isScrollDragging, setIsScrollDragging] = useState(false);
+  const [isThumbHovered, setIsThumbHovered] = useState(false);
+
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
   const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
 
   const isSearchActive = isSearchInputFocused || searchText.length > 0;
+  const hasFolders = chatFolders && chatFolders.length > 1;
+
+  // Динамический замер высоты контейнера для точного позиционирования ползунка
+  useEffect(() => {
+    const updateViewport = () => {
+      if (containerRef.current) {
+        setViewportHeight(containerRef.current.clientHeight);
+      }
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, [containerRef]);
 
   const handleCloseSearch = () => {
     setSearchText('');
@@ -120,10 +139,53 @@ export const SidebarChatsView: React.FC = () => {
   }, [allChats, selectedFolderId, chatFolders]);
 
   const totalHeight = filteredChats.length * ITEM_HEIGHT;
-  const viewportHeight = 650;
   const firstIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - 2);
   const lastIndex = Math.min(filteredChats.length - 1, Math.ceil((scrollTop + viewportHeight) / ITEM_HEIGHT) + 2);
   const visibleChats = filteredChats.slice(firstIndex, lastIndex + 1);
+
+  // Расчет плавающего ползунка (1 в 1 с WPF ScrollViewer)
+  const isScrollable = totalHeight > viewportHeight;
+  const thumbHeight = useMemo(() => {
+    if (!isScrollable || viewportHeight <= 0) return 0;
+    return Math.max(25, (viewportHeight / totalHeight) * viewportHeight);
+  }, [isScrollable, viewportHeight, totalHeight]);
+
+  const thumbTop = useMemo(() => {
+    if (!isScrollable || totalHeight <= viewportHeight) return 0;
+    const maxScroll = totalHeight - viewportHeight;
+    const maxThumbTravel = viewportHeight - thumbHeight;
+    return (scrollTop / maxScroll) * maxThumbTravel;
+  }, [isScrollable, totalHeight, viewportHeight, thumbHeight, scrollTop]);
+
+  // Перетаскивание кастомного ползунка мышкой
+  const handleThumbMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsScrollDragging(true);
+
+    const startY = e.clientY;
+    const startScrollTop = scrollTop;
+    const scrollableRange = totalHeight - viewportHeight;
+    const thumbTravelRange = viewportHeight - thumbHeight;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (thumbTravelRange <= 0) return;
+      const deltaY = moveEvent.clientY - startY;
+      const scrollDelta = (deltaY / thumbTravelRange) * scrollableRange;
+      if (containerRef.current) {
+        containerRef.current.scrollTop = Math.max(0, Math.min(scrollableRange, startScrollTop + scrollDelta));
+      }
+    };
+
+    const onMouseUp = () => {
+      setIsScrollDragging(false);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
 
   const getLastMessageIcon = (type: LastMessageType | undefined) => {
     switch (type) {
@@ -175,12 +237,12 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 1: СТРОКА ПОИСКА (🟢 1 в 1 Margin="6,0,6,0", растянута по краям, 0px снизу) ================= */}
+      {/* ================= РЯД 1: СТРОКА ПОИСКА (Height="40", CornerRadius="12", Padding="0,12") ================= */}
       <div
         style={{
-          margin: '0 6px 0 6px', // 👈 1 в 1 как WPF Margin="6,0,6,0" (слева 6, сверху 0, справа 6, снизу 0)
+          margin: hasFolders ? '0 6px 2px 6px' : '0 6px 8px 6px',
           zIndex: 15,
-          transform: isSearchActive ? 'translateY(-52px)' : 'translateY(0)', // 👈 -52px строго по Storyboard SearchBoxTransform To="-52"
+          transform: isSearchActive ? 'translateY(-52px)' : 'translateY(0)',
           transition: isSearchActive ? `transform 250ms ${CUBIC_EASE_OUT}` : `transform 220ms ${CUBIC_EASE_OUT}`,
           flexShrink: 0,
           boxSizing: 'border-box',
@@ -188,21 +250,19 @@ export const SidebarChatsView: React.FC = () => {
       >
         <div
           style={{
-            height: 36,
+            height: 34,
             backgroundColor: isSearchInputFocused ? 'var(--sidebar-search-focus-bg)' : 'var(--sidebar-search-bg)',
-            borderRadius: 10,
+            borderRadius: 9,
             display: 'flex',
             alignItems: 'center',
-            padding: '0 10px',
+            padding: '0 12px',
             border: '1.2px solid transparent',
             boxSizing: 'border-box',
             transition: 'background-color 0.15s ease',
           }}
         >
-          {/* Иконка Magnify 18x18 Margin="0,0,10,0" */}
           <MdiIcon path={mdiMagnify} size={18} color="#8E95A5" style={{ marginRight: 10 }} />
 
-          {/* Поле ввода: аналог Grid.Column="1" Width="*" — занимает 100% оставшейся ширины */}
           <input
             ref={searchInputRef}
             type="text"
@@ -222,19 +282,18 @@ export const SidebarChatsView: React.FC = () => {
               border: 'none',
               outline: 'none',
               color: '#FFFFFF',
-              fontSize: 14, // 👈 1 в 1 как FontSize="14" в XAML
+              fontSize: 14,
               padding: 0,
               margin: 0,
               fontFamily: "'Segoe UI', -apple-system, sans-serif",
             }}
           />
 
-          {/* Кнопка сброса: аналог Visibility="Collapsed" — при скрытии занимает ровно 0px */}
           {isSearchActive && (
             <button
               onClick={handleCloseSearch}
               style={{
-                width: 24, // 👈 1 в 1 как в XAML Width="24" Height="24"
+                width: 24,
                 height: 24,
                 background: 'transparent',
                 border: 'none',
@@ -253,15 +312,16 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 2: ПАПКИ ЧАТОВ (🟢 Высота 45px, 0px верхний отступ сетки) ================= */}
-      {chatFolders.length > 1 && (
+      {/* ================= РЯД 2: ПАПКИ ЧАТОВ ================= */}
+      {hasFolders && (
         <div
           style={{
-            height: 45, // 👈 1 в 1 как Grid Height="45" в WPF
+            height: 45,
             minHeight: 45,
             display: 'flex',
             alignItems: 'center',
-            padding: '5px 10px 0 10px', // 👈 5px сверху как Margin="0,5,0,0" у ItemsControl
+            padding: '5px 10px 0 10px',
+            marginBottom: 4,
             opacity: isSearchActive ? 0 : 1,
             pointerEvents: isSearchActive ? 'none' : 'auto',
             transition: isSearchActive ? 'opacity 150ms ease-out' : 'opacity 200ms ease-out',
@@ -279,7 +339,7 @@ export const SidebarChatsView: React.FC = () => {
                 onClick={() => selectFolder(folder.id)}
                 style={{
                   position: 'relative',
-                  height: 35, // 👈 Height="35" из XAML FolderTabStyle
+                  height: 35,
                   padding: folder.isSystem ? '0 12px' : '0 12px 0 6px',
                   marginRight: 4,
                   fontSize: 14.5,
@@ -315,234 +375,283 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       )}
 
-      {/* ================= РЯД 3: СПИСОК ЧАТОВ ================= */}
+      {/* ================= РЯД 3: СПИСОК ЧАТОВ + ОВЕРЛЕЙНЫЙ СКРОЛЛБАР ================= */}
       <div
-        ref={containerRef}
-        className="wpf-scroll-viewer"
-        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        onMouseEnter={() => setIsListHovered(true)}
+        onMouseLeave={() => setIsListHovered(false)}
         style={{
           flex: 1,
           width: '100%',
           position: 'relative',
+          overflow: 'hidden',
           opacity: isSearchActive ? 0 : 1,
           pointerEvents: isSearchActive ? 'none' : 'auto',
           transition: isSearchActive ? 'opacity 150ms ease-out' : 'opacity 200ms ease-out',
         }}
       >
-        {filteredChats.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '140px 20px 0 20px' }}>
-            <div
-              style={{
-                width: 80,
-                height: 80,
-                borderRadius: 40,
-                backgroundColor: 'var(--sidebar-search-bg)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: 15,
-              }}
-            >
-              <MdiIcon path={mdiMessageTextOutline} size={40} color="var(--text-muted)" style={{ opacity: 0.5 }} />
+        {/* Контейнер скролла со скрытой нативной полосой */}
+        <div
+          ref={containerRef}
+          className="wpf-scroll-viewer"
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          style={{
+            width: '100%',
+            height: '100%',
+            overflowY: 'auto',
+          }}
+        >
+          {filteredChats.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '140px 20px 0 20px' }}>
+              <div
+                style={{
+                  width: 80,
+                  height: 80,
+                  borderRadius: 40,
+                  backgroundColor: 'var(--sidebar-search-bg)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 15,
+                }}
+              >
+                <MdiIcon path={mdiMessageTextOutline} size={40} color="var(--text-muted)" style={{ opacity: 0.5 }} />
+              </div>
+              <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>No Chats</span>
             </div>
-            <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>No Chats</span>
-          </div>
-        ) : (
-          <div style={{ height: `${totalHeight}px`, position: 'relative', width: '100%' }}>
-            {visibleChats.map((chat, idx) => {
-              const actualIndex = firstIndex + idx;
-              const topOffset = actualIndex * ITEM_HEIGHT;
-              const key = getChatKey(chat);
-              const isSelected = selectedChatUser?.id === (chat.isGroup ? chat.groupId : chat.userId);
-              const isHovered = hoveredChatKey === key;
+          ) : (
+            <div style={{ height: `${totalHeight}px`, position: 'relative', width: '100%' }}>
+              {visibleChats.map((chat, idx) => {
+                const actualIndex = firstIndex + idx;
+                const topOffset = actualIndex * ITEM_HEIGHT;
+                const key = getChatKey(chat);
+                const isSelected = selectedChatUser?.id === (chat.isGroup ? chat.groupId : chat.userId);
+                const isHovered = hoveredChatKey === key;
 
-              const rawText = chat.lastMessage || (chat as any).rawLastMessage || '';
-              const [preview, computedMsgType] = MessagePreviewHelper.formatPreview(
-                rawText,
-                (chat as any).lastAttachmentType ?? chat.lastMessageType,
-                (chat as any).lastMessageSenderId ?? chat.userId,
-                0,
-                chat.isLastMessageDeletedForMe,
-                chat.isGroup,
-                chat.isChannel,
-                (chat as any).isLastAttachmentGif
-              );
+                const rawText = chat.lastMessage || (chat as any).rawLastMessage || '';
+                const [preview, computedMsgType] = MessagePreviewHelper.formatPreview(
+                  rawText,
+                  (chat as any).lastAttachmentType ?? chat.lastMessageType,
+                  (chat as any).lastMessageSenderId ?? chat.userId,
+                  0,
+                  chat.isLastMessageDeletedForMe,
+                  chat.isGroup,
+                  chat.isChannel,
+                  (chat as any).isLastAttachmentGif
+                );
 
-              const msgIcon = getLastMessageIcon(chat.lastMessageType || computedMsgType);
-              const avatarRaw = chat.avatarPath || (chat as any).avatar;
-              const chatAvatarSrc = normalizeAvatarUrl(avatarRaw);
+                const msgIcon = getLastMessageIcon(chat.lastMessageType || computedMsgType);
+                const avatarRaw = chat.avatarPath || (chat as any).avatar;
+                const chatAvatarSrc = normalizeAvatarUrl(avatarRaw);
 
-              return (
-                <div
-                  key={key}
-                  onClick={() => openChat(chat)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setIsFolderSubmenuOpen(false);
-                    setContextMenu({ x: e.clientX, y: e.clientY, chat });
-                  }}
-                  onMouseEnter={() => setHoveredChatKey(key)}
-                  onMouseLeave={() => setHoveredChatKey(null)}
-                  style={{
-                    position: 'absolute',
-                    top: `${topOffset}px`,
-                    left: 8,
-                    right: 0,
-                    height: `${ITEM_HEIGHT}px`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '10px 15px',
-                    borderRadius: 12,
-                    cursor: 'pointer',
-                    backgroundColor: isSelected ? 'var(--chat-item-active)' : isHovered ? 'var(--chat-item-hover)' : 'transparent',
-                    boxSizing: 'border-box',
-                    transition: 'background-color 0.12s ease',
-                  }}
-                >
-                  {/* Аватар 46x46 */}
-                  <div style={{ position: 'relative', width: 46, height: 46, marginRight: 12, flexShrink: 0 }}>
-                    <div
-                      style={{
-                        width: 46,
-                        height: 46,
-                        borderRadius: 23,
-                        backgroundColor: getAvatarColor(chat.isGroup ? chat.groupId || 0 : chat.userId || 0),
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#FFFFFF',
-                        fontWeight: 600,
-                        fontSize: 16,
-                        overflow: 'hidden',
-                        position: 'relative',
-                      }}
-                    >
-                      <span>{((chat.isGroup ? chat.groupName : chat.nickName) || 'U').charAt(0).toUpperCase()}</span>
+                return (
+                  <div
+                    key={key}
+                    onClick={() => openChat(chat)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setIsFolderSubmenuOpen(false);
+                      setContextMenu({ x: e.clientX, y: e.clientY, chat });
+                    }}
+                    onMouseEnter={() => setHoveredChatKey(key)}
+                    onMouseLeave={() => setHoveredChatKey(null)}
+                    style={{
+                      position: 'absolute',
+                      top: `${topOffset}px`,
+                      left: 8,
+                      right: 8, // 🟢 Фиксировано: 8px слева, 8px справа
+                      height: `${ITEM_HEIGHT}px`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '10px 15px',
+                      borderRadius: 12,
+                      cursor: 'pointer',
+                      backgroundColor: isSelected ? 'var(--chat-item-active)' : isHovered ? 'var(--chat-item-hover)' : 'transparent',
+                      boxSizing: 'border-box',
+                      transition: 'background-color 0.12s ease',
+                    }}
+                  >
+                    {/* Аватар 46x46 */}
+                    <div style={{ position: 'relative', width: 46, height: 46, marginRight: 12, flexShrink: 0 }}>
+                      <div
+                        style={{
+                          width: 46,
+                          height: 46,
+                          borderRadius: 23,
+                          backgroundColor: getAvatarColor(chat.isGroup ? chat.groupId || 0 : chat.userId || 0),
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#FFFFFF',
+                          fontWeight: 600,
+                          fontSize: 16,
+                          overflow: 'hidden',
+                          position: 'relative',
+                        }}
+                      >
+                        <span>{((chat.isGroup ? chat.groupName : chat.nickName) || 'U').charAt(0).toUpperCase()}</span>
 
-                      {chatAvatarSrc && (
-                        <img
-                          src={chatAvatarSrc}
-                          alt=""
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
+                        {chatAvatarSrc && (
+                          <img
+                            src={chatAvatarSrc}
+                            alt=""
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      {chat.isOnline && !chat.isGroup && (
+                        <div
                           style={{
                             position: 'absolute',
-                            inset: 0,
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
+                            bottom: 0,
+                            right: 0,
+                            width: 12,
+                            height: 12,
+                            borderRadius: 6,
+                            backgroundColor: '#4CAF50',
+                            border: '2px solid var(--sidebar-search-bg)',
                           }}
                         />
                       )}
+
+                      {chat.isGroup && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: -3,
+                            right: -3,
+                            width: 20,
+                            height: 20,
+                            borderRadius: 9,
+                            backgroundColor: 'var(--app-accent)',
+                            border: '2px solid var(--sidebar-search-bg)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#FFFFFF',
+                          }}
+                        >
+                          <MdiIcon path={chat.isChannel ? mdiBullhornOutline : mdiAccountGroup} size={12} color="#FFFFFF" />
+                        </div>
+                      )}
                     </div>
 
-                    {chat.isOnline && !chat.isGroup && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: 0,
-                          right: 0,
-                          width: 12,
-                          height: 12,
-                          borderRadius: 6,
-                          backgroundColor: '#4CAF50',
-                          border: '2px solid var(--sidebar-search-bg)',
-                        }}
-                      />
-                    )}
-
-                    {chat.isGroup && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: -3,
-                          right: -3,
-                          width: 20,
-                          height: 20,
-                          borderRadius: 9,
-                          backgroundColor: 'var(--app-accent)',
-                          border: '2px solid var(--sidebar-search-bg)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#FFFFFF',
-                        }}
-                      >
-                        <MdiIcon path={chat.isChannel ? mdiBullhornOutline : mdiAccountGroup} size={12} color="#FFFFFF" />
+                    {/* Текстовая информация */}
+                    <div style={{ flex: 1, minWidth: 0, marginRight: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+                        {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
+                        <span
+                          style={{
+                            color: '#FFFFFF',
+                            fontSize: 15,
+                            fontWeight: 600,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {chat.isGroup ? chat.groupName : chat.nickName}
+                        </span>
                       </div>
-                    )}
-                  </div>
 
-                  {/* Текстовая информация */}
-                  <div style={{ flex: 1, minWidth: 0, marginRight: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                      {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
-                      <span
-                        style={{
-                          color: '#FFFFFF',
-                          fontSize: 15,
-                          fontWeight: 600,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {chat.isGroup ? chat.groupName : chat.nickName}
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {msgIcon && <MdiIcon path={msgIcon} size={14} color="var(--text-muted)" />}
-                      <span
-                        style={{
-                          color: 'var(--text-muted)',
-                          fontSize: 13,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          lineHeight: '1.2',
-                        }}
-                      >
-                        {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : (preview || rawText || '')}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Время и бейдж */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', flexShrink: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {chat.isMuted && <MdiIcon path={mdiBellOffOutline} size={14} color="var(--text-muted)" />}
-                      {chat.isPinned && <MdiIcon path={mdiPin} size={14} color="var(--text-muted)" style={{ transform: 'rotate(45deg)' }} />}
-                      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                        {chat.lastMessageTime ? new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                      </span>
-                    </div>
-
-                    {chat.unreadCount > 0 && (
-                      <div
-                        style={{
-                          marginTop: 5,
-                          backgroundColor: chat.isMuted ? '#6C757D' : 'var(--app-accent)',
-                          color: '#FFFFFF',
-                          borderRadius: 10,
-                          minWidth: 20,
-                          height: 20,
-                          padding: '0 5px',
-                          fontSize: 11,
-                          fontWeight: 'bold',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        {chat.unreadCount}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {msgIcon && <MdiIcon path={msgIcon} size={14} color="var(--text-muted)" />}
+                        <span
+                          style={{
+                            color: 'var(--text-muted)',
+                            fontSize: 13,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            lineHeight: '1.2',
+                          }}
+                        >
+                          {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : (preview || rawText || '')}
+                        </span>
                       </div>
-                    )}
+                    </div>
+
+                    {/* Время и бейдж */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {chat.isMuted && <MdiIcon path={mdiBellOffOutline} size={14} color="var(--text-muted)" />}
+                        {chat.isPinned && <MdiIcon path={mdiPin} size={14} color="var(--text-muted)" style={{ transform: 'rotate(45deg)' }} />}
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                          {chat.lastMessageTime ? new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </div>
+
+                      {chat.unreadCount > 0 && (
+                        <div
+                          style={{
+                            marginTop: 5,
+                            backgroundColor: chat.isMuted ? '#6C757D' : 'var(--app-accent)',
+                            color: '#FFFFFF',
+                            borderRadius: 10,
+                            minWidth: 20,
+                            height: 20,
+                            padding: '0 5px',
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {chat.unreadCount}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 🟢 НАСТОЯЩИЙ ПЛАВАЮЩИЙ СКРОЛЛБАР ИЗ WPF App.xaml (HorizontalAlignment="Right", Width="4", Opacity 0 -> 1) */}
+        {isScrollable && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 2,
+              bottom: 0,
+              width: 4,
+              zIndex: 30,
+              pointerEvents: isListHovered || isScrollDragging ? 'auto' : 'none',
+            }}
+          >
+            <div
+              onMouseDown={handleThumbMouseDown}
+              onMouseEnter={() => setIsThumbHovered(true)}
+              onMouseLeave={() => setIsThumbHovered(false)}
+              style={{
+                position: 'absolute',
+                top: `${thumbTop}px`,
+                right: 0,
+                width: 4,
+                height: `${thumbHeight}px`,
+                borderRadius: 3,
+                backgroundColor: isScrollDragging
+                  ? 'rgba(255, 255, 255, 0.6)' // WPF: #99FFFFFF при перетаскивании
+                  : isThumbHovered
+                  ? 'rgba(255, 255, 255, 0.4)' // WPF: #66FFFFFF при наведении на ползунок
+                  : 'rgba(255, 255, 255, 0.3)', // WPF: #4DFFFFFF в покое
+                opacity: isListHovered || isScrollDragging ? 1 : 0,
+                transition: isScrollDragging ? 'none' : 'opacity 0.2s ease, background-color 0.15s ease',
+                cursor: 'pointer',
+              }}
+            />
           </div>
         )}
       </div>
@@ -552,7 +661,7 @@ export const SidebarChatsView: React.FC = () => {
         className="wpf-scroll-viewer"
         style={{
           position: 'absolute',
-          top: 48,
+          top: 52,
           left: 0,
           right: 0,
           bottom: 0,

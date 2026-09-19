@@ -1,42 +1,58 @@
 :root {
-  /* Основные акценты */
+  /* ================= ОСНОВНЫЕ АКЦЕНТЫ (ResourceDictionary) ================= */
   --color-accent: #1E9BEB;
+  --app-accent: #1E9BEB;         /* Алиас для совместимости с кодом компонентов */
   --tg-accent: #00AFF4;
   --accent-muted: #155B8A;
   --text-muted: #7D8494;
+  --text-primary: #FFFFFF;
 
-  /* Фоны колонок MainWindow */
+  /* ================= ФОНЫ КОЛОНОК MAINWINDOW ================= */
   --bg-nav: #0F1319;
   --bg-list: #161A23;
   --bg-chat: #11141B;
   --divider-color: #1E232F;
 
-  /* Баблы сообщений */
+  /* ================= БАБЛЫ СООБЩЕНИЙ ================= */
   --my-bubble-bg: #16699B;
   --other-bubble-bg: #1C212D;
   --bubble-received: #232836;
   --my-time-color: rgba(255, 255, 255, 0.7);
   --other-time-color: #6B7B8C;
 
-  /* Оверлеи и диалоги */
+  /* ================= ОВЕРЛЕИ И ДИАЛОГИ ================= */
   --overlay-backdrop: rgba(0, 0, 0, 0.5);
   --modal-container-bg: #161A23;
   --passcode-overlay: #0C1017;
   --destructive-action: #FF3B30;
 
-  /* Поля ввода и поиск */
-  --input-border: #232836;
+  /* ================= ПОЛЯ ВВОДА И ПОИСК В САЙДБАРЕ ================= */
+  --input-border: #2A303C;
+  --input-area-bg: #1C212D;
   --sidebar-search-bg: #1C212D;
   --sidebar-search-focus-bg: #232836;
 
-  /* Индикаторы */
-  --unread-badge: #E74C3C;
-  --online-indicator: #4CAF50;
+  /* ================= КАРТОЧКИ ЧАТОВ (WPF Hover / Active) ================= */
   --active-chat-highlight: #232836;
   --hover-chat-highlight: #1C212D;
+  --chat-item-active: #232836;   /* Алиас для SidebarChatsView */
+  --chat-item-hover: #1C212D;    /* Алиас для SidebarChatsView */
+
+  /* ================= КОНТЕКСТНЫЕ МЕНЮ И ПОПАПЫ ================= */
+  --context-menu-bg: #1C212D;
+  --context-menu-border: #2A303C;
+  --context-menu-hover: #232A3B;
+
+  /* ================= ИНДИКАТОРЫ ================= */
+  --unread-badge: #E74C3C;
+  --online-indicator: #4CAF50;
 }
 
 /* Глобальный сброс для точного совпадения со шрифтами WPF */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -48,21 +64,69 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Кастомный тонкий плавный скроллбар (как в ScrollViewer WPF) */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+/* ================= КАСТОМНЫЙ СКРОЛЛЕР 1 В 1 ИЗ WPF ScrollViewer =================
+   В WPF скроллбар:
+   1. Не занимает физического места (парит поверх контента: overflow-y: overlay)
+   2. В покое полностью прозрачен (Opacity = 0)
+   3. Появляется плавно только при наведении мыши на список (0.15s)
+*/
+.wpf-scroll-viewer {
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE / Edge */
 }
 
-::-webkit-scrollbar-track {
+.wpf-scroll-viewer:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+.wpf-scroll-viewer::-webkit-scrollbar {
+  display: none !important; /* Chrome / Edge / Electron */
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.wpf-scroll-viewer::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+/* В покое полоска невидима */
+.wpf-scroll-viewer::-webkit-scrollbar-thumb {
+  background: transparent;
   border-radius: 3px;
+  transition: background 0.25s ease;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4);
+/* При наведении на список чатов проявляется полупрозрачный белый (#4DFFFFFF) */
+.wpf-scroll-viewer:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.wpf-scroll-viewer::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4); /* #66FFFFFF */
+}
+
+.wpf-scroll-viewer::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.6); /* #99FFFFFF */
+}
+
+/* Плейсхолдер поиска */
+.wpf-search-input::placeholder {
+  color: #7D8494 !important;
+  opacity: 1 !important;
+  font-size: 14px !important;
+}
+
+/* Анимация пульсации красной точки записи голосового */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
 }
