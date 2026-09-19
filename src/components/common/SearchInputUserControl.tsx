@@ -1,61 +1,81 @@
-// src/components/common/SearchInputUserControl.tsx
-import React from 'react';
+import React, { useState } from 'react';
+import { mdiMagnify, mdiCloseCircle } from '@mdi/js';
 
 interface SearchInputProps {
   text: string;
-  hintText?: string;
-  searchBackground?: string;
-  onChange?: (value: string) => void;
-  clearCommand?: () => void;
+  hintText: string;
+  onChange: (val: string) => void;
+  onClear?: () => void;
+  margin?: string;
 }
 
 export const SearchInputUserControl: React.FC<SearchInputProps> = ({
   text,
-  hintText = 'Search...',
-  searchBackground = 'rgba(255, 255, 255, 0.05)',
+  hintText,
   onChange,
-  clearCommand,
+  onClear,
+  margin = '0 6px 10px 6px',
 }) => {
-  const handleClear = () => {
-    onChange?.('');
-    clearCommand?.();
-  };
+  const [isFocused, setIsFocused] = useState(false);
 
   return (
-    <div
-      style={{
-        backgroundColor: searchBackground,
-        borderRadius: 8,
-        height: 36,
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 10px',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-      }}
-    >
-      <span style={{ color: '#94A3B8', fontSize: 14, marginRight: 8 }}>🔍</span>
-      <input
-        type="text"
-        placeholder={hintText}
-        value={text}
-        onChange={(e) => onChange?.(e.target.value)}
+    <div style={{ margin, boxSizing: 'border-box', flexShrink: 0 }}>
+      <div
         style={{
-          flex: 1,
-          background: 'transparent',
-          border: 'none',
-          outline: 'none',
-          color: '#FFFFFF',
-          fontSize: 14,
+          height: 40,
+          backgroundColor: isFocused ? 'var(--sidebar-search-focus-bg)' : 'var(--sidebar-search-bg)',
+          borderRadius: 12,
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 12px',
+          border: '1.2px solid transparent',
+          boxSizing: 'border-box',
+          transition: 'background-color 0.15s ease',
         }}
-      />
-      {text && (
-        <button
-          onClick={handleClear}
-          style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 13, padding: 0 }}
-        >
-          ✕
-        </button>
-      )}
+      >
+        <svg viewBox="0 0 24 24" width={18} height={18} fill="var(--text-muted)" style={{ marginRight: 10, flexShrink: 0 }}>
+          <path d={mdiMagnify} />
+        </svg>
+
+        <input
+          type="text"
+          value={text}
+          placeholder={hintText}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            color: 'var(--sidebar-search-text)',
+            fontSize: 14,
+            width: '100%',
+            fontFamily: 'Segoe UI, sans-serif',
+          }}
+        />
+
+        {text.length > 0 && (
+          <button
+            onClick={() => {
+              onChange('');
+              onClear?.();
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <svg viewBox="0 0 24 24" width={18} height={18} fill="var(--text-muted)">
+              <path d={mdiCloseCircle} />
+            </svg>
+          </button>
+        )}
+      </div>
     </div>
   );
 };

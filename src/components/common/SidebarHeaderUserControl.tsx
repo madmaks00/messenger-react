@@ -1,15 +1,14 @@
-// src/components/common/SidebarHeaderUserControl.tsx
 import React from 'react';
 
 interface SidebarHeaderProps {
   title: string;
-  iconKind?: string;
+  iconPath?: string;
   rightContent?: React.ReactNode;
 }
 
 export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
   title,
-  iconKind,
+  iconPath,
   rightContent,
 }) => {
   return (
@@ -21,16 +20,41 @@ export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
         alignItems: 'center',
         justifyContent: 'space-between',
         userSelect: 'none',
+        boxSizing: 'border-box',
+        flexShrink: 0,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {iconKind && <span style={{ fontSize: 24 }}>📑</span>}
-        <h2 style={{ fontSize: 25, fontWeight: 900, color: '#FFFFFF', margin: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+        {iconPath && (
+          <svg
+            viewBox="0 0 24 24"
+            width={28}
+            height={28}
+            fill="#FFFFFF"
+            style={{ marginRight: 10, flexShrink: 0 }}
+          >
+            <path d={iconPath} />
+          </svg>
+        )}
+        <span
+          style={{
+            color: '#FFFFFF',
+            fontSize: 25,
+            fontWeight: 800,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
           {title}
-        </h2>
+        </span>
       </div>
 
-      {rightContent && <div>{rightContent}</div>}
+      {rightContent && (
+        <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
+          {rightContent}
+        </div>
+      )}
     </div>
   );
 };

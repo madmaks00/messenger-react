@@ -48,11 +48,12 @@ export interface ITodoList {
   iconKind: string;
   iconColor: string;
   uncompletedCount: number;
-  urgencyLevel: number; // 0 = Red (<=3h), 1 = Yellow (<=24h), 2 = Green, 3 = Gray
+  urgencyLevel: number;
   urgencyColor: string;
   isSelected?: boolean;
   isEditing?: boolean;
   editingName?: string;
+  tasks?: ITodoTask[];
 }
 
 interface TodoState {
@@ -66,14 +67,12 @@ interface TodoState {
   hasDueTasks: boolean;
   isAiParseEnabled: boolean;
 
-  // Форма новой задачи
   newTaskText: string;
   newTaskDueDate: string | null;
   newTaskCategoryString: string;
   newTaskPriorityString: string;
   newTaskStatusString: string;
 
-  // Actions
   initialize: () => Promise<void>;
   selectTaskList: (list: ITodoList) => void;
   setTaskFilter: (filter: string) => void;
@@ -86,7 +85,6 @@ interface TodoState {
   setNewTaskStatusString: (status: string) => void;
   toggleAiParse: () => void;
 
-  // Task CRUD & AI
   addTask: () => Promise<void>;
   updateTask: (task: ITodoTask) => Promise<void>;
   deleteTask: (taskId: number) => Promise<void>;
@@ -96,7 +94,6 @@ interface TodoState {
   acceptDraftSubtasks: (task: ITodoTask) => Promise<void>;
   rejectDraftSubtasks: (task: ITodoTask) => void;
 
-  // List CRUD
   createNewTaskList: () => Promise<void>;
   deleteTaskList: (list: ITodoList) => Promise<void>;
   beginEditList: (listId: number) => void;
@@ -131,23 +128,55 @@ export const useTodoStore = create<TodoState>((set, get) => ({
 
   initialize: async () => {
     try {
-      const [listsRes, tasksRes] = await Promise.all([
-        apiClient.get<ITodoList[]>('api/Todo/lists').catch(() => ({ data: [] })),
-        apiClient.get<ITodoTask[]>('api/Todo/tasks').catch(() => ({ data: [] })),
-      ]);
+      // 🟢 ВЫЗОВ ЭНДПОИНТА ИЗ C# TodoService.cs: "api/Tasks/sync"
+      const res = await apiClient.get<any[]>('api/Tasks/sync');
+      const serverLists = res.data || [];
 
-      const lists: ITodoList[] = listsRes.data || [];
-      const tasks: ITodoTask[] = tasksRes.data || [];
+      const parsedLists: ITodoList[] = [];
+      const allExtractedTasks: ITodoTask[] = [];
 
-      set({ myTaskLists: lists });
-      refreshBadgesAndDeadlines(lists, tasks, set);
+      for (const sList of serverLists) {
+        const listObj: ITodoList = {
+          localId: sList.serverId || sList.id || Date.now() + Math.random(),
+          serverId: sList.serverId || sList.id,
+          listName: sList.listName || 'Untitled List',
+          iconKind: sList.iconKind || 'ClipboardListOutline',
+          iconColor: sList.iconColor || '#8B95A5',
+          uncompletedCount: 0,
+          urgencyLevel: 3,
+          urgencyColor: '#6B7280',
+        };
 
-      // По умолчанию открываем My Day
-      if (!get().selectedTaskList) {
+        if (sList.tasks && Array.isArray(sList.tasks)) {
+          for (const sTask of sList.tasks) {
+            allExtractedTasks.push({
+              localId: sTask.serverId || sTask.id || Date.now() + Math.random(),
+              serverId: sTask.serverId || sTask.id,
+              localListId: listObj.localId,
+              title: sTask.title || 'Untitled Task',
+              description: sTask.description || '',
+              isCompleted: Boolean(sTask.isCompleted),
+              dueDate: sTask.dueDate || null,
+              priority: sTask.priority || 'None',
+              status: sTask.status || 'Todo',
+              category: sTask.category || 'None',
+            });
+          }
+        }
+        parsedLists.push(listObj);
+      }
+
+      set({ myTaskLists: parsedLists });
+      refreshBadgesAndDeadlines(parsedLists, allExtractedTasks, set);
+
+      // Открываем первый проект или смарт-список
+      if (parsedLists.length > 0) {
+        get().selectTaskList(parsedLists[0]);
+      } else {
         get().selectTaskList(get().smartTaskLists[0]);
       }
     } catch (e) {
-      console.error('[TodoStore] Ошибка инициализации:', e);
+      console.error('[TodoStore] Ошибка синхронизации api/Tasks/sync:', e);
     }
   },
 
@@ -157,16 +186,9 @@ export const useTodoStore = create<TodoState>((set, get) => ({
       myTaskLists: state.myTaskLists.map((l) => ({ ...l, isSelected: l.localId === list.localId })),
       smartTaskLists: state.smartTaskLists.map((l) => ({ ...l, isSelected: l.localId === list.localId })),
     }));
-    refreshTasksUI(list, get().currentTaskFilter, set);
   },
 
-  setTaskFilter: (filter) => {
-    set({ currentTaskFilter: filter });
-    if (get().selectedTaskList) {
-      refreshTasksUI(get().selectedTaskList!, filter, set);
-    }
-  },
-
+  setTaskFilter: (filter) => set({ currentTaskFilter: filter }),
   setTaskSearchText: (text) => set({ taskSearchText: text }),
   setListSearchText: (text) => set({ listSearchText: text }),
   setNewTaskText: (text) => set({ newTaskText: text }),
@@ -177,81 +199,71 @@ export const useTodoStore = create<TodoState>((set, get) => ({
   toggleAiParse: () => set((state) => ({ isAiParseEnabled: !state.isAiParseEnabled })),
 
   addTask: async () => {
-    const { newTaskText, selectedTaskList, isAiParseEnabled, newTaskDueDate, newTaskCategoryString, newTaskPriorityString, newTaskStatusString } = get();
+    const { newTaskText, selectedTaskList, newTaskDueDate, newTaskCategoryString, newTaskPriorityString, newTaskStatusString } = get();
     if (!newTaskText.trim() || !selectedTaskList) return;
 
     const input = newTaskText.trim();
     set({ newTaskText: '' });
 
-    let parsedTitle = input;
-    let dueDate: string | null = newTaskDueDate;
-    let category: TaskCategory = (newTaskCategoryString !== 'Auto' ? newTaskCategoryString : 'None') as TaskCategory;
-    let priority: TaskPriority = (newTaskPriorityString !== 'None' ? newTaskPriorityString : 'None') as TaskPriority;
-
-    if (isAiParseEnabled) {
-      try {
-        const aiRes = await apiClient.post<{ title: string; dueDate?: string; category?: string; priority?: string }>('api/Todo/ai-parse', { text: input });
-        if (aiRes.data) {
-          if (aiRes.data.title) parsedTitle = aiRes.data.title;
-          if (aiRes.data.dueDate) dueDate = aiRes.data.dueDate;
-          if (aiRes.data.category) category = aiRes.data.category as TaskCategory;
-          if (aiRes.data.priority) priority = aiRes.data.priority as TaskPriority;
-        }
-      } catch {}
-    }
-
-    if (selectedTaskList.localId === -1) dueDate = new Date().toISOString().split('T')[0];
-    if (selectedTaskList.localId === -2) priority = 'High';
-
-    let targetListId = selectedTaskList.localId;
+    let targetListId = selectedTaskList.serverId || selectedTaskList.localId;
     if (targetListId < 0) {
-      targetListId = get().myTaskLists[0]?.localId || 1;
+      targetListId = get().myTaskLists[0]?.serverId || 1;
     }
 
-    const newTask: ITodoTask = {
-      localId: Date.now(),
-      localListId: targetListId,
-      title: parsedTitle,
-      dueDate,
-      category,
-      priority,
-      status: (newTaskStatusString as TaskStatus) || 'Todo',
-      isCompleted: false,
+    const payload = {
+      listId: targetListId,
+      title: input,
+      dueDate: newTaskDueDate,
     };
 
     try {
-      const res = await apiClient.post<ITodoTask>('api/Todo/tasks', newTask);
-      if (res.data?.localId) newTask.localId = res.data.localId;
-    } catch {}
+      // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "api/Tasks/task"
+      const res = await apiClient.post<any>('api/Tasks/task', payload);
+      const serverId = res.data?.id || Date.now();
 
-    const updatedTasks = [...get().visibleTasks, newTask];
-    set({
-      visibleTasks: updatedTasks,
-      newTaskCategoryString: 'Auto',
-      newTaskPriorityString: 'None',
-      newTaskStatusString: 'Todo',
-      newTaskDueDate: null,
-    });
+      const newTask: ITodoTask = {
+        localId: serverId,
+        serverId,
+        localListId: targetListId,
+        title: input,
+        dueDate: newTaskDueDate,
+        category: (newTaskCategoryString !== 'Auto' ? newTaskCategoryString : 'None') as TaskCategory,
+        priority: (newTaskPriorityString !== 'None' ? newTaskPriorityString : 'None') as TaskPriority,
+        status: (newTaskStatusString as TaskStatus) || 'Todo',
+        isCompleted: false,
+      };
 
-    refreshBadgesAndDeadlines(get().myTaskLists, updatedTasks, set);
+      const updatedTasks = [...get().visibleTasks, newTask];
+      set({ visibleTasks: updatedTasks });
+      refreshBadgesAndDeadlines(get().myTaskLists, updatedTasks, set);
+    } catch (err) {
+      console.error('[TodoStore] Ошибка создания задачи:', err);
+    }
   },
 
   updateTask: async (task) => {
     const updated = get().visibleTasks.map((t) => (t.localId === task.localId ? task : t));
     set({ visibleTasks: updated });
     refreshBadgesAndDeadlines(get().myTaskLists, updated, set);
-    try {
-      await apiClient.put(`api/Todo/tasks/${task.localId}`, task);
-    } catch {}
+
+    if (task.serverId) {
+      try {
+        await apiClient.put(`api/Tasks/task/${task.serverId}`, task);
+      } catch {}
+    }
   },
 
   deleteTask: async (taskId) => {
+    const taskToDelete = get().visibleTasks.find((t) => t.localId === taskId);
     const updated = get().visibleTasks.filter((t) => t.localId !== taskId);
     set({ visibleTasks: updated });
     refreshBadgesAndDeadlines(get().myTaskLists, updated, set);
-    try {
-      await apiClient.delete(`api/Todo/tasks/${taskId}`);
-    } catch {}
+
+    if (taskToDelete?.serverId) {
+      try {
+        await apiClient.delete(`api/Tasks/task/${taskToDelete.serverId}`);
+      } catch {}
+    }
   },
 
   beginEditTask: (taskId) => {
@@ -269,9 +281,8 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     set((state) => ({
       visibleTasks: state.visibleTasks.map((t) => (t.localId === task.localId ? { ...t, isDecomposing: true } : t)),
     }));
-
     try {
-      const res = await apiClient.post<any[]>('api/Todo/ai-decompose', { title: task.title });
+      const res = await apiClient.post<any[]>('api/Tasks/ai/decompose', { title: task.title });
       const subtasks: IDraftSubtask[] = (res.data || []).map((d) => ({
         text: d.title || d.text,
         isSelected: true,
@@ -297,28 +308,15 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     if (!task.draftSubtasks) return;
     const selected = task.draftSubtasks.filter((s) => s.isSelected);
 
-    const newCreated: ITodoTask[] = [];
     for (const sub of selected) {
-      const subTask: ITodoTask = {
-        localId: Date.now() + Math.random(),
-        localListId: task.localListId,
-        title: sub.text,
-        dueDate: task.dueDate,
-        category: sub.category,
-        priority: sub.priority,
-        status: 'Todo',
-        isCompleted: false,
-      };
-      newCreated.push(subTask);
-      apiClient.post('api/Todo/tasks', subTask).catch(() => {});
+      await get().addTask();
     }
 
-    const updated = get().visibleTasks
-      .map((t) => (t.localId === task.localId ? { ...t, hasDraftSubtasks: false, draftSubtasks: [] } : t))
-      .concat(newCreated);
-
-    set({ visibleTasks: updated });
-    refreshBadgesAndDeadlines(get().myTaskLists, updated, set);
+    set((state) => ({
+      visibleTasks: state.visibleTasks.map((t) =>
+        t.localId === task.localId ? { ...t, hasDraftSubtasks: false, draftSubtasks: [] } : t
+      ),
+    }));
   },
 
   rejectDraftSubtasks: (task) => {
@@ -329,24 +327,34 @@ export const useTodoStore = create<TodoState>((set, get) => ({
 
   createNewTaskList: async () => {
     const count = get().myTaskLists.length + 1;
-    const newList: ITodoList = {
-      localId: Date.now(),
-      listName: `Project ${count}`,
-      iconKind: 'FormatListBulleted',
-      iconColor: '#3B82F6',
-      uncompletedCount: 0,
-      urgencyLevel: 3,
-      urgencyColor: '#6B7280',
-    };
+    const name = `Project ${count}`;
 
     try {
-      const res = await apiClient.post<ITodoList>('api/Todo/lists', newList);
-      if (res.data?.localId) newList.localId = res.data.localId;
-    } catch {}
+      // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "api/Tasks/list"
+      const res = await apiClient.post<any>('api/Tasks/list', {
+        listName: name,
+        iconKind: 'ClipboardListOutline',
+        iconColor: '#3B82F6',
+      });
 
-    const updated = [...get().myTaskLists, newList];
-    set({ myTaskLists: updated });
-    get().selectTaskList(newList);
+      const serverId = res.data?.id || Date.now();
+      const newList: ITodoList = {
+        localId: serverId,
+        serverId,
+        listName: name,
+        iconKind: 'ClipboardListOutline',
+        iconColor: '#3B82F6',
+        uncompletedCount: 0,
+        urgencyLevel: 3,
+        urgencyColor: '#6B7280',
+      };
+
+      const updated = [...get().myTaskLists, newList];
+      set({ myTaskLists: updated });
+      get().selectTaskList(newList);
+    } catch (e) {
+      console.error('[TodoStore] Ошибка создания проекта:', e);
+    }
   },
 
   deleteTaskList: async (list) => {
@@ -357,9 +365,12 @@ export const useTodoStore = create<TodoState>((set, get) => ({
       visibleTasks: updatedTasks,
       selectedTaskList: get().selectedTaskList?.localId === list.localId ? null : get().selectedTaskList,
     });
-    try {
-      await apiClient.delete(`api/Todo/lists/${list.localId}`);
-    } catch {}
+
+    if (list.serverId) {
+      try {
+        await apiClient.delete(`api/Tasks/list/${list.serverId}`);
+      } catch {}
+    }
   },
 
   beginEditList: (listId) => {
@@ -376,15 +387,22 @@ export const useTodoStore = create<TodoState>((set, get) => ({
 
   commitEditList: async (listId, newName) => {
     const finalName = newName.trim() || 'Unnamed Project';
+    const list = get().myTaskLists.find((l) => l.localId === listId);
     const updated = get().myTaskLists.map((l) => (l.localId === listId ? { ...l, listName: finalName, isEditing: false } : l));
     set({ myTaskLists: updated });
-    try {
-      await apiClient.put(`api/Todo/lists/${listId}`, { listName: finalName });
-    } catch {}
+
+    if (list?.serverId) {
+      try {
+        await apiClient.put(`api/Tasks/list/${list.serverId}`, {
+          listName: finalName,
+          iconKind: list.iconKind,
+          iconColor: list.iconColor,
+        });
+      } catch {}
+    }
   },
 }));
 
-// Логика расчета срочности и бейджей дедлайнов (SafeRefreshBadgeCountsAsync из C#)
 function refreshBadgesAndDeadlines(myLists: ITodoList[], allTasks: ITodoTask[], set: any) {
   const now = new Date();
   const in3h = new Date(now.getTime() + 3 * 3600 * 1000);
@@ -419,13 +437,13 @@ function refreshBadgesAndDeadlines(myLists: ITodoList[], allTasks: ITodoTask[], 
       urgencyColor = '#6B7280';
     } else if (uncompleted.some((t) => t.dueDate && new Date(t.dueDate) <= in3h)) {
       urgencyLevel = 0;
-      urgencyColor = '#EF4444'; // Red
+      urgencyColor = '#EF4444';
     } else if (uncompleted.some((t) => t.dueDate && new Date(t.dueDate) <= in24h)) {
       urgencyLevel = 1;
-      urgencyColor = '#F59E0B'; // Yellow
+      urgencyColor = '#F59E0B';
     } else if (uncompleted.some((t) => t.dueDate)) {
       urgencyLevel = 2;
-      urgencyColor = '#10B981'; // Green
+      urgencyColor = '#10B981';
     }
 
     return {
@@ -436,33 +454,9 @@ function refreshBadgesAndDeadlines(myLists: ITodoList[], allTasks: ITodoTask[], 
     };
   });
 
-  const hasDueTasks = allTasks.some((t) => !t.isCompleted && t.dueDate && new Date(t.dueDate) <= in24h);
-
   set({
     smartTaskLists: updatedSmart,
-    myTaskLists: updatedCustom.sort((a, b) => a.urgencyLevel - b.urgencyLevel || a.listName.localeCompare(b.listName)),
-    hasDueTasks,
-  });
-}
-
-function refreshTasksUI(list: ITodoList, filter: string, set: any) {
-  apiClient.get<ITodoTask[]>('api/Todo/tasks').then((res) => {
-    let tasks = res.data || [];
-    if (list.localId === -1) {
-      const today = new Date().toISOString().split('T')[0];
-      tasks = tasks.filter((t) => t.dueDate?.startsWith(today));
-    } else if (list.localId === -2) {
-      tasks = tasks.filter((t) => t.priority === 'High');
-    } else if (list.localId > 0) {
-      tasks = tasks.filter((t) => t.localListId === list.localId);
-    }
-
-    if (filter !== 'All') {
-      tasks = tasks.filter((t) => t.category === filter);
-    }
-
-    set({
-      visibleTasks: tasks.sort((a, b) => Number(a.isCompleted) - Number(b.isCompleted)),
-    });
+    myTaskLists: updatedCustom,
+    hasDueTasks: allTasks.some((t) => !t.isCompleted && t.dueDate && new Date(t.dueDate) <= in24h),
   });
 }

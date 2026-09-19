@@ -1,95 +1,130 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { mdiGamepadVariantOutline, mdiCheck } from '@mdi/js';
+
+import { SidebarHeaderUserControl } from '../common/SidebarHeaderUserControl';
 import { useGamesStore } from '../../stores/gamesStore';
+import { useSmoothScroll } from '../../hooks/useSmoothScroll';
+import { resolveMdiIcon } from '../../utils/iconResolver';
 import { IGameItem } from '../../types/models';
 
 export const SidebarGamesView: React.FC = () => {
   const { availableGames, selectedGame, selectGame } = useGamesStore();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'transparent' }}>
-      {/* РЯД 0: ШАПКА "GAMES" */}
-      <div style={{ height: 52, padding: '0 16px', display: 'flex', alignItems: 'center', borderBottom: '1px solid #1E293B' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 18, fontWeight: 'bold', color: '#FFF' }}>
-          <span>🎮</span>
-          <span>Games</span>
-        </div>
-      </div>
+    <div
+      style={{
+        width: 340,
+        height: '100%',
+        backgroundColor: 'var(--bg-list)',
+        display: 'flex',
+        flexDirection: 'column',
+        userSelect: 'none',
+        overflow: 'hidden',
+      }}
+    >
+      <SidebarHeaderUserControl title="Games" iconPath={mdiGamepadVariantOutline} />
 
-      {/* РЯД 1: ДИНАМИЧЕСКИЙ СПИСОК МИНИ-ИГР (Плитка 150x160) */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+      <div ref={containerRef} className="wpf-scroll-viewer" style={{ flex: 1, padding: '0 5px 10px 5px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', margin: '0 auto' }}>
           {availableGames.map((game: IGameItem) => {
             const isSelected = selectedGame?.internalId === game.internalId;
+            const isHovered = hoveredId === game.internalId;
+
+            // Безопасно резолвим WPF-иконку в SVG путь
+            const iconSvgPath = resolveMdiIcon(game.iconKind || game.internalId, mdiGamepadVariantOutline);
+
             return (
               <div
                 key={game.internalId}
                 onClick={() => selectGame(game)}
+                onMouseEnter={() => setHoveredId(game.internalId)}
+                onMouseLeave={() => setHoveredId(null)}
                 style={{
+                  width: 150,
                   height: 160,
-                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.15)' : '#161B26',
+                  margin: 5,
                   borderRadius: 16,
-                  border: isSelected ? '2px solid var(--app-accent, #3B82F6)' : '1.5px solid #2A303C',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '16px 12px 14px',
+                  border: isSelected
+                    ? '1.5px solid var(--app-accent)'
+                    : isHovered
+                    ? '1.5px solid var(--game-tile-hover-border)'
+                    : '1.5px solid var(--game-tile-border)',
+                  backgroundColor: isSelected
+                    ? 'var(--accounts-active-bg)'
+                    : isHovered
+                    ? 'var(--game-tile-hover-bg)'
+                    : 'var(--game-tile-bg)',
                   cursor: 'pointer',
                   position: 'relative',
-                  userSelect: 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
                   boxSizing: 'border-box',
-                  transition: 'transform 0.15s, border-color 0.15s',
+                  transform: isHovered ? 'scale(1.03)' : 'scale(1)',
+                  transition: 'transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease',
                 }}
               >
-                {/* Бейдж выбранной игры */}
-                {isSelected && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 10,
-                      right: 10,
-                      width: 22,
-                      height: 22,
-                      borderRadius: 11,
-                      backgroundColor: 'var(--app-accent, #3B82F6)',
-                      color: '#FFF',
-                      fontSize: 12,
-                      fontWeight: 'bold',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    ✓
-                  </div>
-                )}
+                {/* Галочка выбора */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    backgroundColor: 'var(--app-accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: isSelected ? 1 : 0,
+                    transform: isSelected ? 'scale(1)' : 'scale(0.5)',
+                    transition: 'opacity 0.15s ease, transform 0.2s ease',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width={16} height={16} fill="#FFFFFF">
+                    <path d={mdiCheck} />
+                  </svg>
+                </div>
 
-                {/* Круглая иконка */}
+                {/* Кружок с иконкой */}
                 <div
                   style={{
                     width: 64,
                     height: 64,
                     borderRadius: 32,
-                    backgroundColor: '#1E2330',
+                    backgroundColor: 'var(--game-tile-badge-bg)',
+                    margin: '14px auto 0 auto',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 30,
-                    color: 'var(--app-accent, #3B82F6)',
-                    marginTop: 6,
                   }}
                 >
-                  {game.internalId === 'TicTacToe' && '❌'}
-                  {game.internalId === 'Checkers' && '⚪'}
-                  {game.internalId === 'Chess' && '♞'}
-                  {game.internalId === 'Battleship' && '🚢'}
-                  {game.internalId === 'DrawAndRate' && '🎨'}
-                  {game.internalId === 'DrawAndGuess' && '✏️'}
+                  <svg viewBox="0 0 24 24" width={36} height={36} fill="var(--app-accent)">
+                    <path d={iconSvgPath} />
+                  </svg>
                 </div>
 
-                {/* Название */}
-                <div style={{ fontSize: 14, fontWeight: 'bold', color: '#FFF', textAlign: 'center' }}>
-                  {game.name}
+                {/* Название игры */}
+                <div style={{ margin: '0 12px 15px 12px', textAlign: 'center' }}>
+                  <span
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: 14,
+                      fontWeight: 'bold',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      lineHeight: '1.25',
+                    }}
+                  >
+                    {game.name}
+                  </span>
                 </div>
               </div>
             );
@@ -99,3 +134,5 @@ export const SidebarGamesView: React.FC = () => {
     </div>
   );
 };
+
+export default SidebarGamesView;

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { INote, IMessage, IAttachment } from '../types/models';
 import { NoteShapeType } from '../types/enums';
-import { NotesService } from '../services/notes.service';
+import { apiClient } from '../services/apiClient';
 import { userSession } from '../services/userSession';
 import { signalRService } from '../services/signalr.service';
 import { eventBus } from '../services/eventBus';
@@ -14,7 +14,6 @@ interface NotesState {
   noteSearchText: string;
   currentChatMessages: IMessage[];
 
-  // Настройки рисования
   noteEditMode: 'Ink' | 'Eraser' | 'Select' | 'Shape';
   brushSize: number;
   brushColor: string;
@@ -23,7 +22,6 @@ interface NotesState {
   customColor2: string;
   isColorPickerOpen: boolean;
 
-  // Actions
   initialize: () => Promise<void>;
   selectNote: (note: INote | null) => Promise<void>;
   createNewNote: () => Promise<void>;
@@ -59,25 +57,17 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   isColorPickerOpen: false,
 
   initialize: async () => {
-    const userId = userSession.userId;
-    if (userId <= 0) return;
+    try {
+      // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "GET api/Notes" (GetRemoteNotesAsync)
+      const res = await apiClient.get<INote[]>('api/Notes');
+      const notes = res.data || [];
+      set({ myNotes: notes });
 
-    await NotesService.syncNotesAsync(userId);
-    const notes = await NotesService.getLocalNotesAsync(userId);
-    set({ myNotes: notes });
-
-    // Загрузка сохраненных кастомных цветов из localStorage
-    const savedColors = localStorage.getItem('notes_custom_colors');
-    if (savedColors) {
-      try {
-        const { c1, c2 } = JSON.parse(savedColors);
-        if (c1) set({ customColor1: c1 });
-        if (c2) set({ customColor2: c2 });
-      } catch {}
-    }
-
-    if (notes.length > 0 && !get().selectedNote) {
-      get().selectNote(notes[0]);
+      if (notes.length > 0 && !get().selectedNote) {
+        get().selectNote(notes[0]);
+      }
+    } catch (e) {
+      console.error('[NotesStore] Ошибка загрузки api/Notes:', e);
     }
   },
 
@@ -93,11 +83,13 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       myNotes: state.myNotes.map((n) => ({ ...n, isSelected: n.id === note.id })),
     }));
 
-    const userId = userSession.userId;
     if (note.id) {
-      const messages = await NotesService.getLocalNoteMessagesAsync(note.id, userId);
-      set({ currentChatMessages: messages });
-      await signalRService.subscribeToNoteAsync(note.id);
+      try {
+        // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "api/Notes/{id}/messages"
+        const res = await apiClient.get<IMessage[]>(`api/Notes/${note.id}/messages`);
+        set({ currentChatMessages: res.data || [] });
+        await signalRService?.subscribeToNoteAsync?.(note.id);
+      } catch {}
     }
   },
 
@@ -112,46 +104,44 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       lastEditedTime: new Date().toISOString(),
     };
 
-    const localId = await NotesService.saveLocalNoteAsync(newNote, userId);
-    newNote.id = localId;
+    try {
+      // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "POST api/Notes/upsert"
+      const res = await apiClient.post<INote>('api/Notes/upsert', newNote);
+      if (res.data?.id) newNote.id = res.data.id;
 
-    const res = await NotesService.upsertNoteAsync(newNote);
-    if (res?.id) {
-      newNote.id = res.id;
-      await NotesService.saveLocalNoteAsync(newNote, userId);
+      const updated = [newNote, ...get().myNotes];
+      set({ myNotes: updated });
+      await get().selectNote(newNote);
+    } catch (e) {
+      console.error('[NotesStore] Ошибка создания заметки:', e);
     }
-
-    const updated = [newNote, ...get().myNotes];
-    set({ myNotes: updated });
-    await get().selectNote(newNote);
   },
 
   deleteNote: async (note) => {
     if (!note.id) return;
-    const userId = userSession.userId;
-
-    await NotesService.deleteLocalNoteAsync(note.id, userId);
-    await NotesService.deleteNoteAsync(note.id);
-
-    const updated = get().myNotes.filter((n) => n.id !== note.id);
-    set({
-      myNotes: updated,
-      selectedNote: get().selectedNote?.id === note.id ? (updated[0] || null) : get().selectedNote,
-    });
+    try {
+      // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "DELETE api/Notes/{id}"
+      await apiClient.delete(`api/Notes/${note.id}`);
+      const updated = get().myNotes.filter((n) => n.id !== note.id);
+      set({
+        myNotes: updated,
+        selectedNote: get().selectedNote?.id === note.id ? (updated[0] || null) : get().selectedNote,
+      });
+    } catch {}
   },
 
   commitEditNote: async (note, newTitle) => {
     const finalTitle = newTitle.trim() || 'Unnamed Note';
-    const userId = userSession.userId;
     const updatedNote = { ...note, title: finalTitle, lastEditedTime: new Date().toISOString() };
-
-    await NotesService.saveLocalNoteAsync(updatedNote, userId);
-    await NotesService.upsertNoteAsync(updatedNote);
 
     set((state) => ({
       myNotes: state.myNotes.map((n) => (n.id === note.id ? updatedNote : n)),
       selectedNote: state.selectedNote?.id === note.id ? updatedNote : state.selectedNote,
     }));
+
+    try {
+      await apiClient.post('api/Notes/upsert', updatedNote);
+    } catch {}
   },
 
   toggleNoteSidebar: () => set((state) => ({ isNoteSidebarHidden: !state.isNoteSidebarHidden })),
@@ -165,10 +155,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   setCustomColor: (slot, color) => {
     if (slot === 1) set({ customColor1: color });
     else set({ customColor2: color });
-    localStorage.setItem(
-      'notes_custom_colors',
-      JSON.stringify({ c1: get().customColor1, c2: get().customColor2 })
-    );
   },
 
   setColorPickerOpen: (open) => set({ isColorPickerOpen: open }),
@@ -177,7 +163,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     const { selectedNote } = get();
     if (!selectedNote || !selectedNote.id) return;
 
-    const userId = userSession.userId;
     const updated: INote = {
       ...selectedNote,
       inkData: serializedJson,
@@ -185,24 +170,24 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       lastEditedTime: new Date().toISOString(),
     };
 
-    await NotesService.saveLocalNoteAsync(updated, userId);
-    await NotesService.upsertNoteAsync(updated);
-
     set((state) => ({
       selectedNote: updated,
       myNotes: state.myNotes.map((n) => (n.id === updated.id ? updated : n)),
     }));
+
+    try {
+      await apiClient.post('api/Notes/upsert', updated);
+    } catch {}
   },
 
   sendNoteMessage: async (text, attachments) => {
     const { selectedNote, currentChatMessages } = get();
     if (!selectedNote || !selectedNote.id) return;
 
-    const userId = userSession.userId;
     const newMsg: IMessage = {
-      id: 0,
+      id: Date.now(),
       serverId: 0,
-      senderId: userId,
+      senderId: userSession.userId,
       noteId: selectedNote.id,
       text,
       isMyMessage: true,
@@ -216,8 +201,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       attachments,
     };
 
-    const localId = await NotesService.saveLocalNoteMessageAsync(newMsg, userId);
-    newMsg.id = localId;
     set({ currentChatMessages: [...currentChatMessages, newMsg] });
 
     try {
@@ -241,13 +224,3 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     } catch {}
   },
 }));
-
-// Прослушивание входящих сообщений заметки по SignalR
-eventBus.on('ReceiveMessage', (msg) => {
-  const store = useNotesStore.getState();
-  if (msg.noteId && store.selectedNote?.id === msg.noteId) {
-    useNotesStore.setState({
-      currentChatMessages: [...store.currentChatMessages, msg],
-    });
-  }
-});

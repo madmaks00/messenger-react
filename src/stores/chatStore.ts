@@ -450,4 +450,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
       eventBus.emit('PlayPlaylistMessage' as any, { tracks, selectedTrack: targetTrack });
     }
   },
+  
 }));
+// 🟢 1. Слушатель дельта-синхронизации (обновляет активный чат при приходе новых данных)
+eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
+  const { selectedChatUser } = useChatStore.getState();
+  if (selectedChatUser) {
+    const currentUserId = userSession.userId;
+    const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
+    const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
+    const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
+
+    const [messages, pinned] = await Promise.all([
+      chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30),
+      chatService.getLocalPinnedMessagesAsync(currentUserId, targetUserId, groupId, secretChatId),
+    ]);
+
+    useChatStore.setState({ currentChatMessages: messages, pinnedMessages: pinned });
+  }
+});
+
+// 🟢 2. Слушатель выбора чата (из глобального поиска или сайдбара)
+eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
+  if (data?.target) {
+    await useChatStore.getState().selectChatUser(data.target);
+  }
+});

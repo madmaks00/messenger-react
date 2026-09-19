@@ -169,11 +169,17 @@ export class ChatService implements IChatService {
     try {
       const db = getLocalDatabase(userId);
 
-      // 1. Ищем максимальный ServerId в локальной базе
-      const allMsgs = await db.messages.toArray();
-      const lastId = allMsgs.reduce((max, m) => Math.max(max, m.serverId || 0), 0);
+      // 1. Ищем максимальный ServerId в локальной базе через индекс
+      let lastId = 0;
+      try {
+        const lastMsg = await db.messages.orderBy('serverId').last();
+        lastId = lastMsg?.serverId || 0;
+      } catch {
+        const all = await db.messages.toArray();
+        lastId = all.reduce((max, m) => Math.max(max, m.serverId || 0), 0);
+      }
 
-      // 2. Ищем время последней синхронизации
+      // 2. Ищем время последней синхронизации (дефолт: -7 дней)
       const syncState = await db.syncStates.get('LastDeltaSyncUtc');
       let lastSyncUtcString = syncState?.value;
       if (!lastSyncUtcString) {
@@ -193,6 +199,7 @@ export class ChatService implements IChatService {
       for (const msg of deltaMessages) {
         const serverId = msg.id || msg.serverId;
 
+        // Если удалено на сервере — удаляем локально
         if (msg.isDeleted) {
           await db.messages.where('serverId').equals(serverId).delete();
           processedCount++;
@@ -240,8 +247,8 @@ export class ChatService implements IChatService {
           });
           processedCount++;
         } else {
+          // 🟢 ВАЖНО: не передаем id: 0, чтобы Dexie сам корректно генерировал автоинкрементный id!
           await db.messages.add({
-            id: 0,
             serverId,
             senderId: msg.senderId,
             receiverId: msg.receiverId,
@@ -262,16 +269,21 @@ export class ChatService implements IChatService {
             forwardedFromUserId: msg.forwardedFromUserId,
             viewsCount: msg.viewsCount || 1,
             attachments: formattedAttachments,
-          });
+          } as any);
           processedCount++;
         }
       }
 
       await db.syncStates.put({ key: 'LastDeltaSyncUtc', value: new Date().toISOString() });
 
+      // 🟢 Если пришли новые сообщения — шлем сигнал обновить открытый чат (как в WPF)
+      if (processedCount > 0) {
+        eventBus.emit('ActiveChatRefreshRequestedMessage' as any, undefined);
+      }
+
       return processedCount;
     } catch (ex) {
-      console.error('[CLIENT DELTA_SYNC] Ошибка дельта-синхронизации:', ex);
+      console.error('[CLIENT DELTA_SYNC ERROR] Ошибка дельта-синхронизации:', ex);
       return 0;
     }
   }

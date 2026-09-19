@@ -26,12 +26,11 @@ interface AuthState {
   checkAuth: (authService: any, userService: any) => Promise<boolean>;
   login: (authService: any, userService: any) => Promise<boolean>;
   requestCodeAndGoToVerification: (authService: any) => Promise<boolean>;
-  switchAccount: (targetAccount: IUser, authService: any, userService: any) => Promise<void>;
+  switchAccount: (targetAccount: IUser, authService: any, userService?: any) => Promise<void>;
   logOut: (authService?: any) => Promise<void>;
   initializeSession: (authResult: { token: string; user: IUser }, userService?: any) => Promise<void>;
 }
 
-// Парсер токена 1-в-1 как C# ExtractUserIdFromJwt
 function extractUserIdFromJwt(jwtToken: string): number {
   try {
     if (!jwtToken || jwtToken.trim().length === 0) return 0;
@@ -59,9 +58,7 @@ function extractUserIdFromJwt(jwtToken: string): number {
         if (!isNaN(id) && id > 0) return id;
       }
     }
-  } catch {
-    // игнорируем ошибку парсинга некорректного токена
-  }
+  } catch {}
   return 0;
 }
 
@@ -89,11 +86,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     username: '',
     email: '',
     password: '',
-    firstName: '',
-    lastName: '',
-    description: '',
-    phone: '',
-    birthday: '',
   },
   currentUser: null,
   confirmPassword: '',
@@ -124,12 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearRegisterFields: () => {
     set({
-      registerUser: {
-        nickName: '',
-        username: '',
-        email: '',
-        password: '',
-      },
+      registerUser: { nickName: '', username: '', email: '', password: '' },
       confirmPassword: '',
       registerErrorMessage: '',
       isVerificationStep: false,
@@ -150,7 +137,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ loginErrorMessage: 'Invalid login or password' });
         return false;
       }
-    } catch (ex) {
+    } catch {
       set({ loginErrorMessage: 'An error occurred during login. Please try again.' });
       return false;
     }
@@ -191,8 +178,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  // 🟢 Автологин 1 в 1 как в AuthViewModel.cs CheckAuth()
   checkAuth: async (authService, userService) => {
-    const token = localStorage.getItem('jwt_token');
+    let token = localStorage.getItem('jwt_token');
+
+    // Если прямого токена нет — берём токен первого сохраненного аккаунта (как в WPF!)
+    if (!token) {
+      const accounts = get().savedAccounts;
+      const lastAccount = accounts[0];
+      if (lastAccount && lastAccount.token) {
+        token = lastAccount.token;
+        localStorage.setItem('jwt_token', token);
+      }
+    }
+
     if (!token) {
       eventBus.emit('AuthFailedMessage', undefined);
       return false;
@@ -201,6 +200,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const userId = extractUserIdFromJwt(token);
     if (userId <= 0) {
       userSession.clear();
+      localStorage.removeItem('jwt_token');
       eventBus.emit('AuthFailedMessage', undefined);
       return false;
     }
@@ -211,6 +211,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const isValid = await authService.validateTokenAsync();
       if (!isValid) {
         userSession.clear();
+        localStorage.removeItem('jwt_token');
         eventBus.emit('AuthFailedMessage', undefined);
         return false;
       }
@@ -220,15 +221,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user.token = token;
         set({ currentUser: user });
 
-        // Открываем изолированную IndexedDB
         getLocalDatabase(user.id);
 
-        // Обновляем список сохраненных аккаунтов
+        // Обновляем в сохраненных аккаунтах с токеном
         const accounts = get().savedAccounts;
         const exists = accounts.find((a) => a.id === user.id);
         const updatedAccounts = exists
-          ? accounts.map((a) => (a.id === user.id ? user : a))
-          : [...accounts, user];
+          ? accounts.map((a) => (a.id === user.id ? { ...user, token } : a))
+          : [...accounts, { ...user, token }];
 
         set({ savedAccounts: updatedAccounts });
         saveAccountsToStorage(updatedAccounts);
@@ -245,7 +245,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  switchAccount: async (targetAccount, authService, userService) => {
+  // 🟢 Переключение аккаунта 1 в 1 как в AuthViewModel.cs SwitchAccount()
+  switchAccount: async (targetAccount, authService) => {
     const current = get().currentUser;
     if (!targetAccount || targetAccount.id === current?.id) return;
 
@@ -258,6 +259,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       userSession.setSession(targetAccount.id, targetAccount.token);
+      localStorage.setItem('jwt_token', targetAccount.token);
+
       const isValid = await authService.validateTokenAsync();
       if (!isValid) {
         set({ switchAccountErrorMessage: 'Session expired for this account.' });
@@ -271,6 +274,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       getLocalDatabase(targetAccount.id);
 
       eventBus.emit('UserProfileUpdatedMessage', { user: targetAccount });
+      // 🟢 Сигнал смены аккаунта (строго nickName)
       eventBus.emit('AccountSwitchedMessage', { nickName: targetAccount.nickName });
     } catch {
       set({ switchAccountErrorMessage: 'Error switching account.' });
@@ -279,12 +283,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   initializeSession: async (result) => {
     const { user, token } = result;
+    user.token = token;
+
     userSession.setSession(user.id, token);
+    localStorage.setItem('jwt_token', token);
     getLocalDatabase(user.id);
 
     const accounts = get().savedAccounts;
     const exists = accounts.find((a) => a.id === user.id);
-    const updated = exists ? accounts.map((a) => (a.id === user.id ? user : a)) : [...accounts, user];
+    const updated = exists ? accounts.map((a) => (a.id === user.id ? { ...user, token } : a)) : [...accounts, { ...user, token }];
 
     set({ currentUser: user, savedAccounts: updated });
     saveAccountsToStorage(updated);
@@ -298,11 +305,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (userSession.isAuthenticated && authService) {
         await authService.logoutAsync();
       }
-    } catch {
-      // игнорируем ошибку на сервере
-    } finally {
+    } catch {} finally {
       closeLocalDatabase();
       userSession.clear();
+      localStorage.removeItem('jwt_token');
       set({ currentUser: null });
       eventBus.emit('AuthFailedMessage', undefined);
     }

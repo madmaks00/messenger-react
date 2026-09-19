@@ -1,17 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import {
+  mdiClipboardListOutline,
+  mdiClipboardPlusOutline,
+  mdiFormatListBulleted,
+  mdiPencil,
+  mdiPencilOutline,
+  mdiTrashCanOutline,
+} from '@mdi/js';
+
+import { SidebarHeaderUserControl } from '../common/SidebarHeaderUserControl';
+import { SearchInputUserControl } from '../common/SearchInputUserControl';
 import { useTodoStore, ITodoList } from '../../stores/todoStore';
+import { useSmoothScroll } from '../../hooks/useSmoothScroll';
+import { resolveMdiIcon } from '../../utils/iconResolver';
 
 const ITEM_HEIGHT = 50;
 
 export const SidebarTasksView: React.FC = () => {
   const {
     myTaskLists,
-    smartTaskLists,
     selectedTaskList,
     listSearchText,
     selectTaskList,
     setListSearchText,
-    createNewTaskList,
     beginEditList,
     cancelEditList,
     commitEditList,
@@ -20,183 +31,173 @@ export const SidebarTasksView: React.FC = () => {
 
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
 
   const filteredLists = myTaskLists.filter((l) =>
     l.listName.toLowerCase().includes(listSearchText.toLowerCase())
   );
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: 'transparent' }}>
-      {/* 0: ШАПКА */}
-      <div style={{ height: 52, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1E293B' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 18, fontWeight: 'bold', color: '#FFF' }}>
-          <span>📋</span>
-          <span>Tasks</span>
-        </div>
-        <button
-          onClick={createNewTaskList}
-          title="New Task List"
-          style={{ background: 'transparent', border: 'none', color: 'var(--app-accent, #3B82F6)', fontSize: 18, cursor: 'pointer' }}
-        >
-          ➕
-        </button>
-      </div>
+    <div
+      style={{
+        width: 340,
+        height: '100%',
+        backgroundColor: 'var(--bg-list)',
+        display: 'flex',
+        flexDirection: 'column',
+        userSelect: 'none',
+        overflow: 'hidden',
+      }}
+    >
+      <SidebarHeaderUserControl title="Tasks" iconPath={mdiClipboardListOutline} />
 
-      {/* 1: ПОИСК СПИСКОВ */}
-      <div style={{ padding: '8px 12px' }}>
-        <input
-          type="text"
-          placeholder="Search lists..."
-          value={listSearchText}
-          onChange={(e) => setListSearchText(e.target.value)}
-          style={{
-            width: '100%',
-            height: 36,
-            background: '#161B26',
-            border: '1px solid #334155',
-            borderRadius: 8,
-            padding: '0 12px',
-            color: '#FFF',
-            fontSize: 13.5,
-            outline: 'none',
-            boxSizing: 'border-box',
-          }}
-        />
-      </div>
+      <SearchInputUserControl
+        text={listSearchText}
+        hintText="Search lists..."
+        onChange={setListSearchText}
+      />
 
-      {/* СМАРТ-СПИСКИ (My Day, Important, etc.) */}
-      <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-        {smartTaskLists.map((smart) => {
-          const isSelected = selectedTaskList?.localId === smart.localId;
-          return (
+      <div ref={containerRef} className="wpf-scroll-viewer" style={{ flex: 1, paddingBottom: 10 }}>
+        {filteredLists.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '130px 20px 0 20px' }}>
             <div
-              key={smart.localId}
-              onClick={() => selectTaskList(smart)}
               style={{
-                height: 40,
+                width: 80,
+                height: 80,
+                borderRadius: 40,
+                backgroundColor: 'var(--sidebar-search-bg)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0 12px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                color: isSelected ? '#FFF' : '#94A3B8',
-                marginBottom: 2,
+                justifyContent: 'center',
+                marginBottom: 15,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ color: smart.iconColor, fontSize: 16 }}>★</span>
-                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{smart.listName}</span>
-              </div>
-              {smart.uncompletedCount > 0 && (
-                <span style={{ fontSize: 11.5, fontWeight: 'bold', color: '#94A3B8' }}>
-                  {smart.uncompletedCount}
-                </span>
-              )}
+              <svg viewBox="0 0 24 24" width={40} height={40} fill="var(--text-muted)" style={{ opacity: 0.5 }}>
+                <path d={mdiClipboardPlusOutline} />
+              </svg>
             </div>
-          );
-        })}
-      </div>
-
-      {/* 2: СПИСОК ПОЛЬЗОВАТЕЛЬСКИХ ПРОЕКТОВ (50px Шаг из WPF) */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
-        {filteredLists.length === 0 && myTaskLists.length === 0 ? (
-          <div style={{ textAlign: 'center', marginTop: 80, color: '#64748B' }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>📑</div>
-            <div style={{ fontSize: 16, fontWeight: 'bold', color: '#FFF' }}>No Task Lists</div>
+            <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', marginBottom: 8 }}>
+              No Task Lists
+            </span>
           </div>
         ) : (
-          filteredLists.map((list) => {
+          filteredLists.map((list: ITodoList) => {
             const isSelected = selectedTaskList?.localId === list.localId;
             const isHovered = hoveredId === list.localId;
+            const listIconPath = resolveMdiIcon(list.iconKind, mdiFormatListBulleted);
 
             return (
               <div
                 key={list.localId}
+                onClick={() => !list.isEditing && selectTaskList(list)}
                 onMouseEnter={() => setHoveredId(list.localId)}
                 onMouseLeave={() => setHoveredId(null)}
-                onClick={() => !list.isEditing && selectTaskList(list)}
                 style={{
                   height: ITEM_HEIGHT,
+                  margin: '2px 6px',
+                  padding: '0 10px',
+                  borderRadius: 10,
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0 10px',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.15)' : isHovered ? '#1E2330' : 'transparent',
-                  marginBottom: 2,
+                  backgroundColor: isSelected ? 'var(--chat-item-active)' : isHovered ? 'var(--chat-item-hover)' : 'transparent',
                   boxSizing: 'border-box',
+                  transition: 'background-color 0.1s ease',
                 }}
               >
-                {/* Левая часть: Иконка с карандашиком */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-                  <div style={{ position: 'relative', width: 28, height: 28 }}>
-                    <span style={{ fontSize: 20, color: list.iconColor }}>📁</span>
-                    {list.isEditing && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: 0,
-                          right: 0,
-                          width: 12,
-                          height: 12,
-                          borderRadius: 6,
-                          background: 'var(--app-accent, #3B82F6)',
-                          color: '#FFF',
-                          fontSize: 8,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        ✏
-                      </div>
-                    )}
-                  </div>
+                {/* Иконка 28x28 */}
+                <div
+                  onClick={(e) => {
+                    if (list.isEditing) e.stopPropagation();
+                  }}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    marginRight: 10,
+                    position: 'relative',
+                    cursor: list.isEditing ? 'pointer' : 'default',
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width={22} height={22} fill={list.iconColor || 'var(--text-muted)'}>
+                    <path d={listIconPath} />
+                  </svg>
 
-                  {/* Имя или инлайн-инпут */}
+                  {list.isEditing && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        bottom: 0,
+                        width: 14,
+                        height: 14,
+                        borderRadius: 7,
+                        backgroundColor: 'var(--app-accent)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" width={8.5} height={8.5} fill="#FFFFFF">
+                        <path d={mdiPencil} />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                {/* Название / Инпут */}
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
                   {list.isEditing ? (
                     <input
-                      type="text"
+                      ref={editInputRef}
                       autoFocus
                       maxLength={20}
-                      value={editingText}
+                      defaultValue={list.listName}
                       onChange={(e) => setEditingText(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitEditList(list.localId, editingText);
+                        if (e.key === 'Enter') commitEditList(list.localId, editingText || list.listName);
                         if (e.key === 'Escape') cancelEditList(list.localId);
                       }}
-                      onBlur={() => commitEditList(list.localId, editingText)}
+                      onBlur={() => commitEditList(list.localId, editingText || list.listName)}
                       style={{
+                        width: '100%',
                         background: 'transparent',
                         border: 'none',
-                        borderBottom: '1px solid #3B82F6',
-                        color: '#FFF',
-                        fontSize: 14,
+                        borderBottom: '1px solid var(--action-edit-icon)',
+                        color: '#FFFFFF',
+                        fontSize: 14.5,
+                        fontWeight: 600,
                         outline: 'none',
-                        width: '100%',
+                        padding: '2px 0',
                       }}
                     />
                   ) : (
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#FFF', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <span style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {list.listName}
                     </span>
                   )}
                 </div>
 
-                {/* Правая часть: Бейдж срочности + Кнопки Edit / Delete */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {list.uncompletedCount > 0 && !list.isEditing && (
+                {/* Бейдж и кнопки */}
+                <div style={{ display: 'flex', alignItems: 'center', marginLeft: 8 }}>
+                  {!list.isEditing && list.uncompletedCount > 0 && (
                     <div
                       style={{
-                        padding: '2px 8px',
                         borderRadius: 10,
-                        backgroundColor: list.urgencyColor,
-                        color: '#FFF',
-                        fontSize: 11,
+                        minWidth: 20,
+                        height: 20,
+                        padding: '0 6px',
+                        backgroundColor: list.urgencyColor || 'var(--item-count-badge-bg)',
+                        color: '#FFFFFF',
+                        fontSize: 11.5,
                         fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginRight: 4,
+                        boxSizing: 'border-box',
                       }}
                     >
                       {list.uncompletedCount}
@@ -204,29 +205,34 @@ export const SidebarTasksView: React.FC = () => {
                   )}
 
                   {isHovered && !list.isEditing && (
-                    <>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
                       <button
+                        title="Edit"
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingText(list.listName);
                           beginEditList(list.localId);
                         }}
                         style={miniIconBtnStyle}
-                        title="Edit"
                       >
-                        ✏
+                        <svg viewBox="0 0 24 24" width={16} height={16} fill="var(--action-edit-icon)">
+                          <path d={mdiPencilOutline} />
+                        </svg>
                       </button>
+
                       <button
+                        title="Delete"
                         onClick={(e) => {
                           e.stopPropagation();
                           deleteTaskList(list);
                         }}
-                        style={{ ...miniIconBtnStyle, color: '#EF4444' }}
-                        title="Delete"
+                        style={miniIconBtnStyle}
                       >
-                        🗑
+                        <svg viewBox="0 0 24 24" width={16} height={16} fill="var(--action-delete-icon)">
+                          <path d={mdiTrashCanOutline} />
+                        </svg>
                       </button>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
@@ -239,10 +245,15 @@ export const SidebarTasksView: React.FC = () => {
 };
 
 const miniIconBtnStyle: React.CSSProperties = {
+  width: 26,
+  height: 26,
+  padding: 0,
   background: 'transparent',
   border: 'none',
-  color: '#94A3B8',
-  fontSize: 13,
   cursor: 'pointer',
-  padding: 4,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
+
+export default SidebarTasksView;

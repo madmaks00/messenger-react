@@ -57,8 +57,14 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
   },
 
   loadChats: async (chatService, forceReload = false) => {
-    const currentUserId = userSession.userId;
-    if (currentUserId <= 0) return;
+    // 🟢 Берём ID из session или localStorage
+    const currentUserId = userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0;
+    
+    // Если токена нет совсем — выходим
+    if (!userSession.token) {
+      console.warn('[SidebarChatsStore] Загрузка чатов отменена: нет токена авторизации.');
+      return;
+    }
 
     if (forceReload) {
       set({ selectedFolderId: null, isSystemFolder: true });

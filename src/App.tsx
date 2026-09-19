@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import './theme/theme.css'; // Гарантируем импорт темы
+import './theme/theme.css';
 
 import { NavigationRail } from './components/layout/NavigationRail';
 import { SidebarChatsView } from './components/sidebar/SidebarChatsView';
@@ -73,17 +73,36 @@ export const App: React.FC = () => {
   const [imageEditor, setImageEditor] = useState<{ isOpen: boolean; src: string; onDone?: (res: string) => void }>({ isOpen: false, src: '' });
   const [storyEditor, setStoryEditor] = useState<{ isOpen: boolean; image: string }>({ isOpen: false, image: '' });
 
+  // 1. Инициализация при старте приложения
   useEffect(() => {
-    checkAuth(authService, userService).then((isAuth) => {
+    checkAuth(authService, userService).then(async (isAuth) => {
       if (isAuth && !isAppLocked) {
-        loadChats(chatService, true);
+        console.log('[App] Успешная авторизация, загружаем чаты и модули...');
+        await loadChats(chatService, true);
         initTodo();
         initNotes();
+
+        const currentUserId = useAuthStore.getState().currentUser?.id ?? 0;
+        if (currentUserId > 0) {
+          chatService.syncDeltaAsync(currentUserId).then((count) => {
+            if (count > 0) {
+              loadChats(chatService, false);
+            }
+          });
+        }
       }
     });
   }, [isAppLocked]);
 
   useEffect(() => {
+    // 🟢 В ТОЧНОСТИ КАК В C# MainViewModel.cs: реакция на смену аккаунта
+    const unbindAccountSwitched = eventBus.on('AccountSwitchedMessage' as any, async () => {
+      console.log('[App] Получено событие AccountSwitchedMessage: перезагружаем чаты, заметки и задачи...');
+      await loadChats(chatService, true);
+      initTodo();
+      initNotes();
+    });
+
     const unbindConfirm = eventBus.on('OpenConfirmDialogMessage' as any, (data: any) => {
       setConfirmDialog({
         isOpen: true,
@@ -122,6 +141,7 @@ export const App: React.FC = () => {
     );
 
     return () => {
+      unbindAccountSwitched();
       unbindConfirm();
       unbindPhoto();
       unbindVideo();
@@ -139,13 +159,12 @@ export const App: React.FC = () => {
         width: '100vw',
         height: '100vh',
         overflow: 'hidden',
-        backgroundColor: 'var(--bg-chat)', // Точный фон #11141B
+        backgroundColor: 'var(--bg-chat)',
         color: 'var(--text-primary)',
         fontFamily: "'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
         position: 'relative',
       }}
     >
-      {/* Верхний 1px-бордер из WPF MainWindow (Panel.ZIndex="500") */}
       <div
         style={{
           position: 'absolute',
@@ -158,7 +177,6 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* 1. ЭКРАН БЛОКИРОВКИ ПИН-КОДОМ */}
       <PasscodeLockView
         isLocked={isAppLocked}
         onUnlock={() => {
@@ -169,7 +187,6 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* 2. УЛЬТРА-УЗКАЯ НАВИГАЦИЯ (66px, фон BgNav = #0F1319) */}
       <div
         style={{
           width: 66,
@@ -183,7 +200,6 @@ export const App: React.FC = () => {
         <NavigationRail />
       </div>
 
-      {/* 3. САЙДБАР ТЕКУЩЕЙ ВКЛАДКИ (340px, фон BgList = #161A23) */}
       <div
         style={{
           width: 340,
@@ -205,7 +221,6 @@ export const App: React.FC = () => {
         <MusicPlayerView />
       </div>
 
-      {/* 4. РАБОЧАЯ ОБЛАСТЬ (КОНТЕНТ ВКЛАДКИ, фон BgChat = #11141B) */}
       <div
         style={{
           flex: 1,
@@ -239,7 +254,6 @@ export const App: React.FC = () => {
         )}
       </div>
 
-      {/* ================= ВСЕ ДИАЛОГИ И ОВЕРЛЕИ ================= */}
       {isProfileOpen && currentUser && (
         <ProfileView
           isOpen={isProfileOpen}
