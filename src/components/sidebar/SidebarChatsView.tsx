@@ -56,9 +56,32 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
 const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AE9', '#6EC9CB', '#FAA774'];
 const getAvatarColor = (id: number = 0) => AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
 
-const normalizeAvatarUrl = (url?: string | null) => {
+// 🟢 Поддержка Base64, Blob, относительных и абсолютных ссылок с сервера
+const normalizeAvatarUrl = (url?: string | null): string | null => {
   if (!url) return null;
-  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http')) return url;
+
+  // Если уже готовый data-uri или blob
+  if (url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+
+  // Если полный внешний URL
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  // Если это Base64 из C# byte[]
+  if (
+    url.startsWith('/9j/') ||
+    url.startsWith('iVBOR') ||
+    url.startsWith('R0lGOD') ||
+    url.startsWith('PHN2Zy') ||
+    url.length > 200
+  ) {
+    return `data:image/jpeg;base64,${url}`;
+  }
+
+  // Относительный путь к файлу на бэкенде
   return `${BASE_SERVER_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
 };
 
@@ -93,7 +116,6 @@ export const SidebarChatsView: React.FC = () => {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Плавный скролл из C# (SmoothScrollViewer)
   const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
   const [scrollTop, setScrollTop] = useState(0);
 
@@ -130,7 +152,6 @@ export const SidebarChatsView: React.FC = () => {
     return result;
   }, [allChats, selectedFolderId, chatFolders]);
 
-  // Расчёт окна виртуализации из SidebarChatVirtualizingPanel.cs
   const totalHeight = filteredChats.length * ITEM_HEIGHT;
   const viewportHeight = 650;
   const firstIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - 2);
@@ -164,7 +185,7 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* ================= РЯД 0: ШАПКА "Chats" (Анимация Y: 0 -> -20px, Opacity: 1 -> 0) ================= */}
+      {/* РЯД 0: ШАПКА "Chats" */}
       <div
         style={{
           height: 46,
@@ -187,7 +208,7 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 1: СТРОКА ПОИСКА (Анимация SearchBoxTransform: Y 0 -> -52px) ================= */}
+      {/* РЯД 1: СТРОКА ПОИСКА */}
       <div
         style={{
           padding: '0 6px 10px 6px',
@@ -249,7 +270,7 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 2: ПАПКИ ЧАТОВ (FoldersPanel: Opacity 1 -> 0) ================= */}
+      {/* РЯД 2: ПАПКИ ЧАТОВ */}
       {chatFolders.length > 1 && (
         <div
           style={{
@@ -310,7 +331,7 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       )}
 
-      {/* ================= РЯД 3: ОСНОВНОЙ СПИСОК ЧАТОВ (ChatsScrollViewer) ================= */}
+      {/* РЯД 3: СПИСОК ЧАТОВ */}
       <div
         ref={containerRef}
         className="wpf-scroll-viewer"
@@ -360,6 +381,10 @@ export const SidebarChatsView: React.FC = () => {
 
               const msgIcon = getLastMessageIcon(chat.lastMessageType);
 
+              // 🟢 Читаем и avatarPath, и avatar (Base64) из C#
+              const avatarRaw = chat.avatarPath || (chat as any).avatar;
+              const chatAvatarSrc = normalizeAvatarUrl(avatarRaw);
+
               return (
                 <div
                   key={key}
@@ -405,13 +430,24 @@ export const SidebarChatsView: React.FC = () => {
                         position: 'relative',
                       }}
                     >
+                      {/* Буква-заглушка */}
                       <span>{((chat.isGroup ? chat.groupName : chat.nickName) || 'U').charAt(0).toUpperCase()}</span>
-                      {chat.avatarPath && (
+
+                      {/* 🟢 Фотография/аватарка поверх заглушки */}
+                      {chatAvatarSrc && (
                         <img
-                          src={normalizeAvatarUrl(chat.avatarPath)!}
+                          src={chatAvatarSrc}
                           alt=""
-                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                          }}
                         />
                       )}
                     </div>
@@ -508,7 +544,7 @@ export const SidebarChatsView: React.FC = () => {
         )}
       </div>
 
-      {/* ================= РЕЗУЛЬТАТЫ ПОИСКА (SearchResultsPanel из WPF: Y 15 -> 0, Opacity 0 -> 1) ================= */}
+      {/* ================= РЕЗУЛЬТАТЫ ПОИСКА ================= */}
       <div
         className="wpf-scroll-viewer"
         style={{
@@ -528,7 +564,7 @@ export const SidebarChatsView: React.FC = () => {
             : 'opacity 120ms ease-out, transform 120ms ease-in, visibility 0ms 120ms',
         }}
       >
-        {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ (RecentSearchesBlock) */}
+        {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ */}
         {searchText.trim().length === 0 && (
           <div style={{ marginTop: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 5px' }}>
@@ -570,7 +606,7 @@ export const SidebarChatsView: React.FC = () => {
           </div>
         )}
 
-        {/* БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК (когда ввели текст, например "maxx") */}
+        {/* БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК */}
         {searchText.trim().length > 0 && (
           <div style={{ marginTop: 6 }}>
             {isSearching ? (
@@ -748,7 +784,6 @@ export const SidebarChatsView: React.FC = () => {
   );
 };
 
-// Шаблон элемента пользователя из WPF UserSearchResultTemplate
 const UserCard: React.FC<{ user: IUserSearchResult; onSelect: () => void }> = ({ user, onSelect }) => {
   const [isHovered, setIsHovered] = useState(false);
   const avatarSrc = normalizeAvatarUrl(user.avatarPath || user.avatar);
@@ -812,7 +847,6 @@ const UserCard: React.FC<{ user: IUserSearchResult; onSelect: () => void }> = ({
   );
 };
 
-// Пункт меню SidebarMenuItemStyle из App.xaml
 const ContextRow: React.FC<{
   icon: string;
   text: string;
