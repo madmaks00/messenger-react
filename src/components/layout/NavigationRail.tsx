@@ -24,7 +24,7 @@ import {
 import { useNavigationStore } from '../../stores/navigationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { MainTab } from '../../types/enums';
-import { BASE_SERVER_URL } from '../../services/apiClient';
+import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 
 interface MdiIconProps {
   path: string;
@@ -48,25 +48,6 @@ const Icon: React.FC<MdiIconProps> = ({ path, size = '24px', color = 'currentCol
   );
 };
 
-// Конвертер цвета аватарки точно из WPF AvatarColorConverter
-const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AE9', '#6EC9CB', '#FAA774'];
-const getAvatarColor = (id: number = 0) => AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
-
-// ✅ СТАЛО: умная функция, которая понимает и серверный URL, и чистый Base64 из C#
-const normalizeAvatarUrl = (url?: string | null) => {
-  if (!url) return null;
-  // Если уже готовая data-ссылка или web-ссылка
-  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
-  }
-  // Если это чистый Base64 из C# (начинается с характерных заголовков JPEG/PNG или длинная строка)
-  if (url.startsWith('/9j/') || url.startsWith('iVBOR') || url.startsWith('R0lGOD') || url.length > 200) {
-    return `data:image/jpeg;base64,${url}`;
-  }
-  // Если это относительный путь с сервера (/uploads/...)
-  return `${BASE_SERVER_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
-};
-
 export const NavigationRail: React.FC = () => {
   const {
     currentTab,
@@ -81,7 +62,7 @@ export const NavigationRail: React.FC = () => {
   const { currentUser } = useAuthStore();
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
 
-  const avatarSrc = normalizeAvatarUrl(currentUser?.avatar || currentUser?.avatarPath);
+  const avatarSrc = normalizeAvatarUrl(currentUser?.avatarPath || (currentUser as any)?.avatar);
 
   return (
     <div
@@ -98,9 +79,18 @@ export const NavigationRail: React.FC = () => {
         boxSizing: 'border-box',
       }}
     >
-      {/* ================= ВЕРХ ================= */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 20, flexShrink: 0 }}>
-        {/* Логотип SendVariant */}
+      {/* ================= ВЕРХ (Смещение на 44px: 24px TitleBarHeight + 20px Margin) ================= */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          paddingTop: 44, // 🟢 Точное смещение 24 + 20 из MainWindow.xaml
+          paddingBottom: 10,
+          flexShrink: 0,
+        }}
+      >
+        {/* 1. Статичный логотип SendVariant с наклоном -20deg и свечением */}
         <div
           style={{
             color: '#1E9BEB',
@@ -111,12 +101,14 @@ export const NavigationRail: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'default',
+            width: 38,
+            height: 38,
           }}
         >
           <Icon path={mdiSendVariant} size="38px" />
         </div>
 
-        {/* Аватарка: 54x54 круглая рамка #1E9BEB */}
+        {/* 2. Аватарка: Внешнее кольцо 54x54, внутри фото 46x46 (1 в 1 с WPF) */}
         <div style={{ position: 'relative', width: 54, height: 54 }}>
           <div
             onClick={openProfile}
@@ -126,50 +118,61 @@ export const NavigationRail: React.FC = () => {
               height: 54,
               borderRadius: 27,
               border: '2px solid #1E9BEB',
-              backgroundColor: getAvatarColor(currentUser?.id || 0),
+              backgroundColor: 'transparent',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              overflow: 'hidden',
-              position: 'relative',
               boxSizing: 'border-box',
             }}
           >
-            {/* Слой 1: Инициалы пользователя (всегда под фото, как в WPF) */}
+            {/* Внутренний круг 46x46 строго по XAML */}
             <div
               style={{
-                color: '#FFFFFF',
-                fontSize: 18,
-                fontWeight: 'bold',
-                userSelect: 'none',
+                width: 46,
+                height: 46,
+                borderRadius: 23,
+                backgroundColor: getAvatarColor(currentUser?.id || 0),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                position: 'relative',
               }}
             >
-              {(currentUser?.nickName || currentUser?.username || 'U').charAt(0).toUpperCase()}
-            </div>
-
-            {/* Слой 2: Фото пользователя (скрывается при 404, не ломая интерфейс) */}
-            {avatarSrc && (
-              <img
-                src={avatarSrc}
-                alt=""
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
+              {/* Заглушка (инициалы) */}
+              <span
                 style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  borderRadius: 27,
-                  objectFit: 'cover',
+                  color: '#FFFFFF',
+                  fontSize: 18,
+                  fontWeight: 'bold',
+                  userSelect: 'none',
                 }}
-              />
-            )}
+              >
+                {(currentUser?.nickName || currentUser?.username || 'U').charAt(0).toUpperCase()}
+              </span>
+
+              {/* Фото */}
+              {avatarSrc && (
+                <img
+                  src={avatarSrc}
+                  alt=""
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                  }}
+                />
+              )}
+            </div>
           </div>
 
-          {/* Плюсик создания истории 20x20 */}
+          {/* Плюсик на аватарке: 20x20, Margin="0,0,-2,-2", иконка 14px */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -198,8 +201,9 @@ export const NavigationRail: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= ЦЕНТР: ВКЛАДКИ ================= */}
+      {/* ================= ЦЕНТР: ВКЛАДКИ (Margin="0,10,0,0") ================= */}
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 10, flex: 1 }}>
+        {/* 1. Чаты */}
         <div
           onClick={() => switchTab(MainTab.Chats)}
           onMouseEnter={() => setHoveredBtn('chats')}
@@ -218,6 +222,7 @@ export const NavigationRail: React.FC = () => {
 
         <div style={railDividerStyle} />
 
+        {/* 2. Избранное / Заметки */}
         <div
           onClick={() => switchTab(MainTab.Notes)}
           onMouseEnter={() => setHoveredBtn('notes')}
@@ -231,6 +236,7 @@ export const NavigationRail: React.FC = () => {
           </span>
         </div>
 
+        {/* 3. Задачи (Tasks) */}
         <div
           onClick={() => switchTab(MainTab.Tasks)}
           onMouseEnter={() => setHoveredBtn('tasks')}
@@ -247,6 +253,7 @@ export const NavigationRail: React.FC = () => {
           </div>
         </div>
 
+        {/* 4. Игры */}
         <div
           onClick={() => switchTab(MainTab.Games)}
           onMouseEnter={() => setHoveredBtn('games')}
@@ -262,6 +269,7 @@ export const NavigationRail: React.FC = () => {
 
         <div style={railDividerStyle} />
 
+        {/* 5. Смена аккаунта */}
         <div
           onClick={() => switchTab(MainTab.AccountSwitch)}
           onMouseEnter={() => setHoveredBtn('acc')}
@@ -276,7 +284,7 @@ export const NavigationRail: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= НИЗ: ДЕЙСТВИЯ ================= */}
+      {/* ================= НИЗ: ДЕЙСТВИЯ (Margin="0,0,0,20") ================= */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20, marginTop: 'auto', flexShrink: 0 }}>
         {currentTab === MainTab.Chats && (
           <>
@@ -317,6 +325,7 @@ export const NavigationRail: React.FC = () => {
           </button>
         )}
 
+        {/* Кнопка смены темы (анимация поворота -90 to 0) */}
         <button
           onClick={toggleTheme}
           title={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -335,6 +344,7 @@ export const NavigationRail: React.FC = () => {
           </div>
         </button>
 
+        {/* Настройки */}
         <button
           onClick={openProfile}
           title="Settings"
@@ -347,6 +357,7 @@ export const NavigationRail: React.FC = () => {
   );
 };
 
+// 🟢 NavMenuButtonStyle: Height="50", BgHighlight Opacity="0.1"
 const getNavTabStyle = (isActive: boolean): React.CSSProperties => ({
   height: 50,
   width: '100%',
@@ -358,6 +369,7 @@ const getNavTabStyle = (isActive: boolean): React.CSSProperties => ({
   position: 'relative',
 });
 
+// 🟢 ActiveIndicator: Width="4", CornerRadius="2"
 const activeBarIndicatorStyle: React.CSSProperties = {
   position: 'absolute',
   left: 0,
@@ -365,8 +377,7 @@ const activeBarIndicatorStyle: React.CSSProperties = {
   bottom: 0,
   width: 4,
   backgroundColor: '#1E9BEB',
-  borderTopRightRadius: 2,
-  borderBottomRightRadius: 2,
+  borderRadius: 2,
 };
 
 const unreadDotBadgeStyle: React.CSSProperties = {
@@ -379,12 +390,14 @@ const unreadDotBadgeStyle: React.CSSProperties = {
   backgroundColor: '#E74C3C',
 };
 
+// 🟢 Разделитель: Height="2", Margin="25,15", Background OtherBubbleBg (#1C212D)
 const railDividerStyle: React.CSSProperties = {
   height: 2,
   backgroundColor: '#1C212D',
   margin: '15px 25px',
 };
 
+// 🟢 NavActionButtonStyle: Height="50"
 const navActionBtnStyle: React.CSSProperties = {
   width: '100%',
   height: 50,
@@ -398,3 +411,5 @@ const navActionBtnStyle: React.CSSProperties = {
   padding: 0,
   transition: 'color 0.15s ease',
 };
+
+export default NavigationRail;

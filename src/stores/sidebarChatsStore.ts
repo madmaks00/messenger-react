@@ -78,7 +78,13 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
 
       // 1. Обычные чаты и группы
       if (fetchedChats && fetchedChats.length > 0) {
-        const filtered = fetchedChats.filter((c) => c.isGroup || c.userId !== currentUserId);
+        const filtered = fetchedChats
+          .filter((c) => c.isGroup || c.userId !== currentUserId)
+          .map((c) => ({
+            ...c,
+            // 🟢 Если lastMessage пустой, берём rawLastMessage из C#
+            lastMessage: c.lastMessage || (c as any).rawLastMessage || '',
+          }));
         merged.push(...filtered);
       }
 

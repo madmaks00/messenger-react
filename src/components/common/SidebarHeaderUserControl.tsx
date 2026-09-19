@@ -14,8 +14,8 @@ export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
   return (
     <div
       style={{
-        height: 46,
-        margin: '7px 6px 5px 15px',
+        height: 42,
+        margin: '12px 6px 8px 15px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -28,10 +28,10 @@ export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
         {iconPath && (
           <svg
             viewBox="0 0 24 24"
-            width={28}
-            height={28}
+            width={26}
+            height={26}
             fill="#FFFFFF"
-            style={{ marginRight: 10, flexShrink: 0 }}
+            style={{ marginRight: 9, flexShrink: 0 }}
           >
             <path d={iconPath} />
           </svg>
@@ -39,8 +39,10 @@ export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
         <span
           style={{
             color: '#FFFFFF',
-            fontSize: 25,
+            fontSize: 24,
             fontWeight: 800,
+            lineHeight: 1,
+            letterSpacing: '-0.2px',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -58,3 +60,5 @@ export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
     </div>
   );
 };
+
+export default SidebarHeaderUserControl;

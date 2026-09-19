@@ -33,11 +33,10 @@ import { useChatStore } from '../../stores/chatStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useSmoothScroll } from '../../hooks/useSmoothScroll';
 import { resolveMdiIcon } from '../../utils/iconResolver';
-import { MessagePreviewHelper } from '../../utils/helpers';
+import { MessagePreviewHelper, getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 import { IChatListItem, IUserSearchResult } from '../../types/models';
 import { LastMessageType } from '../../types/enums';
 import { chatService } from '../../services/chat.service';
-import { BASE_SERVER_URL } from '../../services/apiClient';
 
 const ITEM_HEIGHT = 68;
 const CUBIC_EASE_OUT = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
@@ -52,38 +51,6 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
     <path d={path} />
   </svg>
 );
-
-const AVATAR_COLORS = ['#E17076', '#7BC862', '#65AADD', '#A695E7', '#EE7AE9', '#6EC9CB', '#FAA774'];
-const getAvatarColor = (id: number = 0) => AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
-
-// 🟢 Поддержка Base64, Blob, относительных и абсолютных ссылок с сервера
-const normalizeAvatarUrl = (url?: string | null): string | null => {
-  if (!url) return null;
-
-  // Если уже готовый data-uri или blob
-  if (url.startsWith('data:') || url.startsWith('blob:')) {
-    return url;
-  }
-
-  // Если полный внешний URL
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
-  }
-
-  // Если это Base64 из C# byte[]
-  if (
-    url.startsWith('/9j/') ||
-    url.startsWith('iVBOR') ||
-    url.startsWith('R0lGOD') ||
-    url.startsWith('PHN2Zy') ||
-    url.length > 200
-  ) {
-    return `data:image/jpeg;base64,${url}`;
-  }
-
-  // Относительный путь к файлу на бэкенде
-  return `${BASE_SERVER_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
-};
 
 const getChatKey = (item: IChatListItem) => {
   if (item.isSecretChat) return `s_${item.secretChatId || item.id}`;
@@ -175,7 +142,7 @@ export const SidebarChatsView: React.FC = () => {
     <div
       ref={searchContainerRef}
       style={{
-        width: 340,
+        width: '100%',
         height: '100%',
         backgroundColor: 'var(--bg-list)',
         display: 'flex',
@@ -185,11 +152,11 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* РЯД 0: ШАПКА "Chats" */}
+      {/* ================= РЯД 0: ШАПКА "Chats" (Отступ сверху 12px как в WPF) ================= */}
       <div
         style={{
-          height: 46,
-          margin: '7px 6px 5px 15px',
+          height: 42,
+          margin: '12px 6px 8px 15px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -202,35 +169,37 @@ export const SidebarChatsView: React.FC = () => {
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <MdiIcon path={mdiChatOutline} size={28} color="#FFFFFF" style={{ marginRight: 10 }} />
-          <span style={{ fontSize: 25, fontWeight: 800, color: '#FFFFFF' }}>Chats</span>
+        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+          <MdiIcon path={mdiChatOutline} size={26} color="#FFFFFF" style={{ marginRight: 9 }} />
+          <span style={{ fontSize: 24, fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.2px', lineHeight: 1 }}>Chats</span>
         </div>
       </div>
 
-      {/* РЯД 1: СТРОКА ПОИСКА */}
+      {/* ================= РЯД 1: СТРОКА ПОИСКА (Высота ровно 36px, радиус 10px) ================= */}
       <div
         style={{
-          padding: '0 6px 10px 6px',
+          margin: '0 6px 10px 6px',
           zIndex: 15,
-          transform: isSearchActive ? 'translateY(-52px)' : 'translateY(0)',
+          transform: isSearchActive ? 'translateY(-50px)' : 'translateY(0)',
           transition: isSearchActive ? `transform 250ms ${CUBIC_EASE_OUT}` : `transform 220ms ${CUBIC_EASE_OUT}`,
           flexShrink: 0,
+          boxSizing: 'border-box',
         }}
       >
         <div
           style={{
-            height: 40,
+            height: 36,
             backgroundColor: isSearchInputFocused ? 'var(--sidebar-search-focus-bg)' : 'var(--sidebar-search-bg)',
-            borderRadius: 12,
+            borderRadius: 10,
             display: 'flex',
             alignItems: 'center',
             padding: '0 12px',
             border: '1.2px solid transparent',
             boxSizing: 'border-box',
+            transition: 'background-color 0.15s ease',
           }}
         >
-          <MdiIcon path={mdiMagnify} size={18} color="var(--text-muted)" style={{ marginRight: 10 }} />
+          <MdiIcon path={mdiMagnify} size={17} color="var(--text-muted)" style={{ marginRight: 9 }} />
 
           <input
             ref={searchInputRef}
@@ -238,6 +207,7 @@ export const SidebarChatsView: React.FC = () => {
             placeholder={isChatSearchMode ? 'Search in messages...' : 'Search Chat'}
             value={searchText}
             onFocus={() => setIsSearchInputFocused(true)}
+            onBlur={() => setIsSearchInputFocused(false)}
             onChange={(e) => setSearchText(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && handleCloseSearch()}
             style={{
@@ -245,37 +215,44 @@ export const SidebarChatsView: React.FC = () => {
               border: 'none',
               outline: 'none',
               color: 'var(--sidebar-search-text)',
-              fontSize: 14,
+              fontSize: 13.5,
               width: '100%',
-              fontFamily: 'Segoe UI, sans-serif',
+              height: '100%',
+              padding: 0,
+              margin: 0,
+              fontFamily: "'Segoe UI', -apple-system, sans-serif",
             }}
           />
 
           <button
             onClick={handleCloseSearch}
             style={{
+              width: 18,
+              height: 18,
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
               padding: 0,
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               opacity: isSearchActive ? 1 : 0,
               pointerEvents: isSearchActive ? 'auto' : 'none',
               transition: isSearchActive ? 'opacity 200ms ease-out' : 'opacity 100ms ease-out',
+              flexShrink: 0,
             }}
           >
-            <MdiIcon path={mdiCloseCircle} size={18} color="var(--text-muted)" />
+            <MdiIcon path={mdiCloseCircle} size={16} color="var(--text-muted)" />
           </button>
         </div>
       </div>
 
-      {/* РЯД 2: ПАПКИ ЧАТОВ */}
+      {/* ================= РЯД 2: ПАПКИ ЧАТОВ ================= */}
       {chatFolders.length > 1 && (
         <div
           style={{
-            height: 45,
-            minHeight: 45,
+            height: 40,
+            minHeight: 40,
             display: 'flex',
             alignItems: 'center',
             padding: '0 10px',
@@ -295,10 +272,10 @@ export const SidebarChatsView: React.FC = () => {
                 onClick={() => selectFolder(folder.id)}
                 style={{
                   position: 'relative',
-                  height: 35,
-                  padding: folder.isSystem ? '0 12px' : '0 12px 0 6px',
+                  height: 32,
+                  padding: folder.isSystem ? '0 10px' : '0 10px 0 4px',
                   marginRight: 4,
-                  fontSize: 14.5,
+                  fontSize: 14,
                   fontWeight: 600,
                   color: isSelected ? '#FFFFFF' : 'var(--text-muted)',
                   cursor: 'pointer',
@@ -309,7 +286,7 @@ export const SidebarChatsView: React.FC = () => {
                 }}
               >
                 {!folder.isSystem && (
-                  <MdiIcon path={folderIconPath} size={16} color={folder.color || '#FFFFFF'} style={{ opacity: isSelected ? 1 : 0.6 }} />
+                  <MdiIcon path={folderIconPath} size={15} color={folder.color || '#FFFFFF'} style={{ opacity: isSelected ? 1 : 0.6 }} />
                 )}
                 <span>{folder.name}</span>
                 {isSelected && (
@@ -331,13 +308,14 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       )}
 
-      {/* РЯД 3: СПИСОК ЧАТОВ */}
+      {/* ================= РЯД 3: СПИСОК ЧАТОВ ================= */}
       <div
         ref={containerRef}
         className="wpf-scroll-viewer"
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
         style={{
           flex: 1,
+          width: '100%',
           position: 'relative',
           opacity: isSearchActive ? 0 : 1,
           pointerEvents: isSearchActive ? 'none' : 'auto',
@@ -371,17 +349,19 @@ export const SidebarChatsView: React.FC = () => {
               const isSelected = selectedChatUser?.id === (chat.isGroup ? chat.groupId : chat.userId);
               const isHovered = hoveredChatKey === key;
 
-              const [preview] = MessagePreviewHelper.formatPreview(
-                chat.lastMessage,
-                chat.lastMessageType,
-                chat.userId,
+              const rawText = chat.lastMessage || (chat as any).rawLastMessage || '';
+              const [preview, computedMsgType] = MessagePreviewHelper.formatPreview(
+                rawText,
+                (chat as any).lastAttachmentType ?? chat.lastMessageType,
+                (chat as any).lastMessageSenderId ?? chat.userId,
                 0,
-                chat.isLastMessageDeletedForMe
+                chat.isLastMessageDeletedForMe,
+                chat.isGroup,
+                chat.isChannel,
+                (chat as any).isLastAttachmentGif
               );
 
-              const msgIcon = getLastMessageIcon(chat.lastMessageType);
-
-              // 🟢 Читаем и avatarPath, и avatar (Base64) из C#
+              const msgIcon = getLastMessageIcon(chat.lastMessageType || computedMsgType);
               const avatarRaw = chat.avatarPath || (chat as any).avatar;
               const chatAvatarSrc = normalizeAvatarUrl(avatarRaw);
 
@@ -400,7 +380,7 @@ export const SidebarChatsView: React.FC = () => {
                     position: 'absolute',
                     top: `${topOffset}px`,
                     left: 8,
-                    right: 8,
+                    right: 0,
                     height: `${ITEM_HEIGHT}px`,
                     display: 'flex',
                     alignItems: 'center',
@@ -430,10 +410,8 @@ export const SidebarChatsView: React.FC = () => {
                         position: 'relative',
                       }}
                     >
-                      {/* Буква-заглушка */}
                       <span>{((chat.isGroup ? chat.groupName : chat.nickName) || 'U').charAt(0).toUpperCase()}</span>
 
-                      {/* 🟢 Фотография/аватарка поверх заглушки */}
                       {chatAvatarSrc && (
                         <img
                           src={chatAvatarSrc}
@@ -490,24 +468,42 @@ export const SidebarChatsView: React.FC = () => {
                   </div>
 
                   {/* Текстовая информация */}
-                  <div style={{ flex: 1, minWidth: 0, marginRight: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                  <div style={{ flex: 1, minWidth: 0, marginRight: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
                       {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
-                      <span style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span
+                        style={{
+                          color: '#FFFFFF',
+                          fontSize: 15,
+                          fontWeight: 600,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {chat.isGroup ? chat.groupName : chat.nickName}
                       </span>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       {msgIcon && <MdiIcon path={msgIcon} size={14} color="var(--text-muted)" />}
-                      <span style={{ color: 'var(--text-muted)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : preview}
+                      <span
+                        style={{
+                          color: 'var(--text-muted)',
+                          fontSize: 13,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          lineHeight: '1.2',
+                        }}
+                      >
+                        {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : (preview || rawText || '')}
                       </span>
                     </div>
                   </div>
 
                   {/* Время и бейдж */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', flexShrink: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       {chat.isMuted && <MdiIcon path={mdiBellOffOutline} size={14} color="var(--text-muted)" />}
                       {chat.isPinned && <MdiIcon path={mdiPin} size={14} color="var(--text-muted)" style={{ transform: 'rotate(45deg)' }} />}
@@ -549,7 +545,7 @@ export const SidebarChatsView: React.FC = () => {
         className="wpf-scroll-viewer"
         style={{
           position: 'absolute',
-          top: 54,
+          top: 50,
           left: 0,
           right: 0,
           bottom: 0,
@@ -564,7 +560,6 @@ export const SidebarChatsView: React.FC = () => {
             : 'opacity 120ms ease-out, transform 120ms ease-in, visibility 0ms 120ms',
         }}
       >
-        {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ */}
         {searchText.trim().length === 0 && (
           <div style={{ marginTop: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 5px' }}>
@@ -606,7 +601,6 @@ export const SidebarChatsView: React.FC = () => {
           </div>
         )}
 
-        {/* БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК */}
         {searchText.trim().length > 0 && (
           <div style={{ marginTop: 6 }}>
             {isSearching ? (
@@ -636,7 +630,6 @@ export const SidebarChatsView: React.FC = () => {
                   ))
                 )}
 
-                {/* БЛОК 3: НАЙДЕННЫЕ СООБЩЕНИЯ */}
                 {foundMessages && foundMessages.length > 0 && (
                   <div style={{ marginTop: 16 }}>
                     <div style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600, margin: '5px 0 12px 5px' }}>
@@ -786,7 +779,7 @@ export const SidebarChatsView: React.FC = () => {
 
 const UserCard: React.FC<{ user: IUserSearchResult; onSelect: () => void }> = ({ user, onSelect }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const avatarSrc = normalizeAvatarUrl(user.avatarPath || user.avatar);
+  const avatarSrc = normalizeAvatarUrl(user.avatarPath || (user as any).avatar);
 
   return (
     <div
