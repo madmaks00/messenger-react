@@ -16,7 +16,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
   onChange,
   onClear,
   searchBackground,
-  margin = '0 6px 10px 6px',
+  margin = '0 6px 0 6px', // 🟢 0px снизу
 }) => {
   const [isFocused, setIsFocused] = useState(false);
 
@@ -44,7 +44,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
           viewBox="0 0 24 24"
           width={17}
           height={17}
-          fill="var(--text-muted)"
+          fill="#8E95A5"
           style={{ marginRight: 9, flexShrink: 0 }}
         >
           <path d={mdiMagnify} />
@@ -57,6 +57,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           onChange={(e) => onChange(e.target.value)}
+          className="wpf-search-input"
           style={{
             width: '100%',
             height: '100%',
@@ -65,8 +66,8 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
             outline: 'none',
             padding: 0,
             margin: 0,
-            color: 'var(--sidebar-search-text)',
-            fontSize: 13.5,
+            color: '#FFFFFF',
+            fontSize: 14.5,
             fontFamily: "'Segoe UI', -apple-system, sans-serif",
             boxSizing: 'border-box',
           }}
@@ -88,7 +89,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
               flexShrink: 0,
             }}
           >
-            <svg viewBox="0 0 24 24" width={16} height={16} fill="var(--text-muted)">
+            <svg viewBox="0 0 24 24" width={16} height={16} fill="#8E95A5">
               <path d={mdiCloseCircle} />
             </svg>
           </button>

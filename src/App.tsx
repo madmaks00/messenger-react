@@ -284,39 +284,30 @@ export const App: React.FC = () => {
       </div>
 
       {/* КОЛОНКА 3: ОКНО ЧАТА / РАБОЧАЯ ОБЛАСТЬ (flex: 1) */}
-      <div
-        style={{
-          flex: 1,
-          height: '100%',
-          backgroundColor: 'var(--bg-chat)',
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          overflow: 'hidden',
-          minWidth: 430, // 🟢 MinChatWorkspaceWidth = 430 из C#
-        }}
-      >
-        {currentTab === MainTab.Chats && (
-          <>
-            <ChatWorkspaceView />
-            {selectedChatUser && (
-              <div style={{ padding: '0 30px 20px 30px', zIndex: 20 }}>
-                <MessageInputUserControl />
-              </div>
-            )}
-          </>
-        )}
+<div
+  style={{
+    flex: 1,
+    height: '100%',
+    backgroundColor: 'var(--bg-chat)',
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'relative',
+    overflow: 'hidden',
+    minWidth: 430,
+  }}
+>
+  {currentTab === MainTab.Chats && <ChatWorkspaceView />}
 
-        {currentTab === MainTab.AccountSwitch && <AccountManagementContentView />}
-        {currentTab === MainTab.Notes && <NotesWorkspaceView />}
-        {currentTab === MainTab.Tasks && <TasksWorkspaceView />}
-        {currentTab === MainTab.Games && (
-          <>
-            <GamesWorkspaceView />
-            <GameOverlayView />
-          </>
-        )}
-      </div>
+  {currentTab === MainTab.AccountSwitch && <AccountManagementContentView />}
+  {currentTab === MainTab.Notes && <NotesWorkspaceView />}
+  {currentTab === MainTab.Tasks && <TasksWorkspaceView />}
+  {currentTab === MainTab.Games && (
+    <>
+      <GamesWorkspaceView />
+      <GameOverlayView />
+    </>
+  )}
+</div>
 
       {/* ДИАЛОГИ И ОВЕРЛЕИ */}
       {isProfileOpen && currentUser && (

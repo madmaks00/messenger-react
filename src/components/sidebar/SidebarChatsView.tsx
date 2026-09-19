@@ -152,7 +152,7 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* ================= РЯД 0: ШАПКА "Chats" (Отступ сверху 12px как в WPF) ================= */}
+      {/* ================= РЯД 0: ШАПКА "Chats" ================= */}
       <div
         style={{
           height: 42,
@@ -175,12 +175,12 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 1: СТРОКА ПОИСКА (Высота ровно 36px, радиус 10px) ================= */}
+      {/* ================= РЯД 1: СТРОКА ПОИСКА (🟢 1 в 1 Margin="6,0,6,0", растянута по краям, 0px снизу) ================= */}
       <div
         style={{
-          margin: '0 6px 10px 6px',
+          margin: '0 6px 0 6px', // 👈 1 в 1 как WPF Margin="6,0,6,0" (слева 6, сверху 0, справа 6, снизу 0)
           zIndex: 15,
-          transform: isSearchActive ? 'translateY(-50px)' : 'translateY(0)',
+          transform: isSearchActive ? 'translateY(-52px)' : 'translateY(0)', // 👈 -52px строго по Storyboard SearchBoxTransform To="-52"
           transition: isSearchActive ? `transform 250ms ${CUBIC_EASE_OUT}` : `transform 220ms ${CUBIC_EASE_OUT}`,
           flexShrink: 0,
           boxSizing: 'border-box',
@@ -193,14 +193,16 @@ export const SidebarChatsView: React.FC = () => {
             borderRadius: 10,
             display: 'flex',
             alignItems: 'center',
-            padding: '0 12px',
+            padding: '0 10px',
             border: '1.2px solid transparent',
             boxSizing: 'border-box',
             transition: 'background-color 0.15s ease',
           }}
         >
-          <MdiIcon path={mdiMagnify} size={17} color="var(--text-muted)" style={{ marginRight: 9 }} />
+          {/* Иконка Magnify 18x18 Margin="0,0,10,0" */}
+          <MdiIcon path={mdiMagnify} size={18} color="#8E95A5" style={{ marginRight: 10 }} />
 
+          {/* Поле ввода: аналог Grid.Column="1" Width="*" — занимает 100% оставшейся ширины */}
           <input
             ref={searchInputRef}
             type="text"
@@ -210,56 +212,61 @@ export const SidebarChatsView: React.FC = () => {
             onBlur={() => setIsSearchInputFocused(false)}
             onChange={(e) => setSearchText(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && handleCloseSearch()}
+            className="wpf-search-input"
             style={{
+              flex: 1,
+              minWidth: 0,
+              width: '100%',
+              height: '100%',
               background: 'transparent',
               border: 'none',
               outline: 'none',
-              color: 'var(--sidebar-search-text)',
-              fontSize: 13.5,
-              width: '100%',
-              height: '100%',
+              color: '#FFFFFF',
+              fontSize: 14, // 👈 1 в 1 как FontSize="14" в XAML
               padding: 0,
               margin: 0,
               fontFamily: "'Segoe UI', -apple-system, sans-serif",
             }}
           />
 
-          <button
-            onClick={handleCloseSearch}
-            style={{
-              width: 18,
-              height: 18,
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity: isSearchActive ? 1 : 0,
-              pointerEvents: isSearchActive ? 'auto' : 'none',
-              transition: isSearchActive ? 'opacity 200ms ease-out' : 'opacity 100ms ease-out',
-              flexShrink: 0,
-            }}
-          >
-            <MdiIcon path={mdiCloseCircle} size={16} color="var(--text-muted)" />
-          </button>
+          {/* Кнопка сброса: аналог Visibility="Collapsed" — при скрытии занимает ровно 0px */}
+          {isSearchActive && (
+            <button
+              onClick={handleCloseSearch}
+              style={{
+                width: 24, // 👈 1 в 1 как в XAML Width="24" Height="24"
+                height: 24,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                marginLeft: 4,
+              }}
+            >
+              <MdiIcon path={mdiCloseCircle} size={18} color="#8E95A5" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ================= РЯД 2: ПАПКИ ЧАТОВ ================= */}
+      {/* ================= РЯД 2: ПАПКИ ЧАТОВ (🟢 Высота 45px, 0px верхний отступ сетки) ================= */}
       {chatFolders.length > 1 && (
         <div
           style={{
-            height: 40,
-            minHeight: 40,
+            height: 45, // 👈 1 в 1 как Grid Height="45" в WPF
+            minHeight: 45,
             display: 'flex',
             alignItems: 'center',
-            padding: '0 10px',
+            padding: '5px 10px 0 10px', // 👈 5px сверху как Margin="0,5,0,0" у ItemsControl
             opacity: isSearchActive ? 0 : 1,
             pointerEvents: isSearchActive ? 'none' : 'auto',
             transition: isSearchActive ? 'opacity 150ms ease-out' : 'opacity 200ms ease-out',
             flexShrink: 0,
+            boxSizing: 'border-box',
           }}
         >
           {chatFolders.map((folder: IChatFolder) => {
@@ -272,10 +279,10 @@ export const SidebarChatsView: React.FC = () => {
                 onClick={() => selectFolder(folder.id)}
                 style={{
                   position: 'relative',
-                  height: 32,
-                  padding: folder.isSystem ? '0 10px' : '0 10px 0 4px',
+                  height: 35, // 👈 Height="35" из XAML FolderTabStyle
+                  padding: folder.isSystem ? '0 12px' : '0 12px 0 6px',
                   marginRight: 4,
-                  fontSize: 14,
+                  fontSize: 14.5,
                   fontWeight: 600,
                   color: isSelected ? '#FFFFFF' : 'var(--text-muted)',
                   cursor: 'pointer',
@@ -286,7 +293,7 @@ export const SidebarChatsView: React.FC = () => {
                 }}
               >
                 {!folder.isSystem && (
-                  <MdiIcon path={folderIconPath} size={15} color={folder.color || '#FFFFFF'} style={{ opacity: isSelected ? 1 : 0.6 }} />
+                  <MdiIcon path={folderIconPath} size={16} color={folder.color || '#FFFFFF'} style={{ opacity: isSelected ? 1 : 0.6 }} />
                 )}
                 <span>{folder.name}</span>
                 {isSelected && (
@@ -545,7 +552,7 @@ export const SidebarChatsView: React.FC = () => {
         className="wpf-scroll-viewer"
         style={{
           position: 'absolute',
-          top: 50,
+          top: 48,
           left: 0,
           right: 0,
           bottom: 0,

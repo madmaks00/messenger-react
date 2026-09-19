@@ -42,7 +42,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
   isPublic,
   username: isPublic ? username.trim() : undefined,
   avatar: avatar || undefined,
-} as any);
+  } as any);
 
 if (res) {
   setCreatedLink((res as any).inviteLink || `/join/${res.id}`);

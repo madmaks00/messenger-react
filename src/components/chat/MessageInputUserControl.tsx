@@ -1,8 +1,54 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import {
+  mdiPencil,
+  mdiReply,
+  mdiClose,
+  mdiBlockHelper,
+  mdiVolumeOff,
+  mdiLogin,
+  mdiFileDocumentOutline,
+  mdiAttachment,
+  mdiEmoticonOutline,
+  mdiMicrophone,
+  mdiSend,
+  mdiCheck,
+} from '@mdi/js';
+
 import { useMessageInputStore } from '../../stores/messageInputStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useEmojiStore } from '../../stores/emojiStore';
 import { EmojiPickerUserControl } from './EmojiPickerUserControl';
+
+// Цвета 1 в 1 из DefaultDark.xaml
+const COLORS = {
+  accent: '#1E9BEB',           // Color.Accent / AppAccentBrush
+  inputBg: '#1C212D',          // InputAreaBackgroundBrush
+  inputBorder: '#2A303C',      // InputAreaBorderBrush
+  inputText: '#FFFFFF',        // InputAreaTextBrush
+  textMuted: '#7D8494',        // TextMuted
+  warningBg: '#1C212D',        // WarningBarBgBrush
+  warningBorder: '#E74C3C',    // WarningBarAccentBorderBrush
+  warningText: '#FFFFFF',      // WarningBarTextBrush
+  activeToggleBg: '#2AFFFFFF', // HeaderSearchActiveBgBrush / InputAreaButtonCheckedBgBrush
+  hoverWhite: '#FFFFFF',
+};
+
+const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
+  path,
+  size = 20,
+  color = 'currentColor',
+  style,
+}) => (
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill={color}
+    style={{ display: 'inline-block', flexShrink: 0, verticalAlign: 'middle', ...style }}
+  >
+    <path d={path} />
+  </svg>
+);
 
 export const MessageInputUserControl: React.FC = () => {
   const {
@@ -15,7 +61,6 @@ export const MessageInputUserControl: React.FC = () => {
     hintText,
     canWriteMessages,
     canSendText,
-    canSendMedia,
     isBlockedByMe,
     isBlockedByThem,
     isGroup,
@@ -25,40 +70,48 @@ export const MessageInputUserControl: React.FC = () => {
     setNewMessageText,
     cancelEdit,
     cancelReply,
-    addPendingAttachments,
     removePendingAttachment,
+    addPendingAttachments,
     startVoiceRecording,
     cancelVoiceRecording,
     stopAndSendVoiceRecording,
   } = useMessageInputStore();
 
   const { sendMessage } = useChatStore();
-  const { togglePicker } = useEmojiStore();
+  const { isEmojiPickerOpen, togglePicker } = useEmojiStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputTextBoxRef = useRef<HTMLTextAreaElement>(null);
 
-  // Автоматический пересчет высоты textarea под контент (до 200px)
+  const [isClipHovered, setIsClipHovered] = useState(false);
+  const [isEmojiHovered, setIsEmojiHovered] = useState(false);
+
+  const focusInputField = useCallback(() => {
+    if (inputTextBoxRef.current) {
+      inputTextBoxRef.current.focus();
+      const len = inputTextBoxRef.current.value.length;
+      inputTextBoxRef.current.setSelectionRange(len, len);
+    }
+  }, []);
+
+  // Автоматический пересчет высоты textarea от 46px до 200px
   useEffect(() => {
     if (inputTextBoxRef.current) {
       inputTextBoxRef.current.style.height = 'auto';
-      inputTextBoxRef.current.style.height = `${Math.min(inputTextBoxRef.current.scrollHeight, 200)}px`;
+      inputTextBoxRef.current.style.height = `${Math.min(inputTextBoxRef.current.scrollHeight, 180)}px`;
     }
   }, [newMessageText]);
 
-  // Фокус поля при изменении реплаев или редактирования
   useEffect(() => {
-    if ((editingMessage || replyingToMessages.length > 0) && inputTextBoxRef.current) {
-      inputTextBoxRef.current.focus();
+    if (editingMessage || replyingToMessages.length > 0) {
+      focusInputField();
     }
-  }, [editingMessage, replyingToMessages.length]);
+  }, [editingMessage, replyingToMessages.length, focusInputField]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
-      if (e.shiftKey) {
-        return; // Shift + Enter: перенос строки
-      }
-      e.preventDefault(); // Enter: отправка
+      if (e.shiftKey) return;
+      e.preventDefault();
       handleSendAction();
     }
   };
@@ -69,7 +122,7 @@ export const MessageInputUserControl: React.FC = () => {
       return;
     }
 
-    const text = newMessageText.trim();
+    const text = (newMessageText || '').trim();
     if (!text && pendingAttachments.length === 0) return;
 
     await sendMessage(text, pendingAttachments, editingMessage, replyingToMessages);
@@ -81,169 +134,286 @@ export const MessageInputUserControl: React.FC = () => {
     }
   };
 
-  const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       addPendingAttachments(Array.from(e.target.files));
       e.target.value = '';
     }
   };
 
-  const hasAttachments = pendingAttachments.length > 0;
-  const hasText = newMessageText.trim().length > 0;
+  const hasAttachments = pendingAttachments && pendingAttachments.length > 0;
+  const hasText = Boolean(newMessageText && newMessageText.trim().length > 0);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', position: 'relative' }}>
-      {/* 1. ПЛАШКА РЕДАКТИРОВАНИЯ СООБЩЕНИЯ */}
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
+      
+      {/* 1. ПЛАШКА РЕДАКТИРОВАНИЯ (EditorStatusBarBgBrush = #1C212D, BorderLeft = 2px #1E9BEB) */}
       {editingMessage && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            backgroundColor: '#1E293B',
-            borderLeft: '2px solid var(--app-accent, #3B82F6)',
+            backgroundColor: COLORS.inputBg,
+            borderLeft: `2px solid ${COLORS.accent}`,
             margin: '8px 20px 5px 20px',
             padding: '5px 10px',
             borderRadius: '0 8px 8px 0',
+            boxSizing: 'border-box',
           }}
         >
-          <span style={{ fontSize: 18, color: 'var(--app-accent, #3B82F6)', marginRight: 10 }}>✏</span>
+          <div style={{ marginRight: 10, display: 'flex', alignItems: 'center' }}>
+            <MdiIcon path={mdiPencil} size={20} color={COLORS.accent} />
+          </div>
+
           <div style={{ flex: 1, minWidth: 0, marginRight: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--app-accent, #3B82F6)' }}>Edit Message</span>
-              <span style={{ fontSize: 11, color: '#94A3B8' }}>
-                {new Date(editingMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.accent }}>Edit Message</span>
+              <span style={{ fontSize: 11, color: COLORS.textMuted }}>
+                {editingMessage.timestamp
+                  ? new Date(editingMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : ''}
               </span>
             </div>
-            <div style={{ fontSize: 13, color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {editingMessage.text || 'Attachment'}
+            <div
+              style={{
+                fontSize: 13,
+                color: COLORS.textMuted,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {editingMessage.text || 'Media message'}
             </div>
           </div>
-          <button onClick={cancelEdit} style={closeToolBtnStyle} title="Cancel Edit">✕</button>
+
+          <button onClick={cancelEdit} title="Cancel edit" style={actionCloseButtonStyle(26)}>
+            <MdiIcon path={mdiClose} size={16} color={COLORS.textMuted} />
+          </button>
         </div>
       )}
 
-      {/* 2. ПЛАШКА ЦИТИРОВАНИЯ (REPLY) */}
+      {/* 2. ПЛАШКА ЦИТИРОВАНИЯ (ReplyStatusBarBgBrush = #1C212D, BorderLeft = 2px #1E9BEB) */}
       {replyingToMessages.length > 0 && !editingMessage && (
         <div
           style={{
             display: 'flex',
             alignItems: 'flex-start',
-            backgroundColor: '#1E293B',
-            borderLeft: '2px solid var(--app-accent, #3B82F6)',
+            backgroundColor: COLORS.inputBg,
+            borderLeft: `2px solid ${COLORS.accent}`,
             margin: '0 20px 5px 20px',
-            padding: '5px 10px',
+            padding: '5px 10px 5px 5px',
             borderRadius: '0 8px 8px 0',
+            boxSizing: 'border-box',
           }}
         >
-          <span style={{ fontSize: 20, color: 'var(--app-accent, #3B82F6)', margin: '2px 10px 0 5px' }}>↩</span>
-          <div style={{ flex: 1, maxHeight: 80, overflowY: 'auto', marginRight: 10 }}>
-            {replyingToMessages.map((rep) => (
-              <div key={rep.id || rep.serverId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3px 0' }}>
+          <div style={{ margin: '5px 10px 0 5px', display: 'flex', alignItems: 'center' }}>
+            <MdiIcon path={mdiReply} size={24} color={COLORS.accent} />
+          </div>
+
+          <div style={{ flex: 1, maxHeight: 80, overflowY: 'auto', marginRight: 10 }} className="wpf-scroll-viewer">
+            {replyingToMessages.map((rep: any) => (
+              <div
+                key={rep.id || rep.serverId}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  margin: '3px 0',
+                }}
+              >
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--app-accent, #3B82F6)' }}>{rep.senderName}</div>
-                  <div style={{ fontSize: 13, color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.accent }}>
+                    {rep.senderName || 'Message'}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: COLORS.textMuted,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
                     {rep.text || 'Attachment'}
                   </div>
                 </div>
-                <button onClick={() => cancelReply(rep)} style={closeToolBtnStyle} title="Remove Quote">✕</button>
+
+                <button onClick={() => cancelReply(rep)} style={{ ...actionCloseButtonStyle(24), margin: '0 15px 0 10px' }}>
+                  <MdiIcon path={mdiClose} size={16} color="#777777" />
+                </button>
               </div>
             ))}
           </div>
-          <button onClick={() => cancelReply()} style={{ ...closeToolBtnStyle, fontSize: 16 }} title="Cancel All Replies">✕</button>
+
+          <button onClick={() => cancelReply()} style={actionCloseButtonStyle(28)}>
+            <MdiIcon path={mdiClose} size={20} color={COLORS.textMuted} />
+          </button>
         </div>
       )}
 
-      {/* 3. ОСНОВНОЙ КОНТРОЛ ВВОДА / ПРЕДУПРЕЖДЕНИЯ */}
+      {/* 3. ОСНОВНАЯ ОБЛАСТЬ ВВОДА / ПРЕДУПРЕЖДЕНИЯ */}
       <div>
-        {/* Блокировка мною */}
         {isBlockedByMe && (
           <div style={warningBarStyle}>
-            <span style={{ fontSize: 18, color: '#EF4444', marginRight: 8 }}>🚫</span>
-            <span style={{ color: '#F8FAFC', fontSize: 14, fontWeight: 600 }}>This user is in your blacklist</span>
+            <MdiIcon path={mdiBlockHelper} size={20} color={COLORS.warningBorder} style={{ marginRight: 8 }} />
+            <span style={{ color: COLORS.warningText, fontSize: 14, fontWeight: 600 }}>This user is in your blacklist</span>
           </div>
         )}
 
-        {/* Блокировка собеседником */}
         {isBlockedByThem && (
           <div style={warningBarStyle}>
-            <span style={{ fontSize: 18, color: '#EF4444', marginRight: 8 }}>🚫</span>
-            <span style={{ color: '#F8FAFC', fontSize: 14, fontWeight: 600 }}>You are in this user's blacklist. You cannot send messages.</span>
+            <MdiIcon path={mdiBlockHelper} size={20} color={COLORS.warningBorder} style={{ marginRight: 8 }} />
+            <span style={{ color: COLORS.warningText, fontSize: 14, fontWeight: 600 }}>You are in this user's blacklist. You cannot send messages.</span>
           </div>
         )}
 
-        {/* Запрет на отправку сообщений в группе */}
         {!canWriteMessages && isGroup && isCurrentChatJoined && !isAdmin && !canSendText && (
           <div style={{ ...warningBarStyle, height: 45, opacity: 0.7 }}>
-            <span style={{ fontSize: 18, marginRight: 8 }}>🔇</span>
-            <span style={{ color: '#F8FAFC', fontSize: 14, fontWeight: 600 }}>Sending messages is disabled in this group by administrator.</span>
+            <MdiIcon path={mdiVolumeOff} size={20} color={COLORS.warningText} style={{ marginRight: 8 }} />
+            <span style={{ color: COLORS.warningText, fontSize: 14, fontWeight: 600 }}>Sending messages is disabled in this group by administrator.</span>
           </div>
         )}
 
-        {/* Кнопка вступления в группу / канал */}
         {isGroup && !isCurrentChatJoined && !isBlockedByMe && !isBlockedByThem && (
           <div style={{ ...warningBarStyle, height: 45 }}>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('JoinCurrentChatRequestMessage'))}
-              style={{ background: 'transparent', border: 'none', color: 'var(--app-accent, #3B82F6)', fontSize: 15, fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: COLORS.accent,
+                fontSize: 15,
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
             >
-              <span>🚪</span>
+              <MdiIcon path={mdiLogin} size={20} color={COLORS.accent} />
               <span>{isChannel ? 'JOIN CHANNEL' : 'JOIN GROUP'}</span>
             </button>
           </div>
         )}
 
-        {/* АКТИВНОЕ ПОЛЕ ВВОДА */}
+        {/* АКТИВНОЕ ПОЛЕ ВВОДА (1 в 1 с WPF XAML) */}
         {canWriteMessages && (
           <div>
-            {/* Горизонтальная лента прикрепленных файлов */}
+            {/* Лента прикрепленных файлов */}
             {hasAttachments && (
-              <div style={{ display: 'flex', gap: 8, padding: 6, backgroundColor: '#1E293B', borderRadius: 10, marginBottom: 5, overflowX: 'auto' }}>
-                {pendingAttachments.map((att, idx) => (
-                  <div key={att.id || idx} style={{ position: 'relative', width: 60, height: 60, flexShrink: 0, borderRadius: 8, overflow: 'hidden', backgroundColor: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {att.type === 0 && att.url ? (
-                      <img src={att.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <div
+                style={{
+                  background: COLORS.inputBg,
+                  borderRadius: 10,
+                  margin: '0 0 5px 0',
+                  padding: 5,
+                  display: 'flex',
+                  gap: 8,
+                  overflowX: 'auto',
+                }}
+              >
+                {pendingAttachments.map((att: any, idx: number) => (
+                  <div
+                    key={att.id || idx}
+                    style={{
+                      width: 60,
+                      height: 60,
+                      borderRadius: 8,
+                      position: 'relative',
+                      background: '#232A3B',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {att.displayImageUrl || att.url ? (
+                      <img src={att.displayImageUrl || att.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
-                      <span style={{ fontSize: 24, color: '#94A3B8' }}>📄</span>
+                      <MdiIcon path={mdiFileDocumentOutline} size={30} color="#5E92CE" />
                     )}
+
                     <button
                       onClick={() => removePendingAttachment(idx)}
-                      style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: 10, background: 'rgba(0,0,0,0.6)', color: '#FFF', border: 'none', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      style={{
+                        position: 'absolute',
+                        top: 2,
+                        right: 2,
+                        width: 20,
+                        height: 20,
+                        borderRadius: 10,
+                        background: '#CC000000',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 0,
+                      }}
                     >
-                      ✕
+                      <MdiIcon path={mdiClose} size={12} color="#FFFFFF" />
                     </button>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Инпут-бар */}
+            {/* ИНПУТ-КАПСУЛА:
+                WPF: BorderThickness="1.2", CornerRadius="20", Padding="10,1,2,1", Grid Margin="-3,0,3,0"
+                Итоговый padding: слева (10-3)=7px, справа (2+3)=5px, сверху 2px, снизу 2px
+                Итоговая высота: 46px (38px кнопка + 1px margin-bottom + 4px paddings + 2.4px borders)
+            */}
             <div
               style={{
+                border: `1.2px solid ${COLORS.inputBorder}`,
+                borderRadius: 20,
+                padding: '2px 5px 2px 7px',
+                minHeight: 46,
+                maxHeight: 200,
+                backgroundColor: isRecordingVoice ? '#1C212D' : COLORS.inputBg,
                 display: 'flex',
                 alignItems: 'flex-end',
-                minHeight: 40,
-                maxHeight: 200,
-                backgroundColor: isRecordingVoice ? '#1E293B' : 'var(--input-area-bg, #1E293B)',
-                border: '1.2px solid #334155',
-                borderRadius: 20,
-                padding: '4px 10px',
                 boxSizing: 'border-box',
                 position: 'relative',
               }}
             >
-              {/* 1. Кнопка скрепки */}
+              {/* 1. Кнопка скрепки: Width="36", Height="36", Margin="0,0,0,2", Icon="26x26" */}
               {!isRecordingVoice && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  style={{ background: 'transparent', border: 'none', width: 36, height: 36, color: '#94A3B8', fontSize: 20, cursor: 'pointer', transform: 'rotate(-45deg)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}
+                  onMouseEnter={() => setIsClipHovered(true)}
+                  onMouseLeave={() => setIsClipHovered(false)}
                   title="Attach file"
+                  style={{
+                    width: 36,
+                    height: 36,
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 2,
+                    borderRadius: 18,
+                    flexShrink: 0,
+                    transition: 'opacity 0.15s ease',
+                  }}
                 >
-                  📎
+                  <div style={{ transform: 'rotate(-45deg)', display: 'flex', alignItems: 'center' }}>
+                    <MdiIcon
+                      path={mdiAttachment}
+                      size={26}
+                      color={isClipHovered ? COLORS.hoverWhite : COLORS.textMuted}
+                    />
+                  </div>
                 </button>
               )}
-              <input ref={fileInputRef} type="file" multiple onChange={handleFileSelection} style={{ display: 'none' }} />
+              <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} style={{ display: 'none' }} />
 
-              {/* 2. Текстовое поле ввода */}
+              {/* 2. Поле ввода сообщения: FontSize="14", LineHeight="20", VerticalAlignment="Center" */}
               {!isRecordingVoice && (
                 <textarea
                   ref={inputTextBoxRef}
@@ -257,52 +427,104 @@ export const MessageInputUserControl: React.FC = () => {
                     background: 'transparent',
                     border: 'none',
                     outline: 'none',
-                    color: '#FFFFFF',
+                    color: COLORS.inputText,
                     fontSize: 14,
                     lineHeight: '20px',
+                    padding: '8px 8px 10px 8px',
                     resize: 'none',
-                    maxHeight: 200,
-                    padding: '8px 8px',
-                    fontFamily: 'inherit',
+                    maxHeight: 180,
+                    fontFamily: 'Segoe UI, -apple-system, sans-serif',
+                    boxSizing: 'border-box',
                   }}
                 />
               )}
 
-              {/* 3. Панель записи голосового */}
+              {/* 3. Голосовая запись */}
               {isRecordingVoice && (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px' }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#FF3B30', animation: 'pulse 1s infinite' }} />
-                  <span style={{ fontSize: 15, fontWeight: 600, color: '#FFFFFF' }}>{recordingTimeStr}</span>
-                  <span style={{ fontSize: 13, color: '#94A3B8' }}>Recording voice message...</span>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', height: 40, marginLeft: 10 }}>
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      backgroundColor: '#FF3B30',
+                      marginRight: 10,
+                      animation: 'pulse 1s infinite ease-in-out',
+                    }}
+                  />
+                  <span style={{ fontSize: 15, fontWeight: 600, color: COLORS.inputText, marginRight: 15 }}>
+                    {recordingTimeStr}
+                  </span>
+                  <span style={{ fontSize: 13, color: COLORS.textMuted }}>
+                    Recording voice message...
+                  </span>
                 </div>
               )}
 
-              {/* 4. Кнопка Эмодзи */}
+              {/* 4. Кнопка эмодзи (TelegramStyleActionToggleButton):
+                  Width="36", Height="36", Margin="0,0,5,2", Icon Width="24" Height="24"
+              */}
               {!isRecordingVoice && (
-                <div style={{ position: 'relative' }}>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end' }}>
                   <button
                     onClick={togglePicker}
-                    style={{ background: 'transparent', border: 'none', width: 36, height: 36, color: '#94A3B8', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}
+                    onMouseEnter={() => setIsEmojiHovered(true)}
+                    onMouseLeave={() => setIsEmojiHovered(false)}
                     title="Emoji"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      background: isEmojiPickerOpen ? COLORS.activeToggleBg : 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 5px 2px 0',
+                      borderRadius: 18,
+                      flexShrink: 0,
+                      transition: 'background-color 0.15s ease',
+                    }}
                   >
-                    😊
+                    <MdiIcon
+                      path={mdiEmoticonOutline}
+                      size={24}
+                      color={isEmojiPickerOpen || isEmojiHovered ? COLORS.hoverWhite : COLORS.textMuted}
+                    />
                   </button>
+
                   <EmojiPickerUserControl />
                 </div>
               )}
 
-              {/* 5. Кнопка отмены записи */}
+              {/* 5. Кнопка отмены записи (37x37, Margin="0,0,5,2") */}
               {isRecordingVoice && (
                 <button
                   onClick={cancelVoiceRecording}
-                  style={{ background: 'transparent', border: 'none', width: 36, height: 36, color: '#FF3B30', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}
                   title="Cancel recording"
+                  style={{
+                    width: 37,
+                    height: 37,
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 5px 2px 0',
+                    borderRadius: 18,
+                    flexShrink: 0,
+                  }}
                 >
-                  ✕
+                  <MdiIcon path={mdiClose} size={22} color="#FF3B30" />
                 </button>
               )}
 
-              {/* 6. Кнопка действия (Отправка / Микрофон / Готово) */}
+              {/* 6. Кнопка микрофона / отправки (Telegram Style):
+                  Width="38", Height="38", Margin="0,0,0,1", Background="#1E9BEB", Icon="22x22"
+              */}
               <button
                 onClick={
                   isRecordingVoice
@@ -311,24 +533,31 @@ export const MessageInputUserControl: React.FC = () => {
                     ? handleSendAction
                     : startVoiceRecording
                 }
+                title={isRecordingVoice ? 'Send recording' : hasAttachments || hasText ? 'Send message' : 'Record voice'}
                 style={{
                   width: 38,
                   height: 38,
+                  minWidth: 38,
                   borderRadius: 19,
-                  backgroundColor: 'var(--app-accent, #3B82F6)',
+                  backgroundColor: COLORS.accent,
                   border: 'none',
-                  color: '#FFFFFF',
-                  fontSize: 16,
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'pointer',
-                  marginLeft: 4,
-                  marginBottom: 1,
+                  padding: 0,
+                  margin: '0 0 1px 0',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
                   flexShrink: 0,
+                  transition: 'opacity 0.1s ease',
                 }}
               >
-                {isRecordingVoice ? '✓' : hasAttachments || hasText ? '➤' : '🎤'}
+                <MdiIcon
+                  path={isRecordingVoice ? mdiCheck : hasAttachments || hasText ? mdiSend : mdiMicrophone}
+                  size={22}
+                  color="#FFFFFF"
+                  style={!isRecordingVoice && (hasAttachments || hasText) ? { transform: 'translateX(1px)' } : undefined}
+                />
               </button>
             </div>
           </div>
@@ -338,23 +567,28 @@ export const MessageInputUserControl: React.FC = () => {
   );
 };
 
-const closeToolBtnStyle: React.CSSProperties = {
+const actionCloseButtonStyle = (size: number): React.CSSProperties => ({
+  width: size,
+  height: size,
   background: 'transparent',
   border: 'none',
-  color: '#94A3B8',
   cursor: 'pointer',
-  padding: 4,
-  fontSize: 14,
-};
+  padding: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+});
 
 const warningBarStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  backgroundColor: '#1E293B',
-  border: '1.2px solid #334155',
+  backgroundColor: COLORS.warningBg,
+  border: `1.2px solid ${COLORS.warningBorder}`,
   borderRadius: 20,
   height: 40,
   padding: '0 20px',
   boxSizing: 'border-box',
 };
+
+export default MessageInputUserControl;

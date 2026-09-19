@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   mdiLock,
-  mdiPin,
   mdiPinOutline,
   mdiPinOffOutline,
   mdiMagnify,
@@ -35,7 +34,33 @@ import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 import { userSession } from '../../services/userSession';
 import { chatService } from '../../services/chat.service';
 import { eventBus } from '../../services/eventBus';
-import { IMessage } from '../../types/models';
+
+// Цвета 1 в 1 из DefaultDark.xaml
+const PALETTE = {
+  bgChat: '#11141B',
+  chatHeaderBg: '#161A23',
+  chatHeaderBorder: '#1F2533',
+  chatHeaderTitle: '#FFFFFF',
+  accent: '#1E9BEB',               // Color.Accent / AppAccentBrush
+  accentMarker: '#5E92CE',         // PinnedPopupAccentMarkerBrush
+  tgCheckmark: '#80BFFF',          // TgCheckmark
+  textMuted: '#7D8494',            // TextMuted
+  activeButtonBg: 'rgba(255, 255, 255, 0.16)', // HeaderSearchActiveBgBrush = #2AFFFFFF
+  pinnedPopupBg: '#1C212D',        // PinnedPopupBackgroundBrush
+  pinnedPopupBorder: '#2A303C',    // PinnedPopupBorderBrush
+  pinnedPopupHover: '#232A3B',     // PinnedPopupItemHoverBgBrush
+  contextMenuBg: '#1C212D',        // ChatContextMenuBackgroundBrush
+  contextMenuBorder: '#2A303C',    // ChatContextMenuBorderBrush
+  contextMenuHover: '#232A3B',     // ChatMenuItemHighlightBrush
+  contextMenuDivider: '#2A303C',   // ContextMenuDividerBrush
+  destructive: '#FF3B30',          // MembersMenuDestructiveActionTextBrush
+  emptyIconContainerBg: '#232A3B', // EmptyChatIconContainerBgBrush
+  scrollButtonBg: '#232A3B',       // ScrollToBottomButtonBgBrush
+  scrollButtonBorder: '#2A303C',   // ScrollToBottomButtonBorderBrush
+  fogTop: 'rgba(17, 20, 27, 0)',   // ChatFogTopColor
+  fogMid: 'rgba(17, 20, 27, 0.8)', // ChatFogMidColor
+  fogBottom: '#11141B',            // ChatFogBottomColor
+};
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
@@ -43,7 +68,13 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
   color = 'currentColor',
   style,
 }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} fill={color} style={{ display: 'inline-block', flexShrink: 0, ...style }}>
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill={color === 'inherit' ? 'currentColor' : color}
+    style={{ display: 'inline-block', flexShrink: 0, verticalAlign: 'middle', ...style }}
+  >
     <path d={path} />
   </svg>
 );
@@ -57,7 +88,6 @@ export const ChatWorkspaceView: React.FC = () => {
     selectedCount,
     pinnedMessages = [],
     isChatSearchMode,
-    startChatSearch,
     loadOlderMessages,
     togglePinMessage,
     deleteMessage,
@@ -66,15 +96,13 @@ export const ChatWorkspaceView: React.FC = () => {
     forwardMessages,
   } = useChatStore();
 
-  const { openChat, togglePinChat, toggleMuteChat, clearChatHistory, deleteChat, currentSidebarChat } = useSidebarChatsStore();
+  const { togglePinChat, toggleMuteChat, clearChatHistory, deleteChat, currentSidebarChat } = useSidebarChatsStore();
   const { openProfile } = useNavigationStore();
   const { setEditMessage, addReplyMessage } = useMessageInputStore();
 
-  // Локальные состояния всплывающих меню и попапов (XAML Popups)
   const [isPinnedPopupOpen, setIsPinnedPopupOpen] = useState(false);
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
-  const [unreadInChat, setUnreadInChat] = useState(0);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -82,22 +110,20 @@ export const ChatWorkspaceView: React.FC = () => {
   const isAtBottomRef = useRef(true);
   const animFrameRef = useRef<number | null>(null);
 
-  // Закрытие попапов по клику вовне
+  // Закрытие попапов при клике вовне (StaysOpen="False")
   useEffect(() => {
-    const handleOutsideClick = () => {
+    const handleOutside = () => {
       setIsPinnedPopupOpen(false);
       setIsHeaderMenuOpen(false);
     };
-    document.addEventListener('click', handleOutsideClick);
-    return () => document.removeEventListener('click', handleOutsideClick);
+    document.addEventListener('click', handleOutside);
+    return () => document.removeEventListener('click', handleOutside);
   }, []);
 
-  // ================= РАСЧЕТ ЛЕЙАУТА СООБЩЕНИЙ =================
+  // ================= РАСЧЕТ ВЫСОТЫ И ЛЕЙАУТА (TotalContentHeight = Y + Height + 82.0) =================
   const { layoutItems, totalContentHeight } = useMemo(() => {
     const msgs = currentChatMessages || [];
-    if (!msgs || msgs.length === 0) {
-      return { layoutItems: [], totalContentHeight: 0 };
-    }
+    if (msgs.length === 0) return { layoutItems: [], totalContentHeight: 0 };
 
     try {
       const rawModels = AsyncChatLayoutEngine?.createLayoutModels
@@ -121,15 +147,15 @@ export const ChatWorkspaceView: React.FC = () => {
 
       return {
         layoutItems: Array.isArray(items) ? items : [],
-        totalContentHeight: typeof height === 'number' ? height : 0,
+        totalContentHeight: typeof height === 'number' && height > 0 ? height + 82 : 0,
       };
     } catch (err) {
-      console.error('[ChatWorkspaceView] Ошибка расчета лейаута:', err);
+      console.error('[ChatWorkspaceView] Layout calculation error:', err);
       return { layoutItems: [], totalContentHeight: 0 };
     }
   }, [currentChatMessages, selectedChatUser]);
 
-  // Виртуализация: бинарный поиск диапазона отображаемых элементов
+  // Бинарный поиск видимых элементов
   const visibleItems = useMemo(() => {
     const items = layoutItems || [];
     if (items.length === 0 || viewportHeight <= 0) return [];
@@ -156,33 +182,42 @@ export const ChatWorkspaceView: React.FC = () => {
     return items.slice(firstIndex, lastIndex + 1);
   }, [layoutItems, scrollTop, viewportHeight]);
 
-  // ================= V-SYNC АНИМАЦИЯ СКРОЛЛА (Telegram-Style) =================
-  const scrollToOffsetAnimated = useCallback((targetOffset: number, durationMs: number = 200, onCompleted?: () => void) => {
+  // ================= V-SYNC ПЛАВНЫЙ СКРОЛЛ (CubicEaseOut 200ms) =================
+  const scrollToOffsetAnimated = useCallback((targetOffset: number, onCompleted?: () => void) => {
     if (!scrollRef.current) return;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
 
-    const startOffset = scrollRef.current.scrollTop;
+    let startOffset = scrollRef.current.scrollTop;
     const distance = targetOffset - startOffset;
+
     if (Math.abs(distance) < 5) {
       scrollRef.current.scrollTop = targetOffset;
       onCompleted?.();
       return;
     }
 
+    if (Math.abs(distance) > 700) {
+      startOffset = targetOffset - 500 * Math.sign(distance);
+      scrollRef.current.scrollTop = startOffset;
+    }
+
+    const durationMs = 200.0;
     const startTime = performance.now();
+
     const frame = (now: number) => {
       const elapsed = now - startTime;
       const progress = Math.min(1.0, elapsed / durationMs);
-      const easeOut = 1.0 - Math.pow(1.0 - progress, 3.0); // CubicEaseOut
+      const easeOut = 1.0 - Math.pow(1.0 - progress, 3.0);
 
       if (scrollRef.current) {
-        scrollRef.current.scrollTop = startOffset + distance * easeOut;
+        scrollRef.current.scrollTop = startOffset + (targetOffset - startOffset) * easeOut;
       }
 
       if (progress < 1.0) {
         animFrameRef.current = requestAnimationFrame(frame);
       } else {
         animFrameRef.current = null;
+        if (scrollRef.current) scrollRef.current.scrollTop = targetOffset;
         onCompleted?.();
       }
     };
@@ -192,10 +227,9 @@ export const ChatWorkspaceView: React.FC = () => {
   const scrollToBottom = useCallback(() => {
     if (!scrollRef.current) return;
     const maxScroll = Math.max(0, totalContentHeight - viewportHeight);
-    scrollToOffsetAnimated(maxScroll, 200, () => {
+    scrollToOffsetAnimated(maxScroll, () => {
       isAtBottomRef.current = true;
       setShowScrollBottomBtn(false);
-      setUnreadInChat(0);
     });
   }, [totalContentHeight, viewportHeight, scrollToOffsetAnimated]);
 
@@ -204,18 +238,16 @@ export const ChatWorkspaceView: React.FC = () => {
     setScrollTop(target.scrollTop);
 
     const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-    const atBottom = distanceFromBottom < 20;
-    isAtBottomRef.current = atBottom;
+    isAtBottomRef.current = distanceFromBottom < 20;
 
+    // В WPF: distanceFromBottom > 60
     setShowScrollBottomBtn(distanceFromBottom > 60);
 
-    // Подгрузка старых сообщений при приближении к верху
     if (target.scrollTop < 50 && !isChatLoading) {
       loadOlderMessages?.();
     }
   };
 
-  // Первоначальный спуск на дно при смене чата
   useEffect(() => {
     if (scrollRef.current && totalContentHeight > 0) {
       scrollRef.current.scrollTop = totalContentHeight;
@@ -233,7 +265,6 @@ export const ChatWorkspaceView: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Слушатель события скролла к определенному сообщению (из поиска / закрепов)
   useEffect(() => {
     const unbind = eventBus.on('ScrollToMessageRequestMessage' as any, (data: any) => {
       const msgId = data?.messageId;
@@ -247,16 +278,17 @@ export const ChatWorkspaceView: React.FC = () => {
     return () => unbind();
   }, [layoutItems, viewportHeight, scrollToOffsetAnimated]);
 
-  // ================= 1. ЗАГЛУШКА: ЧАТ НЕ ВЫБРАН (WarningBarBgBrush) =================
+  // ================= ЗАГЛУШКА: ЧАТ НЕ ВЫБРАН =================
   if (!selectedChatUser) {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-chat)' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: PALETTE.bgChat }}>
         <div
           style={{
             padding: '10px 20px',
             borderRadius: 20,
-            background: 'var(--other-bubble-bg)',
-            color: 'var(--text-primary)',
+            background: PALETTE.contextMenuBg,
+            border: `1.2px solid ${PALETTE.contextMenuBorder}`,
+            color: '#FFFFFF',
             fontSize: 15,
             fontWeight: 600,
             display: 'flex',
@@ -265,7 +297,7 @@ export const ChatWorkspaceView: React.FC = () => {
             userSelect: 'none',
           }}
         >
-          <MdiIcon path={mdiMessageTextOutline} size={20} color="var(--app-accent)" />
+          <MdiIcon path={mdiMessageTextOutline} size={20} color={PALETTE.accent} />
           <span>Select a chat to start messaging</span>
         </div>
       </div>
@@ -273,28 +305,43 @@ export const ChatWorkspaceView: React.FC = () => {
   }
 
   const msgs = currentChatMessages || [];
-  const avatarSrc = normalizeAvatarUrl(selectedChatUser.avatarPath || (selectedChatUser as any).avatar);
+
+  // 🟢 Получение аватара со всеми фолбэками (как в сайдбаре)
+  const avatarRaw =
+    selectedChatUser?.avatarPath ||
+    (selectedChatUser as any)?.avatar ||
+    (selectedChatUser as any)?.Avatar ||
+    (selectedChatUser as any)?.AvatarPath ||
+    (selectedChatUser as any)?.avatarUrl ||
+    (selectedChatUser as any)?.photo ||
+    currentSidebarChat?.avatarPath ||
+    (currentSidebarChat as any)?.avatar ||
+    (currentSidebarChat as any)?.Avatar;
+
+  const avatarSrc = normalizeAvatarUrl(avatarRaw) || (typeof avatarRaw === 'string' && avatarRaw ? avatarRaw : null);
+  const displayName = selectedChatUser?.nickName || currentSidebarChat?.nickName || (selectedChatUser as any)?.groupName || 'Chat';
+  const firstLetter = (displayName || 'U').charAt(0).toUpperCase();
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-chat)', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: PALETTE.bgChat, position: 'relative', overflow: 'hidden' }}>
       
-      {/* ================= ШАПКА ЧАТА (Ровно 54px, ChatHeaderBackgroundBrush) ================= */}
+      {/* ================= ШАПКА ЧАТА (Ровно 54px, ChatHeaderBackgroundBrush = #161A23, Border = #1F2533) ================= */}
       <div
         style={{
           height: 54,
           minHeight: 54,
-          background: 'var(--chat-header-bg)',
-          borderBottom: '1px solid var(--chat-header-border)',
+          background: PALETTE.chatHeaderBg,
+          borderBottom: `1px solid ${PALETTE.chatHeaderBorder}`,
           display: 'flex',
           alignItems: 'center',
-          padding: '0 16px',
+          padding: '0 5px 0 15px',
           zIndex: 100,
           userSelect: 'none',
           boxSizing: 'border-box',
           position: 'relative',
         }}
       >
-        {/* А. РЕЖИМ ВЫДЕЛЕНИЯ (IsSelectionMode == true) */}
+        {/* РЕЖИМ ВЫДЕЛЕНИЯ (IsSelectionMode) */}
         {isSelectionMode ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -303,14 +350,14 @@ export const ChatWorkspaceView: React.FC = () => {
                 title="Cancel Selection"
                 style={{ background: 'transparent', border: 'none', color: '#FFFFFF', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
               >
-                <MdiIcon path={mdiClose} size={22} color="#FFFFFF" />
+                <MdiIcon path={mdiClose} size={20} color="#FFFFFF" />
               </button>
               <span style={{ fontWeight: 'bold', fontSize: 18, color: '#FFFFFF' }}>
                 Selected: {selectedCount}
               </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 10 }}>
               <button
                 onClick={() => {
                   const selected = msgs.filter((m) => m.isSelected);
@@ -329,9 +376,9 @@ export const ChatWorkspaceView: React.FC = () => {
                   if (selected.length > 0) forwardMessages(selected);
                   clearSelection();
                 }}
-                style={{ ...headerActionBtnStyle, color: 'var(--app-accent)' }}
+                style={{ ...headerActionBtnStyle, color: PALETTE.accent }}
               >
-                <MdiIcon path={mdiShareOutline} size={18} color="var(--app-accent)" style={{ marginRight: 6 }} />
+                <MdiIcon path={mdiShareOutline} size={18} color={PALETTE.accent} style={{ marginRight: 6 }} />
                 <span>Forward</span>
               </button>
 
@@ -341,76 +388,90 @@ export const ChatWorkspaceView: React.FC = () => {
                   selected.forEach((m) => deleteMessage(m, true));
                   clearSelection();
                 }}
-                style={{ ...headerActionBtnStyle, color: '#FF3B30' }}
+                style={{ ...headerActionBtnStyle, color: PALETTE.destructive }}
               >
-                <MdiIcon path={mdiDeleteOutline} size={18} color="#FF3B30" style={{ marginRight: 6 }} />
+                <MdiIcon path={mdiDeleteOutline} size={18} color={PALETTE.destructive} style={{ marginRight: 6 }} />
                 <span>Delete</span>
               </button>
             </div>
           </div>
         ) : (
-          /* Б. ОБЫЧНЫЙ РЕЖИМ ШАПКИ */
+          /* ОБЫЧНЫЙ РЕЖИМ ШАПКИ */
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            {/* Левая часть: кликабельный профиль собеседника */}
+            
+            {/* Профиль собеседника */}
             <div
               onClick={() => openProfile?.()}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', minWidth: 0, flex: 1 }}
+              style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', minWidth: 0, flex: 1 }}
             >
-              {/* Аватарка 40x40 */}
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: getAvatarColor(selectedChatUser.id),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#FFFFFF',
-                  fontWeight: 'bold',
-                  fontSize: 14,
-                  overflow: 'hidden',
-                  position: 'relative',
-                  flexShrink: 0,
-                }}
-              >
-                <span>{(selectedChatUser.nickName || 'U').charAt(0).toUpperCase()}</span>
-                {avatarSrc && (
-                  <img
-                    src={avatarSrc}
-                    alt=""
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                )}
+              {/* Аватарка 40x40 (1 в 1 как в SidebarChatsView) */}
+              <div style={{ position: 'relative', width: 40, height: 40, marginRight: 12, flexShrink: 0 }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: getAvatarColor(
+                      selectedChatUser.id || (selectedChatUser as any).userId || currentSidebarChat?.userId || 0
+                    ),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#FFFFFF',
+                    fontWeight: 600,
+                    fontSize: 14,
+                    overflow: 'hidden',
+                    position: 'relative',
+                  }}
+                >
+                  <span>{firstLetter}</span>
+
+                  {avatarSrc && (
+                    <img
+                      src={avatarSrc}
+                      alt=""
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                      }}
+                    />
+                  )}
+                </div>
               </div>
 
               {/* Имя и статус */}
               <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                  {selectedChatUser.isSecretChat && <MdiIcon path={mdiLock} size={16} color="var(--chat-header-title)" />}
-                  <span style={{ color: 'var(--chat-header-title)', fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {selectedChatUser.nickName || 'Chat'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 1 }}>
+                  {selectedChatUser.isSecretChat && (
+                    <MdiIcon path={mdiLock} size={16} color={PALETTE.chatHeaderTitle} style={{ marginRight: 5 }} />
+                  )}
+                  <span style={{ color: PALETTE.chatHeaderTitle, fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {displayName}
                   </span>
                 </div>
 
-                {/* Статусы собеседника (Group / Channel / Personal / Typing) */}
                 <div style={{ fontSize: 12.5, lineHeight: 1.2, display: 'flex', alignItems: 'center', gap: 4 }}>
                   {selectedChatUser.isTyping ? (
-                    <span style={{ color: 'var(--app-accent)', fontWeight: 600 }}>typing...</span>
+                    <span style={{ color: PALETTE.accent, fontWeight: 600 }}>typing...</span>
                   ) : selectedChatUser.isGroup && !selectedChatUser.isChannel ? (
                     <>
-                      <span style={{ color: selectedChatUser.onlineCount ? 'var(--app-accent)' : 'var(--text-muted)', fontWeight: 600 }}>
+                      <span style={{ color: selectedChatUser.onlineCount ? PALETTE.accent : PALETTE.textMuted, fontWeight: 600 }}>
                         {selectedChatUser.onlineCount || 0} online
                       </span>
-                      <span style={{ color: 'var(--text-muted)' }}>• {selectedChatUser.memberCount || 1} members</span>
+                      <span style={{ color: PALETTE.textMuted }}>• {selectedChatUser.memberCount || 1} members</span>
                     </>
                   ) : selectedChatUser.isChannel ? (
-                    <span style={{ color: 'var(--text-muted)' }}>{selectedChatUser.memberCount || 1} subscribers</span>
+                    <span style={{ color: PALETTE.textMuted }}>{selectedChatUser.memberCount || 1} subscribers</span>
                   ) : selectedChatUser.isSecretChat ? null : selectedChatUser.isOnline ? (
-                    <span style={{ color: 'var(--app-accent)' }}>online</span>
+                    <span style={{ color: PALETTE.accent }}>online</span>
                   ) : (
-                    <span style={{ color: 'var(--text-muted)' }}>
+                    <span style={{ color: PALETTE.textMuted }}>
                       {selectedChatUser.lastSeen ? `last seen ${new Date(selectedChatUser.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'last seen recently'}
                     </span>
                   )}
@@ -418,60 +479,61 @@ export const ChatWorkspaceView: React.FC = () => {
               </div>
             </div>
 
-            {/* Правая часть: кнопки действий */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-              {/* 1. Кнопка «Закрепленные сообщения» */}
+            {/* Правые кнопки действий */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+              
+              {/* 1. Закрепы */}
               <div style={{ position: 'relative' }}>
-                <button
+                <HeaderIconButton
+                  isActive={isPinnedPopupOpen}
+                  title="Pinned Messages"
                   onClick={() => {
                     setIsPinnedPopupOpen((prev) => !prev);
                     setIsHeaderMenuOpen(false);
                   }}
-                  title="Pinned Messages"
-                  style={{ ...headerIconBtnStyle, backgroundColor: isPinnedPopupOpen ? 'rgba(255,255,255,0.08)' : 'transparent' }}
                 >
                   <div style={{ transform: 'rotate(45deg)', display: 'flex', alignItems: 'center' }}>
-                    <MdiIcon path={mdiPin} size={22} color={isPinnedPopupOpen ? '#FFFFFF' : 'var(--text-muted)'} />
+                    <MdiIcon path={mdiPinOutline} size={22} />
                   </div>
-                </button>
+                </HeaderIconButton>
 
-                {/* Всплывающий попап закрепленных сообщений (PinnedPopup) */}
                 {isPinnedPopupOpen && (
                   <div
                     style={{
                       position: 'absolute',
                       right: 0,
                       top: 48,
-                      width: 320,
+                      minWidth: 270,
+                      maxWidth: 350,
                       maxHeight: 380,
-                      backgroundColor: 'var(--pinned-popup-bg, #1C212D)',
-                      border: '1.2px solid var(--pinned-popup-border, #2A303C)',
+                      backgroundColor: PALETTE.pinnedPopupBg,
+                      border: `1.2px solid ${PALETTE.pinnedPopupBorder}`,
                       borderRadius: 12,
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-                      padding: '8px 4px 8px 8px',
+                      padding: '6px 8px 2px 6px',
                       zIndex: 1000,
                       display: 'flex',
                       flexDirection: 'column',
+                      boxShadow: '0 8px 25px rgba(0,0,0,0.45)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 8px 4px', borderBottom: '1px solid #2A303C' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 8px 4px', borderBottom: `1px solid ${PALETTE.pinnedPopupBorder}`, margin: '0 0 6px 0' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ transform: 'rotate(45deg)' }}>
-                          <MdiIcon path={mdiPinOutline} size={16} color="var(--app-accent)" />
+                        <div style={{ transform: 'rotate(45deg)', display: 'flex' }}>
+                          <MdiIcon path={mdiPinOutline} size={16} color={PALETTE.accent} />
                         </div>
                         <span style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13.5 }}>Pinned Messages</span>
                       </div>
                       {pinnedMessages.length > 0 && (
-                        <div style={{ background: 'var(--app-accent)', color: '#FFF', borderRadius: 9, padding: '2px 7px', fontSize: 11, fontWeight: 'bold' }}>
+                        <div style={{ background: PALETTE.accent, color: '#FFFFFF', borderRadius: 9, padding: '2px 7px', fontSize: 11, fontWeight: 'bold' }}>
                           {pinnedMessages.length}
                         </div>
                       )}
                     </div>
 
-                    <div className="wpf-scroll-viewer" style={{ flex: 1, overflowY: 'auto', maxHeight: 300, marginTop: 6 }}>
+                    <div className="wpf-scroll-viewer" style={{ flex: 1, overflowY: 'auto', maxHeight: 300 }}>
                       {pinnedMessages.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '25px 15px', color: 'var(--text-muted)' }}>
-                          <MdiIcon path={mdiPinOffOutline} size={32} color="var(--text-muted)" style={{ marginBottom: 6 }} />
+                        <div style={{ textAlign: 'center', padding: '25px 15px', color: PALETTE.textMuted }}>
+                          <MdiIcon path={mdiPinOffOutline} size={32} color={PALETTE.textMuted} style={{ marginBottom: 8 }} />
                           <div style={{ fontSize: 13, fontWeight: 600 }}>No pinned messages</div>
                         </div>
                       ) : (
@@ -488,16 +550,18 @@ export const ChatWorkspaceView: React.FC = () => {
                               cursor: 'pointer',
                               display: 'flex',
                               gap: 8,
-                              marginBottom: 4,
+                              margin: '0 1px 4px 1px',
                             }}
-                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#232A3B')}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = PALETTE.pinnedPopupHover)}
                             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                           >
-                            <div style={{ width: 3, backgroundColor: 'var(--app-accent)', borderRadius: 1.5 }} />
+                            <div style={{ width: 3, backgroundColor: PALETTE.accentMarker, borderRadius: 1.5 }} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                                <span style={{ color: 'var(--app-accent)', fontWeight: 'bold', fontSize: 12.5 }}>{pin.senderName || 'User'}</span>
-                                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                                <span style={{ color: PALETTE.tgCheckmark, fontWeight: 'bold', fontSize: 12.5 }}>
+                                  {pin.senderName || 'User'}
+                                </span>
+                                <span style={{ color: PALETTE.textMuted, fontSize: 11 }}>
                                   {pin.timestamp ? new Date(pin.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                                 </span>
                               </div>
@@ -513,53 +577,57 @@ export const ChatWorkspaceView: React.FC = () => {
                 )}
               </div>
 
-              {/* 2. Кнопка поиска в чате */}
-              <button
-                onClick={startChatSearch}
+              {/* 2. Поиск */}
+              <HeaderIconButton
+                isActive={isChatSearchMode}
                 title="Search"
-                style={{ ...headerIconBtnStyle, backgroundColor: isChatSearchMode ? 'rgba(255,255,255,0.08)' : 'transparent' }}
+                onClick={() => {
+                  const store = useChatStore.getState() as any;
+                  if (typeof store.startChatSearch === 'function') store.startChatSearch();
+                  else if (typeof store.enterSearch === 'function') store.enterSearch();
+                  else if (typeof store.setIsChatSearchMode === 'function') store.setIsChatSearchMode(true);
+                  eventBus.emit('FocusSearchBoxMessage' as any, undefined);
+                }}
               >
-                <MdiIcon path={mdiMagnify} size={22} color={isChatSearchMode ? '#FFFFFF' : 'var(--text-muted)'} />
-              </button>
+                <MdiIcon path={mdiMagnify} size={22} />
+              </HeaderIconButton>
 
-              {/* 3. Кнопка звонка (скрыта в каналах) */}
+              {/* 3. Звонок */}
               {!selectedChatUser.isChannel && (
-                <button
-                  onClick={() => eventBus.emit('StartCallMessage' as any, { user: selectedChatUser })}
+                <HeaderIconButton
                   title="Call"
-                  style={headerIconBtnStyle}
+                  onClick={() => eventBus.emit('StartCallMessage' as any, { user: selectedChatUser })}
                 >
-                  <MdiIcon path={mdiPhoneOutline} size={22} color="var(--text-muted)" />
-                </button>
+                  <MdiIcon path={mdiPhoneOutline} size={24} />
+                </HeaderIconButton>
               )}
 
-              {/* 4. Меню действий («три точки») */}
+              {/* 4. Меню «три точки» */}
               <div style={{ position: 'relative' }}>
-                <button
+                <HeaderIconButton
+                  isActive={isHeaderMenuOpen}
+                  title="More options"
                   onClick={() => {
                     setIsHeaderMenuOpen((prev) => !prev);
                     setIsPinnedPopupOpen(false);
                   }}
-                  title="More options"
-                  style={{ ...headerIconBtnStyle, backgroundColor: isHeaderMenuOpen ? 'rgba(255,255,255,0.08)' : 'transparent' }}
                 >
-                  <MdiIcon path={mdiDotsVertical} size={22} color={isHeaderMenuOpen ? '#FFFFFF' : 'var(--text-muted)'} />
-                </button>
+                  <MdiIcon path={mdiDotsVertical} size={24} />
+                </HeaderIconButton>
 
-                {/* Всплывающее контекстное меню шапки (HeaderMoreMenuPopup) */}
                 {isHeaderMenuOpen && (
                   <div
                     style={{
                       position: 'absolute',
                       right: 0,
                       top: 48,
-                      width: 210,
-                      backgroundColor: 'var(--context-menu-bg, #1C212D)',
-                      border: '1.2px solid var(--context-menu-border, #2A303C)',
+                      minWidth: 180,
+                      backgroundColor: PALETTE.contextMenuBg,
+                      border: `1.2px solid ${PALETTE.contextMenuBorder}`,
                       borderRadius: 10,
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
                       padding: '4px 0',
                       zIndex: 1000,
+                      boxShadow: '0 8px 25px rgba(0,0,0,0.45)',
                     }}
                   >
                     <HeaderMenuItem
@@ -613,7 +681,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       />
                     )}
 
-                    <div style={{ height: 1, backgroundColor: 'var(--context-menu-border, #2A303C)', margin: '4px 0' }} />
+                    <div style={{ height: 1, backgroundColor: PALETTE.contextMenuDivider, margin: '4px 2px' }} />
 
                     <HeaderMenuItem
                       icon={mdiBroom}
@@ -653,31 +721,29 @@ export const ChatWorkspaceView: React.FC = () => {
         )}
       </div>
 
-      {/* ================= ОБЛАСТЬ СООБЩЕНИЙ И СКРОЛЛЕР ================= */}
+      {/* ================= ОБЛАСТЬ СООБЩЕНИЙ ================= */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {/* Заглушка 1: Загрузка истории */}
+        
         {isChatLoading && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: 'var(--text-muted)' }}>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: PALETTE.textMuted }}>
             <div style={{ fontSize: 15 }}>Loading history...</div>
           </div>
         )}
 
-        {/* Заглушка 2: Пустой чат */}
         {!selectedChatUser.isSecretChat && msgs.length === 0 && !isChatLoading && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 5, userSelect: 'none' }}>
-            <div style={{ width: 100, height: 100, borderRadius: 50, background: 'var(--empty-chat-icon-bg, #232A3B)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-              <MdiIcon path={selectedChatUser.isChannel ? mdiBullhornOutline : mdiMessageTextOutline} size={50} color="var(--app-accent)" />
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 5, userSelect: 'none', marginBottom: 50 }}>
+            <div style={{ width: 100, height: 100, borderRadius: 50, background: PALETTE.emptyIconContainerBg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+              <MdiIcon path={selectedChatUser.isChannel ? mdiBullhornOutline : mdiMessageTextOutline} size={50} color={PALETTE.accent} />
             </div>
-            <div style={{ fontSize: 20, fontWeight: 'bold', color: 'var(--empty-chat-title, #FFFFFF)', marginBottom: 8 }}>
+            <div style={{ fontSize: 20, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 8 }}>
               {selectedChatUser.isChannel ? 'No posts yet' : 'No messages yet'}
             </div>
-            <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 14, color: PALETTE.textMuted }}>
               {selectedChatUser.isChannel ? 'When posts are published, they will appear here.' : 'Send a message to start the conversation'}
             </div>
           </div>
         )}
 
-        {/* Заглушка 3: Карточка секретного чата E2EE */}
         {selectedChatUser.isSecretChat && msgs.length === 0 && !isChatLoading && (
           <div
             style={{
@@ -726,18 +792,16 @@ export const ChatWorkspaceView: React.FC = () => {
           </div>
         )}
 
-        {/* Виртуализированный скроллер сообщений */}
+        {/* Виртуализированный скроллер */}
         <div
           ref={scrollRef}
           className="wpf-scroll-viewer"
           onScroll={handleScroll}
           style={{
-            width: '100%',
-            height: '100%',
+            position: 'absolute',
+            inset: 0,
             overflowY: 'auto',
-            position: 'relative',
-            paddingBottom: 110, // место под поле ввода
-            boxSizing: 'border-box',
+            overflowX: 'hidden',
           }}
         >
           <div style={{ height: `${totalContentHeight}px`, position: 'relative', width: '100%' }}>
@@ -761,98 +825,129 @@ export const ChatWorkspaceView: React.FC = () => {
           </div>
         </div>
 
-        {/* ================= НИЖНИЙ ГРАДИЕНТНЫЙ ТУМАН И КНОПКА СКРОЛЛА ================= */}
-        {/* 1. Эффект тумана (ChatFogTopColor -> ChatFogBottomColor, Height=100) */}
+        {/* ================= ОБЪЕДИНЕННЫЙ НИЖНИЙ СТЕК ================= */}
         <div
           style={{
             position: 'absolute',
             left: 0,
             right: 0,
             bottom: 0,
-            height: 100,
-            background: 'linear-gradient(to bottom, rgba(17,20,27,0) 0%, rgba(17,20,27,0.8) 40%, rgba(17,20,27,1) 100%)',
+            zIndex: 20,
             pointerEvents: 'none',
-            zIndex: 15,
-          }}
-        />
-
-        {/* 2. Плавающая кнопка быстрого спуска вниз с бейджем непрочитанных */}
-        <div
-          style={{
-            position: 'absolute',
-            right: 34,
-            bottom: 85,
-            zIndex: 25,
-            opacity: showScrollBottomBtn ? 1 : 0,
-            transform: showScrollBottomBtn ? 'translateY(0)' : 'translateY(25px)',
-            pointerEvents: showScrollBottomBtn ? 'auto' : 'none',
-            transition: 'opacity 0.22s ease-out, transform 0.22s cubic-bezier(0.215, 0.61, 0.355, 1)',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          <button
-            onClick={scrollToBottom}
+          {/* 1. Эффект тумана */}
+          <div
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              backgroundColor: 'var(--scroll-bottom-bg, #232A3B)',
-              border: '1.2px solid var(--scroll-bottom-border, #2A303C)',
-              color: 'var(--scroll-bottom-icon, #FFFFFF)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 0,
-              boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 100,
+              background: `linear-gradient(to bottom, ${PALETTE.fogTop} 0%, ${PALETTE.fogMid} 40%, ${PALETTE.fogBottom} 100%)`,
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}
+          />
+
+          {/* 2. Кнопка спуска вниз */}
+          <div
+            style={{
+              alignSelf: 'flex-end',
+              marginRight: 34,
+              marginBottom: 15,
+              position: 'relative',
+              zIndex: 10,
+              opacity: showScrollBottomBtn ? 1 : 0,
+              transform: showScrollBottomBtn ? 'translateY(0)' : 'translateY(25px)',
+              pointerEvents: showScrollBottomBtn ? 'auto' : 'none',
+              transition: 'opacity 0.22s ease-out, transform 0.22s cubic-bezier(0.215, 0.61, 0.355, 1)',
             }}
           >
-            <MdiIcon path={mdiChevronDown} size={30} color="#FFFFFF" />
-          </button>
-
-          {unreadInChat > 0 && (
-            <div
+            <button
+              onClick={scrollToBottom}
               style={{
-                position: 'absolute',
-                top: -10,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                backgroundColor: 'var(--app-accent)',
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: PALETTE.scrollButtonBg,
+                border: `1.2px solid ${PALETTE.scrollButtonBorder}`,
                 color: '#FFFFFF',
-                borderRadius: 10,
-                minWidth: 20,
-                height: 20,
-                padding: '0 5px',
-                fontSize: 11,
-                fontWeight: 'bold',
+                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxSizing: 'border-box',
+                padding: 0,
+                boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
               }}
             >
-              {unreadInChat}
-            </div>
-          )}
+              <MdiIcon path={mdiChevronDown} size={30} color="#FFFFFF" />
+            </button>
+          </div>
+
+          {/* 3. Единый модульный контрол ввода */}
+          <div
+            style={{
+              margin: '0 30px 20px 30px',
+              position: 'relative',
+              zIndex: 10,
+              pointerEvents: 'auto',
+            }}
+          >
+            <MessageInputUserControl />
+          </div>
         </div>
 
-        {/* 3. Поле ввода сообщения (MessageInputUserControl, Margin 30,0,30,20) */}
-        <div
-          style={{
-            position: 'absolute',
-            left: 30,
-            right: 30,
-            bottom: 20,
-            zIndex: 20,
-          }}
-        >
-          <MessageInputUserControl />
-        </div>
       </div>
     </div>
   );
 };
 
-// Вспомогательный компонент строки контекстного меню шапки
+// Компонент кнопки в шапке (стили TelegramStyleActionButton / TelegramStyleActionToggleButton из App.xaml)
+const HeaderIconButton: React.FC<{
+  isActive?: boolean;
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}> = ({ isActive = false, title, onClick, children }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      title={title}
+      style={{
+        width: 44,
+        height: 44,
+        backgroundColor: isActive
+          ? PALETTE.activeButtonBg
+          : isHovered
+          ? 'rgba(255, 255, 255, 0.08)'
+          : 'transparent',
+        border: 'none',
+        outline: 'none',
+        boxShadow: 'none',
+        WebkitTapHighlightColor: 'transparent',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '50%',
+        padding: 0,
+        color: isActive || isHovered ? '#FFFFFF' : PALETTE.textMuted, // #7D8494 в покое, белый при клике/наведении
+        transition: 'background-color 0.15s ease, color 0.15s ease',
+      }}
+    >
+      {children}
+    </button>
+  );
+};
+
+// Элемент контекстного меню
 const HeaderMenuItem: React.FC<{
   icon: string;
   text: string;
@@ -869,13 +964,13 @@ const HeaderMenuItem: React.FC<{
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        padding: '8px 12px',
+        padding: '7px 24px 7px 8px',
         margin: '1px 2px',
         borderRadius: 6,
         fontSize: 14,
         cursor: 'pointer',
-        color: isDestructive ? '#FF3B30' : '#FFFFFF',
-        backgroundColor: isHovered ? 'var(--context-menu-hover, #232A3B)' : 'transparent',
+        color: isDestructive ? PALETTE.destructive : '#FFFFFF',
+        backgroundColor: isHovered ? PALETTE.contextMenuHover : 'transparent',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
@@ -883,25 +978,11 @@ const HeaderMenuItem: React.FC<{
       }}
     >
       <div style={{ transform: rotate ? `rotate(${rotate}deg)` : undefined, display: 'flex', alignItems: 'center' }}>
-        <MdiIcon path={icon} size={20} color={isDestructive ? '#FF3B30' : iconColor || '#FFFFFF'} />
+        <MdiIcon path={icon} size={20} color={isDestructive ? PALETTE.destructive : iconColor || '#FFFFFF'} />
       </div>
       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
     </div>
   );
-};
-
-const headerIconBtnStyle: React.CSSProperties = {
-  width: 44,
-  height: 44,
-  background: 'transparent',
-  border: 'none',
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: '50%',
-  padding: 0,
-  transition: 'background-color 0.15s ease',
 };
 
 const headerActionBtnStyle: React.CSSProperties = {

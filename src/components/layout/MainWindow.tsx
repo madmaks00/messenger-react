@@ -272,16 +272,7 @@ export const MainWindow: React.FC = () => {
           minWidth: MIN_CHAT_WORKSPACE_WIDTH,
         }}
       >
-        {currentTab === MainTab.Chats && (
-          <>
-            <ChatWorkspaceView />
-            {selectedChatUser && (
-              <div style={{ padding: '0 20px 16px 20px', zIndex: 20 }}>
-                <MessageInputUserControl />
-              </div>
-            )}
-          </>
-        )}
+        {currentTab === MainTab.Chats && <ChatWorkspaceView />}
 
         {currentTab !== MainTab.Chats && (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>

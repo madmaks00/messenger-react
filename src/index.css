@@ -102,3 +102,9 @@ html, body, #root {
 .wpf-story-gradient {
   background: linear-gradient(135deg, #8A2387 0%, #E94057 50%, #F27121 100%);
 }
+/* 🟢 Цвет и размер текста подсказки "Search Chat" 1 в 1 с WPF Material Design */
+.wpf-search-input::placeholder {
+  color: #8E95A5 !important;
+  opacity: 1 !important; /* Убирает встроенное затемнение Chrome */
+  font-size: 14.5px !important;
+}
