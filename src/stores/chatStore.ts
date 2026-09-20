@@ -4,13 +4,9 @@ import {
   IUserSearchResult,
   IAttachment,
   ISelectableChat,
-  IAudioTrackModel,
 } from '../types/models';
-import { AttachmentType } from '../types/enums';
 import { chatService } from '../services/chat.service';
 import { signalRService } from '../services/signalr.service';
-import { userService } from '../services/user.service';
-import { groupService } from '../services/group.service';
 import { secretChatCrypto } from '../services/secretChatCrypto.service';
 import { userSession } from '../services/userSession';
 import { eventBus } from '../services/eventBus';
@@ -29,7 +25,6 @@ interface ChatState {
   isScrolledToBottom: boolean;
   unreadCountInActiveChat: number;
 
-  // Права
   isCurrentChatJoined: boolean;
   isBlockedByMe: boolean;
   isBlockedByThem: boolean;
@@ -37,17 +32,9 @@ interface ChatState {
   canSendMedia: boolean;
   canPinMessages: boolean;
 
-  // Мультивыбор
   isSelectionMode: boolean;
   selectedCount: number;
 
-  // Модальные окна
-  isPinDialogOpen: boolean;
-  messageToPin: IMessage | null;
-  isForwardDialogOpen: boolean;
-  messagesToForward: IMessage[];
-
-  // Actions
   selectChatUser: (target: IUserSearchResult | null) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   ensureMessageLoadedAsync: (messageId: number) => Promise<IMessage | null>;
@@ -58,12 +45,10 @@ interface ChatState {
   toggleSelectMessage: (msg: IMessage) => void;
   clearSelection: () => void;
   forwardMessages: (messages: IMessage[]) => void;
-  confirmForward: (selectedChatIds: number[]) => Promise<void>;
   startSearch: () => void;
   exitSearch: () => void;
   markAsRead: () => Promise<void>;
   trackVisiblePosts: (serverIds: number[]) => void;
-  toggleAudio: (clickedAtt: IAttachment) => void;
 }
 
 const alreadyTrackedPostIds = new Set<number>();
@@ -91,12 +76,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   isSelectionMode: false,
   selectedCount: 0,
-  isPinDialogOpen: false,
-  messageToPin: null,
-  isForwardDialogOpen: false,
-  messagesToForward: [],
 
-  // 1. Выбор чата и загрузка истории (по OnSelectedChatUserChanged)
+  // 1. ВЫБОР ЧАТА (Открытие диалога)
   selectChatUser: async (target) => {
     if (!target) {
       set({ selectedChatUser: null, currentChatMessages: [], pinnedMessages: [] });
@@ -115,8 +96,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
 
     const currentUserId = userSession.userId;
-    const targetUserId = target.isGroup ? null : target.id;
-    const groupId = target.isGroup ? target.id : null;
+    const targetUserId = target.isGroup ? null : (target.id || (target as any).userId);
+    const groupId = target.isGroup ? (target.id || (target as any).groupId) : null;
     const secretChatId = target.isSecretChat ? target.secretChatId : null;
 
     try {
@@ -137,6 +118,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
 
       await get().markAsRead();
+
+      // Автоматическая доотправка сообщений, если они зависли в офлайне
+      chatService.syncUnsentMessagesAsync(signalRService).then((sent) => {
+        if (sent > 0) {
+          chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30).then((updated) => {
+            set({ currentChatMessages: updated });
+          });
+        }
+      });
     } catch (e) {
       console.error('[ChatStore] Ошибка загрузки чата:', e);
       set({ isHistoryLoading: false });
@@ -169,7 +159,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  // 2. Догрузка сообщений при переходе к цитате (EnsureMessageLoadedAsync)
   ensureMessageLoadedAsync: async (messageId: number) => {
     const { currentChatMessages, loadOlderMessages } = get();
     let found = currentChatMessages.find((m) => m.id === messageId || (m.serverId > 0 && m.serverId === messageId));
@@ -180,13 +169,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       found = get().currentChatMessages.find((m) => m.id === messageId || (m.serverId > 0 && m.serverId === messageId));
       if (found) return found;
     }
-
     return null;
   },
 
-  // 3. Отправка сообщений (обычные, группы, E2EE секретные чаты)
+  // 2. ОТПРАВКА СООБЩЕНИЙ
   sendMessage: async (text, attachments, editingMessage, replies) => {
-    const { selectedChatUser, currentChatMessages } = get();
+    const { selectedChatUser } = get();
     if (!selectedChatUser) return;
 
     if (editingMessage) {
@@ -196,8 +184,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const currentUserId = userSession.userId;
     const isSecret = selectedChatUser.isSecretChat && selectedChatUser.secretChatId;
+    const localTempId = Date.now();
 
-    // --- СЕКРЕТНЫЙ ЧАТ ---
+    // Секретный чат (E2EE)
     if (isSecret) {
       const secretChatId = selectedChatUser.secretChatId!;
       const replySender = replies[0]?.senderName || null;
@@ -215,16 +204,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
           thumbnailUrl: a.thumbnailUrl,
           fileHash: a.fileHash,
           hasAudio: a.hasAudio,
-          width: a.width,
-          height: a.height,
-          durationSeconds: a.durationSeconds,
+          width: a.width || 0,
+          height: a.height || 0,
+          durationSeconds: a.durationSeconds || 0,
         })),
       };
 
       const encrypted = await secretChatCrypto.encryptText(secretChatId, JSON.stringify(payload));
 
       const newSecretMsg: IMessage = {
-        id: Date.now(),
+        id: localTempId,
         serverId: 0,
         senderId: currentUserId,
         receiverId: selectedChatUser.id,
@@ -243,9 +232,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
 
       await chatService.saveMessageLocallyAsync(newSecretMsg);
-      set({ currentChatMessages: [...currentChatMessages, newSecretMsg] });
+      set((state) => ({ currentChatMessages: [...state.currentChatMessages, newSecretMsg] }));
 
-      await ((signalRService as any).sendSecretMessageAsync || signalRService.sendMessageAsync)(
+      await (signalRService as any).sendSecretMessageAsync?.(
         selectedChatUser.id,
         secretChatId,
         encrypted.ciphertextBase64,
@@ -256,11 +245,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // --- ОБЫЧНЫЙ ЧАТ / ГРУППА ---
+    // Обычный чат или группа
     const replyIds = replies.map((r) => r.serverId || r.id).filter(Boolean).join(',');
 
     const newMsg: IMessage = {
-      id: Date.now(),
+      id: localTempId,
       serverId: 0,
       senderId: currentUserId,
       receiverId: selectedChatUser.isGroup ? null : selectedChatUser.id,
@@ -268,7 +257,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       text,
       timestamp: new Date().toISOString(),
       isMyMessage: true,
-      isSentToServer: false,
+      isSentToServer: false, // Временно показываем таймер до подтверждения сервером
       isRead: false,
       isDeleted: false,
       isDeletedForMe: false,
@@ -279,26 +268,55 @@ export const useChatStore = create<ChatState>((set, get) => ({
       repliedMessages: replies,
     };
 
-    await chatService.saveMessageLocallyAsync(newMsg);
-    set({ currentChatMessages: [...currentChatMessages, newMsg] });
+    // Мгновенное добавление в UI
+    set((state) => ({ currentChatMessages: [...state.currentChatMessages, newMsg] }));
 
-    const realId = await signalRService.sendMessageAsync(
-  newMsg.receiverId ?? null,
-  newMsg.groupId ?? null,
-      null,
-      text,
-      replyIds || null,
-      null,
-      null,
-      null,
-      attachments as any
-    );
+    try {
+      await chatService.saveMessageLocallyAsync(newMsg);
+    } catch (e) {
+      console.warn('[ChatStore] IndexedDB save warning:', e);
+    }
 
-    if (realId > 0) {
-      newMsg.serverId = realId;
-      newMsg.isSentToServer = true;
-      await chatService.markAsSentAsync(newMsg.id, realId);
-      set({ currentChatMessages: [...get().currentChatMessages] });
+    const attachmentDtos = (attachments || []).map((a) => ({
+      type: a.type,
+      fileName: a.fileName,
+      fileSizeStr: a.fileSizeStr,
+      url: a.url,
+      thumbnailUrl: a.thumbnailUrl,
+      fileHash: a.fileHash,
+      hasAudio: Boolean(a.hasAudio),
+      width: a.width || 0,
+      height: a.height || 0,
+      durationSeconds: a.durationSeconds || 0,
+    }));
+
+    try {
+      const realId = await signalRService.sendMessageAsync(
+        newMsg.receiverId ?? null,
+        newMsg.groupId ?? null,
+        null,
+        text,
+        replyIds || null,
+        null,
+        null,
+        null,
+        attachmentDtos.length > 0 ? (attachmentDtos as any) : null
+      );
+
+      // Смена таймера на галочку
+      if (realId && realId > 0) {
+        set((state) => ({
+          currentChatMessages: state.currentChatMessages.map((m) =>
+            m.id === localTempId || (m.serverId === 0 && m.timestamp === newMsg.timestamp && m.text === newMsg.text)
+              ? { ...m, serverId: realId, isSentToServer: true }
+              : m
+          ),
+        }));
+
+        await chatService.markAsSentAsync(newMsg.id, realId, undefined, text);
+      }
+    } catch (err) {
+      console.error('[ChatStore ERROR] Ошибка отправки:', err);
     }
   },
 
@@ -322,9 +340,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await chatService.deleteMessageLocallyAsync(msg.id, msg.serverId, currentUserId, deleteForAll);
 
     set((state) => ({
-      currentChatMessages: deleteForAll || msg.senderId !== currentUserId
-        ? state.currentChatMessages.filter((m) => m.id !== msg.id)
-        : state.currentChatMessages.map((m) => (m.id === msg.id ? { ...m, isDeletedForMe: true, text: 'This message was deleted' } : m)),
+      currentChatMessages:
+        deleteForAll || msg.senderId !== currentUserId
+          ? state.currentChatMessages.filter((m) => m.id !== msg.id && m.serverId !== msg.serverId)
+          : state.currentChatMessages.map((m) =>
+              m.id === msg.id ? { ...m, isDeletedForMe: true, text: 'This message was deleted' } : m
+            ),
     }));
 
     if (msg.serverId > 0) {
@@ -350,7 +371,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   toggleSelectMessage: (msg) => {
     set((state) => {
-      const msgs = state.currentChatMessages.map((m) => (m.id === msg.id ? { ...m, isSelected: !m.isSelected } : m));
+      const msgs = state.currentChatMessages.map((m) =>
+        m.id === msg.id ? { ...m, isSelected: !m.isSelected } : m
+      );
       const count = msgs.filter((m) => m.isSelected).length;
       return { currentChatMessages: msgs, isSelectionMode: count > 0, selectedCount: count };
     });
@@ -365,93 +388,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   forwardMessages: (messages) => {
-    set({ messagesToForward: messages, isForwardDialogOpen: true });
-  },
-
-  confirmForward: async (selectedChatIds) => {
-    const { messagesToForward } = get();
-    for (const chatId of selectedChatIds) {
-      for (const msg of messagesToForward) {
-        await signalRService.sendMessageAsync(
-          chatId,
-          null,
-          null,
-          msg.text,
-          null,
-          msg.senderName,
-          msg.senderAvatar,
-          msg.senderId,
-          msg.attachments as any
-        );
-      }
-    }
-    set({ isForwardDialogOpen: false, messagesToForward: [] });
-    get().clearSelection();
+    eventBus.emit('OpenConfirmDialogMessage' as any, { messages });
   },
 
   startSearch: () => set({ isChatSearchMode: true, chatSearchText: '' }),
   exitSearch: () => set({ isChatSearchMode: false, chatSearchText: '', chatSearchResults: [] }),
 
-  // Внутри useChatStore -> actions:
-markAsRead: async () => {
-  const { selectedChatUser, currentChatMessages } = get();
-  if (!selectedChatUser) return;
+  markAsRead: async () => {
+    const { selectedChatUser } = get();
+    if (!selectedChatUser) return;
 
-  const currentUserId = userSession.userId;
-  const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
-  const targetGroupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
-  const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
+    const currentUserId = userSession.userId;
+    const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
+    const targetGroupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
+    const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
 
-  // 1. Сбрасываем счетчик непрочитанных в сайдбаре (как ActiveChatUnreadResetMessage в WPF)
-  eventBus.emit('ActiveChatUnreadResetMessage' as any, {
-    targetUserId,
-    targetGroupId,
-    secretChatId,
-  });
+    eventBus.emit('ActiveChatUnreadResetMessage' as any, {
+      targetUserId,
+      targetGroupId,
+      secretChatId,
+    });
 
-  // 2. В UI помечаем все входящие сообщения как прочитанные
-  set((state) => ({
-    currentChatMessages: state.currentChatMessages.map((m) =>
-      !m.isMyMessage && !m.isRead ? { ...m, isRead: true } : m
-    ),
-    unreadCountInActiveChat: 0,
-  }));
+    set((state) => ({
+      currentChatMessages: state.currentChatMessages.map((m) =>
+        !m.isMyMessage && !m.isRead ? { ...m, isRead: true } : m
+      ),
+      unreadCountInActiveChat: 0,
+    }));
 
-  try {
-    // 3. Обработка E2EE секретного чата
-    if (secretChatId) {
-      await chatService.markSecretMessagesAsReadLocallyAsync(secretChatId);
-      if (targetUserId) {
-        await (signalRService as any).markSecretChatAsReadAsync?.(targetUserId, secretChatId);
+    try {
+      if (secretChatId) {
+        await chatService.markSecretMessagesAsReadLocallyAsync(secretChatId);
+        if (targetUserId) {
+          await (signalRService as any).markSecretChatAsReadAsync?.(targetUserId, secretChatId);
+        }
+        return;
       }
-      return;
+
+      if (targetUserId) {
+        await chatService.markIncomingMessagesAsReadLocallyAsync(targetUserId, currentUserId);
+      }
+
+      const maxOutgoingReadId = await signalRService.markChatAsReadAsync(targetUserId, targetGroupId);
+
+      if (maxOutgoingReadId > 0 && targetUserId) {
+        set((state) => ({
+          currentChatMessages: state.currentChatMessages.map((m) =>
+            m.isMyMessage && !m.isRead && m.serverId > 0 && m.serverId <= maxOutgoingReadId
+              ? { ...m, isRead: true }
+              : m
+          ),
+        }));
+
+        await chatService.markMessagesAsReadLocallyAsync(currentUserId, targetUserId, maxOutgoingReadId);
+      }
+    } catch (e) {
+      console.error('[ChatStore] Ошибка прочтения:', e);
     }
-
-    // 4. Помечаем входящие сообщения прочитанными в локальной IndexedDB!
-    if (targetUserId) {
-      await chatService.markIncomingMessagesAsReadLocallyAsync(targetUserId, currentUserId);
-    }
-
-    // 5. Уведомляем сервер через SignalR
-    const maxOutgoingReadId = await signalRService.markChatAsReadAsync(targetUserId, targetGroupId);
-
-    // 6. Сервер вернул maxOutgoingReadId: собеседник прочитал наши исходящие сообщения
-    if (maxOutgoingReadId > 0 && targetUserId) {
-      set((state) => ({
-        currentChatMessages: state.currentChatMessages.map((m) =>
-          m.isMyMessage && !m.isRead && m.serverId > 0 && m.serverId <= maxOutgoingReadId
-            ? { ...m, isRead: true }
-            : m
-        ),
-      }));
-
-      // Сохраняем статус прочтения наших сообщений в IndexedDB
-      await chatService.markMessagesAsReadLocallyAsync(currentUserId, targetUserId, maxOutgoingReadId);
-    }
-  } catch (e) {
-    console.error('[ChatStore] Ошибка при пометке сообщений прочитанными:', e);
-  }
-},
+  },
 
   trackVisiblePosts: (serverIds) => {
     const { selectedChatUser } = get();
@@ -463,58 +457,64 @@ markAsRead: async () => {
     unviewed.forEach((id) => alreadyTrackedPostIds.add(id));
     signalRService.trackPostViewsAsync(unviewed);
   },
-
-  toggleAudio: (clickedAtt) => {
-    const { currentChatMessages, selectedChatUser } = get();
-    if (!clickedAtt || !selectedChatUser) return;
-
-    // Сборка плейлиста музыки по логике ToggleAudio из C#
-    const tracks: IAudioTrackModel[] = [];
-    currentChatMessages.forEach((msg) => {
-      (msg.attachments || []).forEach((att) => {
-        if (att.type === AttachmentType.Audio) {
-          tracks.push({
-            attachment: att,
-            messageId: msg.serverId || msg.id,
-            chatId: selectedChatUser.id,
-            chatName: selectedChatUser.nickName,
-            isGroup: selectedChatUser.isGroup,
-            isChannel: selectedChatUser.isChannel,
-            title: att.fileName,
-            artist: 'Audio',
-            durationStr: att.fileSizeStr,
-            durationSeconds: att.durationSeconds,
-            isPlaying: att === clickedAtt,
-          });
-        }
-      });
-    });
-
-    const targetTrack = tracks.find((t) => t.attachment === clickedAtt) || tracks[0];
-    if (targetTrack) {
-      eventBus.emit('PlayPlaylistMessage' as any, { tracks, selectedTrack: targetTrack });
-    }
-  },
-  
 }));
-// 🟢 1. Слушатель дельта-синхронизации (обновляет активный чат при приходе новых данных)
-eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
-  const { selectedChatUser } = useChatStore.getState();
-  if (selectedChatUser) {
-    const currentUserId = userSession.userId;
-    const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
-    const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
-    const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
 
-    const [messages, pinned] = await Promise.all([
-      chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30),
-      chatService.getLocalPinnedMessagesAsync(currentUserId, targetUserId, groupId, secretChatId),
-    ]);
+// ================= СЛУШАТЕЛИ СОБЫТИЙ EVENTBUS =================
 
-    useChatStore.setState({ currentChatMessages: messages, pinnedMessages: pinned });
+// 🟢 ГЛАВНЫЙ СЛУШАТЕЛЬ: Открытие чата из сайдбара / поиска
+eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
+  const target = data?.target || data;
+  if (target) {
+    await useChatStore.getState().selectChatUser(target);
   }
 });
-// 🟢 Слушатель: собеседник прочитал сообщения (MessagesWereReadMessage из SignalR)
+
+// 🟢 Слушатель входящих сообщений
+eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
+  const currentUserId = userSession.userId;
+  const { selectedChatUser } = useChatStore.getState();
+  const isMy = incoming.senderId === currentUserId;
+  incoming.isMyMessage = isMy;
+
+  if (isMy) {
+    useChatStore.setState((state) => ({
+      currentChatMessages: state.currentChatMessages.map((m) => {
+        if (
+          (incoming.serverId > 0 && m.serverId === incoming.serverId) ||
+          (m.serverId === 0 && m.isMyMessage && (m.text === incoming.text || m.id === incoming.id))
+        ) {
+          return {
+            ...m,
+            serverId: incoming.serverId,
+            isSentToServer: true,
+            isRead: incoming.isRead || m.isRead,
+          };
+        }
+        return m;
+      }),
+    }));
+  } else {
+    const isChatOpen =
+      selectedChatUser &&
+      ((incoming.groupId && selectedChatUser.isGroup && selectedChatUser.id === incoming.groupId) ||
+        (!incoming.groupId &&
+          !selectedChatUser.isGroup &&
+          (selectedChatUser.id === incoming.senderId || selectedChatUser.id === incoming.receiverId)));
+
+    if (isChatOpen) {
+      useChatStore.setState((state) => {
+        if (state.currentChatMessages.some((m) => (m.serverId > 0 && m.serverId === incoming.serverId) || m.id === incoming.id)) {
+          return state;
+        }
+        return { currentChatMessages: [...state.currentChatMessages, incoming] };
+      });
+
+      useChatStore.getState().markAsRead();
+    }
+  }
+});
+
+// 🟢 Слушатель прочтения сообщений собеседником
 eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; maxReadId: number }) => {
   const { selectedChatUser } = useChatStore.getState();
   const currentUserId = userSession.userId;
@@ -531,9 +531,21 @@ eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; m
     await chatService.markMessagesAsReadLocallyAsync(currentUserId, data.readerId, data.maxReadId);
   }
 });
-// 🟢 2. Слушатель выбора чата (из глобального поиска или сайдбара)
-eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
-  if (data?.target) {
-    await useChatStore.getState().selectChatUser(data.target);
+
+// 🟢 Слушатель дельта-синхронизации
+eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
+  const { selectedChatUser } = useChatStore.getState();
+  if (selectedChatUser) {
+    const currentUserId = userSession.userId;
+    const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
+    const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
+    const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
+
+    const [messages, pinned] = await Promise.all([
+      chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30),
+      chatService.getLocalPinnedMessagesAsync(currentUserId, targetUserId, groupId, secretChatId),
+    ]);
+
+    useChatStore.setState({ currentChatMessages: messages, pinnedMessages: pinned });
   }
 });
