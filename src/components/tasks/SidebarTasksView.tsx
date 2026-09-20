@@ -16,6 +16,23 @@ import { resolveMdiIcon } from '../../utils/iconResolver';
 
 const ITEM_HEIGHT = 50;
 
+const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
+  path,
+  size = 20,
+  color = 'currentColor',
+  style,
+}) => (
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill={color}
+    style={{ display: 'inline-block', flexShrink: 0, ...style }}
+  >
+    <path d={path} />
+  </svg>
+);
+
 export const SidebarTasksView: React.FC = () => {
   const {
     myTaskLists,
@@ -42,13 +59,15 @@ export const SidebarTasksView: React.FC = () => {
   return (
     <div
       style={{
-        width: 340,
+        width: '100%', // 🟢 Растягивается на всю ширину сплиттера
+        minWidth: 0,
         height: '100%',
-        backgroundColor: 'var(--bg-list)',
+        backgroundColor: '#161A23',
         display: 'flex',
         flexDirection: 'column',
         userSelect: 'none',
         overflow: 'hidden',
+        boxSizing: 'border-box',
       }}
     >
       <SidebarHeaderUserControl title="Tasks" iconPath={mdiClipboardListOutline} />
@@ -59,7 +78,18 @@ export const SidebarTasksView: React.FC = () => {
         onChange={setListSearchText}
       />
 
-      <div ref={containerRef} className="wpf-scroll-viewer" style={{ flex: 1, paddingBottom: 10 }}>
+      <div
+        ref={containerRef}
+        className="wpf-scroll-viewer"
+        style={{
+          flex: 1,
+          width: '100%',
+          padding: '0 0 10px 0',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          boxSizing: 'border-box',
+        }}
+      >
         {filteredLists.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '130px 20px 0 20px' }}>
             <div
@@ -67,18 +97,16 @@ export const SidebarTasksView: React.FC = () => {
                 width: 80,
                 height: 80,
                 borderRadius: 40,
-                backgroundColor: 'var(--sidebar-search-bg)',
+                backgroundColor: '#1C212D',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: 15,
               }}
             >
-              <svg viewBox="0 0 24 24" width={40} height={40} fill="var(--text-muted)" style={{ opacity: 0.5 }}>
-                <path d={mdiClipboardPlusOutline} />
-              </svg>
+              <MdiIcon path={mdiClipboardPlusOutline} size={40} color="#7D8494" style={{ opacity: 0.5 }} />
             </div>
-            <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', marginBottom: 8 }}>
+            <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
               No Task Lists
             </span>
           </div>
@@ -102,16 +130,19 @@ export const SidebarTasksView: React.FC = () => {
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  backgroundColor: isSelected ? 'var(--chat-item-active)' : isHovered ? 'var(--chat-item-hover)' : 'transparent',
+                  backgroundColor: isSelected
+                    ? '#232836'
+                    : isHovered
+                    ? '#1C212D'
+                    : 'transparent',
                   boxSizing: 'border-box',
-                  transition: 'background-color 0.1s ease',
+                  transition: 'background-color 0.12s ease',
+                  position: 'relative',
+                  width: 'auto', // 🟢 Занимает всю ширину контейнера
                 }}
               >
-                {/* Иконка 28x28 */}
+                {/* Иконка */}
                 <div
-                  onClick={(e) => {
-                    if (list.isEditing) e.stopPropagation();
-                  }}
                   style={{
                     width: 28,
                     height: 28,
@@ -121,9 +152,12 @@ export const SidebarTasksView: React.FC = () => {
                     flexShrink: 0,
                   }}
                 >
-                  <svg viewBox="0 0 24 24" width={22} height={22} fill={list.iconColor || 'var(--text-muted)'}>
-                    <path d={listIconPath} />
-                  </svg>
+                  <MdiIcon
+                    path={listIconPath}
+                    size={22}
+                    color={list.iconColor || '#7D8494'}
+                    style={{ position: 'absolute', left: 0, top: 0 }}
+                  />
 
                   {list.isEditing && (
                     <div
@@ -134,20 +168,18 @@ export const SidebarTasksView: React.FC = () => {
                         width: 14,
                         height: 14,
                         borderRadius: 7,
-                        backgroundColor: 'var(--app-accent)',
+                        backgroundColor: '#1E9BEB',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                     >
-                      <svg viewBox="0 0 24 24" width={8.5} height={8.5} fill="#FFFFFF">
-                        <path d={mdiPencil} />
-                      </svg>
+                      <MdiIcon path={mdiPencil} size={8.5} color="#FFFFFF" />
                     </div>
                   )}
                 </div>
 
-                {/* Название / Инпут */}
+                {/* Название / инпут */}
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
                   {list.isEditing ? (
                     <input
@@ -165,23 +197,33 @@ export const SidebarTasksView: React.FC = () => {
                         width: '100%',
                         background: 'transparent',
                         border: 'none',
-                        borderBottom: '1px solid var(--action-edit-icon)',
+                        borderBottom: '1px solid #3B82F6',
                         color: '#FFFFFF',
                         fontSize: 14.5,
                         fontWeight: 600,
                         outline: 'none',
                         padding: '2px 0',
+                        caretColor: '#FFFFFF',
                       }}
                     />
                   ) : (
-                    <span style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span
+                      style={{
+                        color: '#FFFFFF',
+                        fontSize: 14.5,
+                        fontWeight: 600,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
                       {list.listName}
                     </span>
                   )}
                 </div>
 
-                {/* Бейдж и кнопки */}
-                <div style={{ display: 'flex', alignItems: 'center', marginLeft: 8 }}>
+                {/* Правая часть */}
+                <div style={{ display: 'flex', alignItems: 'center', marginLeft: 6, flexShrink: 0 }}>
                   {!list.isEditing && list.uncompletedCount > 0 && (
                     <div
                       style={{
@@ -189,7 +231,7 @@ export const SidebarTasksView: React.FC = () => {
                         minWidth: 20,
                         height: 20,
                         padding: '0 6px',
-                        backgroundColor: list.urgencyColor || 'var(--item-count-badge-bg)',
+                        backgroundColor: list.urgencyColor || '#2A303C',
                         color: '#FFFFFF',
                         fontSize: 11.5,
                         fontWeight: 'bold',
@@ -204,33 +246,37 @@ export const SidebarTasksView: React.FC = () => {
                     </div>
                   )}
 
-                  {isHovered && !list.isEditing && (
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                  {!list.isEditing && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        opacity: isHovered ? 1 : 0,
+                        pointerEvents: isHovered ? 'auto' : 'none',
+                        transition: 'opacity 0.15s ease',
+                      }}
+                    >
                       <button
-                        title="Edit"
+                        title="Edit Project"
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingText(list.listName);
                           beginEditList(list.localId);
                         }}
-                        style={miniIconBtnStyle}
+                        style={actionBtnStyle}
                       >
-                        <svg viewBox="0 0 24 24" width={16} height={16} fill="var(--action-edit-icon)">
-                          <path d={mdiPencilOutline} />
-                        </svg>
+                        <MdiIcon path={mdiPencilOutline} size={16} color="#3B82F6" />
                       </button>
 
                       <button
-                        title="Delete"
+                        title="Delete Project"
                         onClick={(e) => {
                           e.stopPropagation();
                           deleteTaskList(list);
                         }}
-                        style={miniIconBtnStyle}
+                        style={actionBtnStyle}
                       >
-                        <svg viewBox="0 0 24 24" width={16} height={16} fill="var(--action-delete-icon)">
-                          <path d={mdiTrashCanOutline} />
-                        </svg>
+                        <MdiIcon path={mdiTrashCanOutline} size={16} color="#EF4444" />
                       </button>
                     </div>
                   )}
@@ -244,7 +290,7 @@ export const SidebarTasksView: React.FC = () => {
   );
 };
 
-const miniIconBtnStyle: React.CSSProperties = {
+const actionBtnStyle: React.CSSProperties = {
   width: 26,
   height: 26,
   padding: 0,
@@ -254,6 +300,7 @@ const miniIconBtnStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
+  borderRadius: 4,
 };
 
 export default SidebarTasksView;

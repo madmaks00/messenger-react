@@ -16,7 +16,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
   onChange,
   onClear,
   searchBackground,
-  margin = '0 6px 0 6px', // 🟢 0px снизу
+  margin = '0 6px 10px 6px', // WPF: Margin="6,0,6,10"
 }) => {
   const [isFocused, setIsFocused] = useState(false);
 
@@ -29,10 +29,12 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
     <div style={{ margin, boxSizing: 'border-box', flexShrink: 0 }}>
       <div
         style={{
-          height: 36,
-          backgroundColor: searchBackground || (isFocused ? 'var(--sidebar-search-focus-bg)' : 'var(--sidebar-search-bg)'),
-          borderRadius: 10,
-          padding: '0 12px',
+          height: 40, // WPF: SidebarSearchInputBorderStyle Height="40"
+          backgroundColor:
+            searchBackground ||
+            (isFocused ? '#232836' : '#1C212D'), // SidebarSearchInputFocusedBgBrush : SidebarSearchInputBgBrush
+          borderRadius: 12, // WPF: CornerRadius="12"
+          padding: '0 12px', // WPF: Padding="12,0"
           border: '1.2px solid transparent',
           display: 'flex',
           alignItems: 'center',
@@ -40,16 +42,18 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
           transition: 'background-color 0.15s ease',
         }}
       >
+        {/* Иконка Лупы 18x18 */}
         <svg
           viewBox="0 0 24 24"
-          width={17}
-          height={17}
-          fill="#8E95A5"
-          style={{ marginRight: 9, flexShrink: 0 }}
+          width={18}
+          height={18}
+          fill="#7D8494" // StaticResource TextMuted
+          style={{ marginRight: 10, flexShrink: 0 }}
         >
           <path d={mdiMagnify} />
         </svg>
 
+        {/* Текстовое поле */}
         <input
           type="text"
           value={text}
@@ -66,19 +70,20 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
             outline: 'none',
             padding: 0,
             margin: 0,
-            color: '#FFFFFF',
-            fontSize: 14.5,
+            color: '#FFFFFF', // SidebarSearchInputTextBrush
+            fontSize: 14, // WPF: FontSize="14"
             fontFamily: "'Segoe UI', -apple-system, sans-serif",
             boxSizing: 'border-box',
           }}
         />
 
+        {/* Кнопка очистки (Крестик) 20x20 */}
         {Boolean(text) && (
           <button
             onClick={handleClear}
             style={{
-              width: 18,
-              height: 18,
+              width: 20,
+              height: 20,
               padding: 0,
               background: 'transparent',
               border: 'none',
@@ -89,7 +94,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
               flexShrink: 0,
             }}
           >
-            <svg viewBox="0 0 24 24" width={16} height={16} fill="#8E95A5">
+            <svg viewBox="0 0 24 24" width={16} height={16} fill="#7D8494">
               <path d={mdiCloseCircle} />
             </svg>
           </button>

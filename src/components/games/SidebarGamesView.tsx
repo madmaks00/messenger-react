@@ -16,7 +16,8 @@ export const SidebarGamesView: React.FC = () => {
   return (
     <div
       style={{
-        width: 340,
+        width: '100%', // 👈 только здесь: 100% вместо 340
+        minWidth: 0,
         height: '100%',
         backgroundColor: 'var(--bg-list)',
         display: 'flex',
@@ -27,13 +28,29 @@ export const SidebarGamesView: React.FC = () => {
     >
       <SidebarHeaderUserControl title="Games" iconPath={mdiGamepadVariantOutline} />
 
-      <div ref={containerRef} className="wpf-scroll-viewer" style={{ flex: 1, padding: '0 5px 10px 5px' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', margin: '0 auto' }}>
+      <div
+        ref={containerRef}
+        className="wpf-scroll-viewer"
+        style={{
+          flex: 1,
+          width: '100%',
+          padding: '0 5px 10px 5px',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            margin: '0 auto',
+            width: '100%',
+          }}
+        >
           {availableGames.map((game: IGameItem) => {
             const isSelected = selectedGame?.internalId === game.internalId;
             const isHovered = hoveredId === game.internalId;
 
-            // Безопасно резолвим WPF-иконку в SVG путь
             const iconSvgPath = resolveMdiIcon(game.iconKind || game.internalId, mdiGamepadVariantOutline);
 
             return (
@@ -65,6 +82,7 @@ export const SidebarGamesView: React.FC = () => {
                   boxSizing: 'border-box',
                   transform: isHovered ? 'scale(1.03)' : 'scale(1)',
                   transition: 'transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease',
+                  flexShrink: 0,
                 }}
               >
                 {/* Галочка выбора */}
