@@ -233,20 +233,28 @@ export const ChatWorkspaceView: React.FC = () => {
     });
   }, [totalContentHeight, viewportHeight, scrollToOffsetAnimated]);
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
-    setScrollTop(target.scrollTop);
+  // В файле ChatWorkspaceView.tsx:
+const { markAsRead } = useChatStore(); // 👈 достаем markAsRead из стора
 
-    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-    isAtBottomRef.current = distanceFromBottom < 20;
+const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+  const target = e.currentTarget;
+  setScrollTop(target.scrollTop);
 
-    // В WPF: distanceFromBottom > 60
-    setShowScrollBottomBtn(distanceFromBottom > 60);
+  const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+  const atBottom = distanceFromBottom < 20;
+  isAtBottomRef.current = atBottom;
 
-    if (target.scrollTop < 50 && !isChatLoading) {
-      loadOlderMessages?.();
-    }
-  };
+  setShowScrollBottomBtn(distanceFromBottom > 60);
+
+  // 🟢 Если доскроллили до низа — помечаем накопившиеся сообщения прочитанными
+  if (atBottom) {
+    markAsRead();
+  }
+
+  if (target.scrollTop < 50 && !isChatLoading) {
+    loadOlderMessages?.();
+  }
+};
 
   useEffect(() => {
     if (scrollRef.current && totalContentHeight > 0) {

@@ -392,21 +392,66 @@ export const useChatStore = create<ChatState>((set, get) => ({
   startSearch: () => set({ isChatSearchMode: true, chatSearchText: '' }),
   exitSearch: () => set({ isChatSearchMode: false, chatSearchText: '', chatSearchResults: [] }),
 
-  markAsRead: async () => {
-    const { selectedChatUser, currentChatMessages } = get();
-    if (!selectedChatUser) return;
+  // Внутри useChatStore -> actions:
+markAsRead: async () => {
+  const { selectedChatUser, currentChatMessages } = get();
+  if (!selectedChatUser) return;
 
-    set((state) => ({
-      currentChatMessages: state.currentChatMessages.map((m) => (!m.isMyMessage ? { ...m, isRead: true } : m)),
-      unreadCountInActiveChat: 0,
-    }));
+  const currentUserId = userSession.userId;
+  const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
+  const targetGroupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
+  const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
 
-    if (selectedChatUser.isGroup) {
-      await signalRService.markChatAsReadAsync(null, selectedChatUser.id);
-    } else {
-      await signalRService.markChatAsReadAsync(selectedChatUser.id, null);
+  // 1. Сбрасываем счетчик непрочитанных в сайдбаре (как ActiveChatUnreadResetMessage в WPF)
+  eventBus.emit('ActiveChatUnreadResetMessage' as any, {
+    targetUserId,
+    targetGroupId,
+    secretChatId,
+  });
+
+  // 2. В UI помечаем все входящие сообщения как прочитанные
+  set((state) => ({
+    currentChatMessages: state.currentChatMessages.map((m) =>
+      !m.isMyMessage && !m.isRead ? { ...m, isRead: true } : m
+    ),
+    unreadCountInActiveChat: 0,
+  }));
+
+  try {
+    // 3. Обработка E2EE секретного чата
+    if (secretChatId) {
+      await chatService.markSecretMessagesAsReadLocallyAsync(secretChatId);
+      if (targetUserId) {
+        await (signalRService as any).markSecretChatAsReadAsync?.(targetUserId, secretChatId);
+      }
+      return;
     }
-  },
+
+    // 4. Помечаем входящие сообщения прочитанными в локальной IndexedDB!
+    if (targetUserId) {
+      await chatService.markIncomingMessagesAsReadLocallyAsync(targetUserId, currentUserId);
+    }
+
+    // 5. Уведомляем сервер через SignalR
+    const maxOutgoingReadId = await signalRService.markChatAsReadAsync(targetUserId, targetGroupId);
+
+    // 6. Сервер вернул maxOutgoingReadId: собеседник прочитал наши исходящие сообщения
+    if (maxOutgoingReadId > 0 && targetUserId) {
+      set((state) => ({
+        currentChatMessages: state.currentChatMessages.map((m) =>
+          m.isMyMessage && !m.isRead && m.serverId > 0 && m.serverId <= maxOutgoingReadId
+            ? { ...m, isRead: true }
+            : m
+        ),
+      }));
+
+      // Сохраняем статус прочтения наших сообщений в IndexedDB
+      await chatService.markMessagesAsReadLocallyAsync(currentUserId, targetUserId, maxOutgoingReadId);
+    }
+  } catch (e) {
+    console.error('[ChatStore] Ошибка при пометке сообщений прочитанными:', e);
+  }
+},
 
   trackVisiblePosts: (serverIds) => {
     const { selectedChatUser } = get();
@@ -469,7 +514,23 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
     useChatStore.setState({ currentChatMessages: messages, pinnedMessages: pinned });
   }
 });
+// 🟢 Слушатель: собеседник прочитал сообщения (MessagesWereReadMessage из SignalR)
+eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; maxReadId: number }) => {
+  const { selectedChatUser } = useChatStore.getState();
+  const currentUserId = userSession.userId;
 
+  if (selectedChatUser && !selectedChatUser.isGroup && selectedChatUser.id === data.readerId) {
+    useChatStore.setState((state) => ({
+      currentChatMessages: state.currentChatMessages.map((msg) =>
+        msg.isMyMessage && !msg.isRead && (data.maxReadId <= 0 || (msg.serverId > 0 && msg.serverId <= data.maxReadId))
+          ? { ...msg, isRead: true }
+          : msg
+      ),
+    }));
+
+    await chatService.markMessagesAsReadLocallyAsync(currentUserId, data.readerId, data.maxReadId);
+  }
+});
 // 🟢 2. Слушатель выбора чата (из глобального поиска или сайдбара)
 eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   if (data?.target) {

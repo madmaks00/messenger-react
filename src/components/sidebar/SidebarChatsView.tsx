@@ -52,7 +52,8 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
   </svg>
 );
 
-const getChatKey = (item: IChatListItem) => {
+const getChatKey = (item: any) => {
+  if (!item) return '';
   if (item.isSecretChat) return `s_${item.secretChatId || item.id}`;
   if (item.isGroup) return `g_${item.groupId || item.id}`;
   return `u_${item.userId || item.id}`;
@@ -424,7 +425,14 @@ export const SidebarChatsView: React.FC = () => {
                 const actualIndex = firstIndex + idx;
                 const topOffset = actualIndex * ITEM_HEIGHT;
                 const key = getChatKey(chat);
-                const isSelected = selectedChatUser?.id === (chat.isGroup ? chat.groupId : chat.userId);
+                const isSelected = Boolean(
+  selectedChatUser &&
+  Boolean(chat.isGroup) === Boolean(selectedChatUser.isGroup) &&
+  Boolean(chat.isSecretChat) === Boolean(selectedChatUser.isSecretChat) &&
+  (chat.isSecretChat
+    ? (chat.secretChatId || chat.id) === (selectedChatUser.secretChatId || selectedChatUser.id)
+    : (chat.isGroup ? chat.groupId : chat.userId) === selectedChatUser.id)
+);
                 const isHovered = hoveredChatKey === key;
 
                 const rawText = chat.lastMessage || (chat as any).rawLastMessage || '';
@@ -467,7 +475,6 @@ export const SidebarChatsView: React.FC = () => {
                       cursor: 'pointer',
                       backgroundColor: isSelected ? 'var(--chat-item-active)' : isHovered ? 'var(--chat-item-hover)' : 'transparent',
                       boxSizing: 'border-box',
-                      transition: 'background-color 0.12s ease',
                     }}
                   >
                     {/* Аватар 46x46 */}

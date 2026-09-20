@@ -368,7 +368,9 @@ export class SignalRService {
   public async invokeAsync(methodName: string, ...args: any[]): Promise<any> {
     return await this.safeInvoke(methodName, ...args);
   }
-
+public async markSecretChatAsReadAsync(targetUserId: number, secretChatId: string): Promise<void> {
+  await this.safeInvoke('MarkSecretChatAsRead', targetUserId, secretChatId);
+}
   //#endregion
 }
 

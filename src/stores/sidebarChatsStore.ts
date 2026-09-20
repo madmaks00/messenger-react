@@ -309,7 +309,19 @@ eventBus.on('UserTypingMessage', ({ senderId, groupId }) => {
 
   store.typingTimers.set(key, timer);
 });
+eventBus.on('ActiveChatUnreadResetMessage' as any, (data: any) => {
+  useSidebarChatsStore.setState((state) => ({
+    allChats: state.allChats.map((chat) => {
+      const match = data.secretChatId
+        ? chat.secretChatId === data.secretChatId
+        : data.targetGroupId
+        ? chat.groupId === data.targetGroupId
+        : chat.userId === data.targetUserId;
 
+      return match ? { ...chat, unreadCount: 0 } : chat;
+    }),
+  }));
+});
 eventBus.on('UserStatusChangedMessage', ({ userId, isOnline, lastSeen }) => {
   const chats = useSidebarChatsStore.getState().allChats.map((c) => {
     if (!c.isGroup && c.userId === userId) {
