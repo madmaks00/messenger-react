@@ -54,7 +54,7 @@ export const MainWindow: React.FC = () => {
   useEffect(() => {
     checkAuth(authService, userService).then((isAuth) => {
       if (isAuth) {
-        loadChats(chatService, true);
+        loadChats(true);
       }
     });
   }, [checkAuth, loadChats]);

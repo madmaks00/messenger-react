@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   mdiChatOutline,
   mdiMagnify,
@@ -36,7 +36,6 @@ import { resolveMdiIcon } from '../../utils/iconResolver';
 import { MessagePreviewHelper, getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 import { IChatListItem, IUserSearchResult } from '../../types/models';
 import { LastMessageType } from '../../types/enums';
-import { chatService } from '../../services/chat.service';
 
 const ITEM_HEIGHT = 68;
 const CUBIC_EASE_OUT = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
@@ -60,7 +59,19 @@ const getChatKey = (item: any) => {
 };
 
 export const SidebarChatsView: React.FC = () => {
-  const { allChats, openChat, togglePinChat, toggleMuteChat, deleteChat, clearChatHistory, selectedChatUser } = useSidebarChatsStore();
+  // 🟢 Достаём методы управления сайдбаром корректно ВНУТРИ компонента
+  const {
+    allChats,
+    openChat,
+    togglePinChat,
+    toggleMuteChat,
+    deleteChat,
+    clearChatHistory,
+    selectedChatUser,
+    loadChats,
+    syncOnlineStatuses,
+  } = useSidebarChatsStore();
+
   const { chatFolders, selectedFolderId, selectFolder, toggleChatInFolder } = useChatFolderStore();
   const { isChatSearchMode, exitSearch } = useChatStore();
 
@@ -81,7 +92,6 @@ export const SidebarChatsView: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chat: IChatListItem } | null>(null);
   const [isFolderSubmenuOpen, setIsFolderSubmenuOpen] = useState(false);
 
-  // Состояние оверлейного скроллбара
   const [isListHovered, setIsListHovered] = useState(false);
   const [isScrollDragging, setIsScrollDragging] = useState(false);
   const [isThumbHovered, setIsThumbHovered] = useState(false);
@@ -96,7 +106,11 @@ export const SidebarChatsView: React.FC = () => {
   const isSearchActive = isSearchInputFocused || searchText.length > 0;
   const hasFolders = chatFolders && chatFolders.length > 1;
 
-  // Динамический замер высоты контейнера для точного позиционирования ползунка
+  // 🟢 ЗАПУСК СРАЗУ ПРИ СТАРТЕ ПРИЛОЖЕНИЯ: Загружает чаты и синхронизирует онлайны
+  useEffect(() => {
+    loadChats();
+  }, [loadChats]);
+
   useEffect(() => {
     const updateViewport = () => {
       if (containerRef.current) {
@@ -144,7 +158,6 @@ export const SidebarChatsView: React.FC = () => {
   const lastIndex = Math.min(filteredChats.length - 1, Math.ceil((scrollTop + viewportHeight) / ITEM_HEIGHT) + 2);
   const visibleChats = filteredChats.slice(firstIndex, lastIndex + 1);
 
-  // Расчет плавающего ползунка (1 в 1 с WPF ScrollViewer)
   const isScrollable = totalHeight > viewportHeight;
   const thumbHeight = useMemo(() => {
     if (!isScrollable || viewportHeight <= 0) return 0;
@@ -158,7 +171,6 @@ export const SidebarChatsView: React.FC = () => {
     return (scrollTop / maxScroll) * maxThumbTravel;
   }, [isScrollable, totalHeight, viewportHeight, thumbHeight, scrollTop]);
 
-  // Перетаскивание кастомного ползунка мышкой
   const handleThumbMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -215,7 +227,7 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* ================= РЯД 0: ШАПКА "Chats" ================= */}
+      {/* РЯД 0: ШАПКА "Chats" */}
       <div
         style={{
           height: 42,
@@ -238,7 +250,7 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 1: СТРОКА ПОИСКА (Height="40", CornerRadius="12", Padding="0,12") ================= */}
+      {/* РЯД 1: СТРОКА ПОИСКА */}
       <div
         style={{
           margin: hasFolders ? '0 6px 2px 6px' : '0 6px 8px 6px',
@@ -313,7 +325,7 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= РЯД 2: ПАПКИ ЧАТОВ ================= */}
+      {/* РЯД 2: ПАПКИ ЧАТОВ */}
       {hasFolders && (
         <div
           style={{
@@ -376,7 +388,7 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       )}
 
-      {/* ================= РЯД 3: СПИСОК ЧАТОВ + ОВЕРЛЕЙНЫЙ СКРОЛЛБАР ================= */}
+      {/* РЯД 3: СПИСОК ЧАТОВ */}
       <div
         onMouseEnter={() => setIsListHovered(true)}
         onMouseLeave={() => setIsListHovered(false)}
@@ -390,7 +402,6 @@ export const SidebarChatsView: React.FC = () => {
           transition: isSearchActive ? 'opacity 150ms ease-out' : 'opacity 200ms ease-out',
         }}
       >
-        {/* Контейнер скролла со скрытой нативной полосой */}
         <div
           ref={containerRef}
           className="wpf-scroll-viewer"
@@ -426,13 +437,13 @@ export const SidebarChatsView: React.FC = () => {
                 const topOffset = actualIndex * ITEM_HEIGHT;
                 const key = getChatKey(chat);
                 const isSelected = Boolean(
-  selectedChatUser &&
-  Boolean(chat.isGroup) === Boolean(selectedChatUser.isGroup) &&
-  Boolean(chat.isSecretChat) === Boolean(selectedChatUser.isSecretChat) &&
-  (chat.isSecretChat
-    ? (chat.secretChatId || chat.id) === (selectedChatUser.secretChatId || selectedChatUser.id)
-    : (chat.isGroup ? chat.groupId : chat.userId) === selectedChatUser.id)
-);
+                  selectedChatUser &&
+                  Boolean(chat.isGroup) === Boolean(selectedChatUser.isGroup) &&
+                  Boolean(chat.isSecretChat) === Boolean(selectedChatUser.isSecretChat) &&
+                  (chat.isSecretChat
+                    ? (chat.secretChatId || chat.id) === (selectedChatUser.secretChatId || selectedChatUser.id)
+                    : (chat.isGroup ? chat.groupId : Number(chat.userId || chat.id)) === Number(selectedChatUser.id))
+                );
                 const isHovered = hoveredChatKey === key;
 
                 const rawText = chat.lastMessage || (chat as any).rawLastMessage || '';
@@ -466,7 +477,7 @@ export const SidebarChatsView: React.FC = () => {
                       position: 'absolute',
                       top: `${topOffset}px`,
                       left: 8,
-                      right: 8, // 🟢 Фиксировано: 8px слева, 8px справа
+                      right: 8,
                       height: `${ITEM_HEIGHT}px`,
                       display: 'flex',
                       alignItems: 'center',
@@ -484,7 +495,7 @@ export const SidebarChatsView: React.FC = () => {
                           width: 46,
                           height: 46,
                           borderRadius: 23,
-                          backgroundColor: getAvatarColor(chat.isGroup ? chat.groupId || 0 : chat.userId || 0),
+                          backgroundColor: getAvatarColor(chat.isGroup ? chat.groupId || 0 : Number(chat.userId || chat.id || 0)),
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -515,7 +526,8 @@ export const SidebarChatsView: React.FC = () => {
                         )}
                       </div>
 
-                      {chat.isOnline && !chat.isGroup && (
+                      {/* 🟢 ЗЕЛЕНЫЙ ИНДИКАТОР ОНЛАЙНА */}
+                      {Boolean(chat.isOnline) && !chat.isGroup && (
                         <div
                           style={{
                             position: 'absolute',
@@ -526,6 +538,7 @@ export const SidebarChatsView: React.FC = () => {
                             borderRadius: 6,
                             backgroundColor: '#4CAF50',
                             border: '2px solid var(--sidebar-search-bg)',
+                            zIndex: 10,
                           }}
                         />
                       )}
@@ -552,7 +565,7 @@ export const SidebarChatsView: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Текстовая информация */}
+                    {/* Текст */}
                     <div style={{ flex: 1, minWidth: 0, marginRight: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
                         {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
@@ -625,7 +638,7 @@ export const SidebarChatsView: React.FC = () => {
           )}
         </div>
 
-        {/* 🟢 НАСТОЯЩИЙ ПЛАВАЮЩИЙ СКРОЛЛБАР ИЗ WPF App.xaml (HorizontalAlignment="Right", Width="4", Opacity 0 -> 1) */}
+        {/* ПЛАВАЮЩИЙ СКРОЛЛБАР */}
         {isScrollable && (
           <div
             style={{
@@ -650,10 +663,10 @@ export const SidebarChatsView: React.FC = () => {
                 height: `${thumbHeight}px`,
                 borderRadius: 3,
                 backgroundColor: isScrollDragging
-                  ? 'rgba(255, 255, 255, 0.6)' // WPF: #99FFFFFF при перетаскивании
+                  ? 'rgba(255, 255, 255, 0.6)'
                   : isThumbHovered
-                  ? 'rgba(255, 255, 255, 0.4)' // WPF: #66FFFFFF при наведении на ползунок
-                  : 'rgba(255, 255, 255, 0.3)', // WPF: #4DFFFFFF в покое
+                  ? 'rgba(255, 255, 255, 0.4)'
+                  : 'rgba(255, 255, 255, 0.3)',
                 opacity: isListHovered || isScrollDragging ? 1 : 0,
                 transition: isScrollDragging ? 'none' : 'opacity 0.2s ease, background-color 0.15s ease',
                 cursor: 'pointer',
@@ -663,7 +676,7 @@ export const SidebarChatsView: React.FC = () => {
         )}
       </div>
 
-      {/* ================= РЕЗУЛЬТАТЫ ПОИСКА ================= */}
+      {/* РЕЗУЛЬТАТЫ ПОИСКА */}
       <div
         className="wpf-scroll-viewer"
         style={{
@@ -792,7 +805,7 @@ export const SidebarChatsView: React.FC = () => {
         )}
       </div>
 
-      {/* ================= КОНТЕКСТНОЕ МЕНЮ ЧАТА ================= */}
+      {/* КОНТЕКСТНОЕ МЕНЮ ЧАТА */}
       {contextMenu && (
         <div onClick={() => setContextMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
           <div
@@ -815,7 +828,7 @@ export const SidebarChatsView: React.FC = () => {
               rotate={45}
               text={contextMenu.chat.isPinned ? 'Unpin' : 'Pin'}
               onClick={() => {
-                togglePinChat(contextMenu.chat, chatService);
+                togglePinChat(contextMenu.chat);
                 setContextMenu(null);
               }}
             />
@@ -824,7 +837,7 @@ export const SidebarChatsView: React.FC = () => {
               icon={contextMenu.chat.isMuted ? mdiBellOutline : mdiBellOffOutline}
               text={contextMenu.chat.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
               onClick={() => {
-                toggleMuteChat(contextMenu.chat, chatService);
+                toggleMuteChat(contextMenu.chat);
                 setContextMenu(null);
               }}
             />
@@ -879,7 +892,7 @@ export const SidebarChatsView: React.FC = () => {
               icon={mdiBroom}
               text="Clear History"
               onClick={() => {
-                clearChatHistory(contextMenu.chat, chatService, false);
+                clearChatHistory(contextMenu.chat, false);
                 setContextMenu(null);
               }}
             />
@@ -889,7 +902,7 @@ export const SidebarChatsView: React.FC = () => {
               text="Delete Chat"
               isDestructive
               onClick={() => {
-                deleteChat(contextMenu.chat, chatService);
+                deleteChat(contextMenu.chat);
                 setContextMenu(null);
               }}
             />

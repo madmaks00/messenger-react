@@ -14,7 +14,6 @@ import { NotesWorkspaceView } from './components/notes/NotesWorkspaceView';
 import { TasksWorkspaceView } from './components/tasks/TasksWorkspaceView';
 import { GamesWorkspaceView } from './components/games/GamesWorkspaceView';
 import { GameOverlayView } from './components/games/GameOverlayView';
-import { MessageInputUserControl } from './components/chat/MessageInputUserControl';
 
 import { ProfileView } from './components/profile/ProfileView';
 import { PhotoViewerView } from './components/media/PhotoViewerView';
@@ -38,7 +37,6 @@ import { PasscodeSetupModalView } from './components/security/PasscodeSetupModal
 
 import { useNavigationStore } from './stores/navigationStore';
 import { useAuthStore } from './stores/authStore';
-import { useChatStore } from './stores/chatStore';
 import { useSidebarChatsStore } from './stores/sidebarChatsStore';
 import { useTodoStore } from './stores/todoStore';
 import { useNotesStore } from './stores/notesStore';
@@ -47,6 +45,8 @@ import { SecurityService } from './services/security.service';
 import { authService } from './services/auth.service';
 import { userService } from './services/user.service';
 import { chatService } from './services/chat.service';
+import { signalRService } from './services/signalr.service';
+import { userSession } from './services/userSession';
 import { eventBus } from './services/eventBus';
 import { MainTab } from './types/enums';
 import { IAttachment } from './types/models';
@@ -54,12 +54,10 @@ import { IAttachment } from './types/models';
 export const App: React.FC = () => {
   const { currentTab, isProfileOpen, closeProfile } = useNavigationStore();
   const { currentUser, checkAuth } = useAuthStore();
-  const { selectedChatUser } = useChatStore();
   const { loadChats } = useSidebarChatsStore();
   const { initialize: initTodo } = useTodoStore();
   const { initialize: initNotes } = useNotesStore();
 
-  // 🟢 Логика растягивания и сплиттера 1 в 1 из MainWindow.xaml.cs
   const {
     sidebarWidth,
     sidebarOpacity,
@@ -86,18 +84,32 @@ export const App: React.FC = () => {
   const [imageEditor, setImageEditor] = useState<{ isOpen: boolean; src: string; onDone?: (res: string) => void }>({ isOpen: false, src: '' });
   const [storyEditor, setStoryEditor] = useState<{ isOpen: boolean; image: string }>({ isOpen: false, image: '' });
 
+  // 🟢 1 В 1 С WPF: Инициализация сокета и данных сразу же при старте авторизации
   useEffect(() => {
     checkAuth(authService, userService).then(async (isAuth) => {
       if (isAuth && !isAppLocked) {
-        await loadChats(chatService, true);
+        const token =
+          userSession.token ||
+          localStorage.getItem('auth_token') ||
+          JSON.parse(localStorage.getItem('user_session_data') || '{}').token;
+
+        if (token) {
+          try {
+            await signalRService.initAsync(token);
+          } catch (err) {
+            console.warn('[App] Ошибка раннего подключения к SignalR:', err);
+          }
+        }
+
+        await loadChats(true);
         initTodo();
         initNotes();
 
-        const currentUserId = useAuthStore.getState().currentUser?.id ?? 0;
+        const currentUserId = useAuthStore.getState().currentUser?.id ?? userSession.userId ?? 0;
         if (currentUserId > 0) {
           chatService.syncDeltaAsync(currentUserId).then((count) => {
             if (count > 0) {
-              loadChats(chatService, false);
+              loadChats(false);
             }
           });
         }
@@ -107,7 +119,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     const unbindAccountSwitched = eventBus.on('AccountSwitchedMessage' as any, async () => {
-      await loadChats(chatService, true);
+      await loadChats(true);
       initTodo();
       initNotes();
     });
@@ -192,7 +204,7 @@ export const App: React.FC = () => {
         isLocked={isAppLocked}
         onUnlock={() => {
           setIsAppLocked(false);
-          loadChats(chatService, true);
+          loadChats(true);
           initTodo();
           initNotes();
         }}
@@ -212,7 +224,7 @@ export const App: React.FC = () => {
         <NavigationRail />
       </div>
 
-      {/* КОЛОНКА 2: САЙДБАР С ДИНАМИЧЕСКОЙ ШИРИНОЙ (SidebarColumn & MainSplitter) */}
+      {/* КОЛОНКА 2: САЙДБАР (SidebarColumn & MainSplitter) */}
       <div
         style={{
           width: sidebarWidth,
@@ -229,7 +241,6 @@ export const App: React.FC = () => {
           transition: isDragging ? 'none' : 'width 0.15s ease-out',
         }}
       >
-        {/* Контейнер элементов сайдбара с плавной прозрачностью при сжатии */}
         <div
           style={{
             width: '100%',
@@ -249,7 +260,7 @@ export const App: React.FC = () => {
           <MusicPlayerView />
         </div>
 
-        {/* 🟢 СПЛИТТЕР (1 в 1 с MainSplitter из MainWindow.xaml: Width=6, HoverLine=2, Cursor=SizeWE) */}
+        {/* СПЛИТТЕР */}
         <div
           onMouseDown={onMouseDown}
           onDoubleClick={onDoubleClick}
@@ -267,7 +278,6 @@ export const App: React.FC = () => {
             background: 'transparent',
           }}
         >
-          {/* Синяя линия подсветки HoverLine (Width=2, Opacity 0 -> 1) */}
           <div
             style={{
               position: 'absolute',
@@ -283,31 +293,30 @@ export const App: React.FC = () => {
         </div>
       </div>
 
-      {/* КОЛОНКА 3: ОКНО ЧАТА / РАБОЧАЯ ОБЛАСТЬ (flex: 1) */}
-<div
-  style={{
-    flex: 1,
-    height: '100%',
-    backgroundColor: 'var(--bg-chat)',
-    display: 'flex',
-    flexDirection: 'column',
-    position: 'relative',
-    overflow: 'hidden',
-    minWidth: 430,
-  }}
->
-  {currentTab === MainTab.Chats && <ChatWorkspaceView />}
-
-  {currentTab === MainTab.AccountSwitch && <AccountManagementContentView />}
-  {currentTab === MainTab.Notes && <NotesWorkspaceView />}
-  {currentTab === MainTab.Tasks && <TasksWorkspaceView />}
-  {currentTab === MainTab.Games && (
-    <>
-      <GamesWorkspaceView />
-      <GameOverlayView />
-    </>
-  )}
-</div>
+      {/* КОЛОНКА 3: ОКНО ЧАТА */}
+      <div
+        style={{
+          flex: 1,
+          height: '100%',
+          backgroundColor: 'var(--bg-chat)',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+          overflow: 'hidden',
+          minWidth: 430,
+        }}
+      >
+        {currentTab === MainTab.Chats && <ChatWorkspaceView />}
+        {currentTab === MainTab.AccountSwitch && <AccountManagementContentView />}
+        {currentTab === MainTab.Notes && <NotesWorkspaceView />}
+        {currentTab === MainTab.Tasks && <TasksWorkspaceView />}
+        {currentTab === MainTab.Games && (
+          <>
+            <GamesWorkspaceView />
+            <GameOverlayView />
+          </>
+        )}
+      </div>
 
       {/* ДИАЛОГИ И ОВЕРЛЕИ */}
       {isProfileOpen && currentUser && (

@@ -147,3 +147,90 @@ export function normalizeAvatarUrl(url?: string | null): string | null {
   if (!url) return null;
   return UrlHelper.normalize(url);
 }
+// ================= 4. КОНВЕРТЕР СТАТУСА (1 в 1 с ChatSubtitleConverter.cs) =================
+export function formatChatSubtitle(chatOrUser: {
+  isGroup?: boolean;
+  isOnline?: boolean;
+  lastSeen?: string | Date | null;
+  nickName?: string;
+  username?: string | null; 
+} | null | undefined): string {
+  if (!chatOrUser) return '';
+  if (chatOrUser.isGroup) return '';
+
+  if (chatOrUser.isOnline) {
+    return 'online';
+  }
+
+  const rawLastSeen = chatOrUser.lastSeen;
+  if (!rawLastSeen) {
+    return '';
+  }
+
+  // Корректно приводим к LocalTime с учетом UTC (как в C# SpecifyKind(Utc).ToLocalTime())
+  let lastSeenDate: Date;
+  if (typeof rawLastSeen === 'string') {
+    let s = rawLastSeen.trim();
+    if (!s.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(s)) {
+      s += 'Z'; // Парсим дату строго как UTC с сервера
+    }
+    lastSeenDate = new Date(s);
+  } else {
+    lastSeenDate = new Date(rawLastSeen);
+  }
+
+  if (isNaN(lastSeenDate.getTime()) || lastSeenDate.getFullYear() < 1900) {
+    return 'last seen a long time ago';
+  }
+
+  const now = new Date();
+  const diffSeconds = (now.getTime() - lastSeenDate.getTime()) / 1000;
+  const diffMinutes = diffSeconds / 60;
+
+  // 🟢 Защита от рассинхрона часов (если сервер спешит на пару секунд/минут)
+  if (diffSeconds < 0 && diffSeconds > -180) {
+    return 'last seen just now';
+  }
+
+  if (diffSeconds >= 0 && diffSeconds < 60) {
+    return 'last seen just now';
+  }
+
+  if (diffMinutes >= 1 && diffMinutes < 60) {
+    return `last seen ${Math.floor(diffMinutes)}m ago`;
+  }
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const timeStr = `${pad(lastSeenDate.getHours())}:${pad(lastSeenDate.getMinutes())}`;
+
+  // Сегодня
+  const isToday =
+    lastSeenDate.getDate() === now.getDate() &&
+    lastSeenDate.getMonth() === now.getMonth() &&
+    lastSeenDate.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return `last seen today at ${timeStr}`;
+  }
+
+  // Вчера
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    lastSeenDate.getDate() === yesterday.getDate() &&
+    lastSeenDate.getMonth() === yesterday.getMonth() &&
+    lastSeenDate.getFullYear() === yesterday.getFullYear();
+
+  if (isYesterday) {
+    return `last seen yesterday at ${timeStr}`;
+  }
+
+  const day = pad(lastSeenDate.getDate());
+  const month = pad(lastSeenDate.getMonth() + 1);
+
+  if (lastSeenDate.getFullYear() === now.getFullYear()) {
+    return `last seen ${day}.${month} at ${timeStr}`;
+  }
+
+  return `last seen ${day}.${month}.${lastSeenDate.getFullYear()}`;
+}

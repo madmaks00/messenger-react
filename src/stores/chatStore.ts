@@ -5,11 +5,15 @@ import {
   IAttachment,
   ISelectableChat,
 } from '../types/models';
+import { LastMessageType } from '../types/enums';
+import { apiClient } from '../services/apiClient';
 import { chatService } from '../services/chat.service';
 import { signalRService } from '../services/signalr.service';
 import { secretChatCrypto } from '../services/secretChatCrypto.service';
 import { userSession } from '../services/userSession';
 import { eventBus } from '../services/eventBus';
+import { useSidebarChatsStore } from './sidebarChatsStore';
+import { useMessageInputStore } from './messageInputStore';
 
 interface ChatState {
   selectedChatUser: IUserSearchResult | null;
@@ -22,7 +26,7 @@ interface ChatState {
   chatSearchText: string;
   isChatLoading: boolean;
   isHistoryLoading: boolean;
-  isLoadingOlder: boolean; // 🟢 Флаг подгрузки старых страниц (отдельно от isHistoryLoading!)
+  isLoadingOlder: boolean;
   isScrolledToBottom: boolean;
   unreadCountInActiveChat: number;
 
@@ -32,6 +36,7 @@ interface ChatState {
   canSendText: boolean;
   canSendMedia: boolean;
   canPinMessages: boolean;
+  canWriteMessages: boolean;
 
   isSelectionMode: boolean;
   selectedCount: number;
@@ -48,11 +53,43 @@ interface ChatState {
   forwardMessages: (messages: IMessage[]) => void;
   startSearch: () => void;
   exitSearch: () => void;
+  setChatSearchText: (query: string) => void;
   markAsRead: () => Promise<void>;
   trackVisiblePosts: (serverIds: number[]) => void;
+  sendTyping: (text?: string) => void;
+  syncPermissionsWithInput: () => void;
+  triggerDeltaSync: () => Promise<void>;
 }
 
 const alreadyTrackedPostIds = new Set<number>();
+let activeChatTypingTimer: ReturnType<typeof setTimeout> | null = null;
+let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let deltaSyncInterval: ReturnType<typeof setInterval> | null = null;
+
+function computeCanWriteMessages(
+  target: IUserSearchResult | null,
+  isBlockedByMe: boolean,
+  isBlockedByThem: boolean,
+  isCurrentChatJoined: boolean,
+  canSendText: boolean,
+  currentUserId: number
+): boolean {
+  if (!target) return false;
+  if (isBlockedByMe || isBlockedByThem) return false;
+  if (target.isGroup && !isCurrentChatJoined) return false;
+  if (!target.isGroup && !target.isChannel) return true;
+
+  if (target.isChannel) {
+    return target.adminId === currentUserId;
+  }
+
+  if (target.isGroup) {
+    const isGroupAdmin = target.adminId === currentUserId;
+    if (!isGroupAdmin && !canSendText) return false;
+  }
+
+  return true;
+}
 
 export const useChatStore = create<ChatState>((set, get) => ({
   selectedChatUser: null,
@@ -75,33 +112,115 @@ export const useChatStore = create<ChatState>((set, get) => ({
   canSendText: true,
   canSendMedia: true,
   canPinMessages: true,
+  canWriteMessages: true,
 
   isSelectionMode: false,
   selectedCount: 0,
 
-  // 1. ВЫБОР ЧАТА (Открытие диалога — 1 в 1 с WPF IsHistoryLoading)
+  syncPermissionsWithInput: () => {
+    const s = get();
+    useMessageInputStore.getState().syncChatPermissions({
+      isGroup: Boolean(s.selectedChatUser?.isGroup),
+      isChannel: Boolean(s.selectedChatUser?.isChannel),
+      isAdmin: Boolean(
+        s.selectedChatUser &&
+          (s.selectedChatUser.adminId === userSession.userId ||
+            (s.selectedChatUser as any).adminId === userSession.userId)
+      ),
+      isCurrentChatJoined: s.isCurrentChatJoined,
+      isBlockedByMe: s.isBlockedByMe,
+      isBlockedByThem: s.isBlockedByThem,
+      canSendText: s.canSendText,
+      canSendMedia: s.canSendMedia,
+      canWriteMessages: s.canWriteMessages,
+    });
+  },
+
+  // 🟢 Синхронизация дельты сообщений 1 в 1 с C# SyncDeltaAsync
+  triggerDeltaSync: async () => {
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+    if (currentUserId <= 0) return;
+
+    try {
+      const count = await chatService.syncDeltaAsync(currentUserId);
+      if (count > 0) {
+        const { selectedChatUser } = get();
+        if (selectedChatUser) {
+          const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
+          const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
+          const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
+
+          const updated = await chatService.getLocalMessagesAsync(
+            currentUserId,
+            targetUserId,
+            groupId,
+            secretChatId,
+            30
+          );
+          set({ currentChatMessages: updated });
+        }
+      }
+    } catch (e) {
+      console.warn('[ChatStore] Ошибка фонового Delta Sync:', e);
+    }
+  },
+
   selectChatUser: async (target) => {
     if (!target) {
-      set({ selectedChatUser: null, currentChatMessages: [], pinnedMessages: [] });
+      if (deltaSyncInterval) {
+        clearInterval(deltaSyncInterval);
+        deltaSyncInterval = null;
+      }
+      set({
+        selectedChatUser: null,
+        currentChatMessages: [],
+        pinnedMessages: [],
+        canWriteMessages: false,
+      });
+      get().syncPermissionsWithInput();
       return;
     }
 
     alreadyTrackedPostIds.clear();
 
+    const targetUserId = target.isGroup ? null : Number(target.id ?? (target as any).userId ?? 0);
+    const groupId = target.isGroup ? Number(target.id ?? (target as any).groupId ?? 0) : null;
+    const targetId = target.isGroup ? (groupId ?? 0) : (targetUserId ?? 0);
+
+    const normalizedTarget: IUserSearchResult = {
+      ...target,
+      id: targetId,
+      isGroup: Boolean(target.isGroup),
+    };
+
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+
+    const isJoined = !normalizedTarget.isGroup || true;
+    const canWrite = computeCanWriteMessages(normalizedTarget, false, false, isJoined, true, currentUserId);
+
     set({
-      selectedChatUser: target,
+      selectedChatUser: normalizedTarget,
       isHistoryLoading: true,
       isLoadingOlder: false,
       currentChatMessages: [],
       pinnedMessages: [],
       isSelectionMode: false,
       selectedCount: 0,
+      isBlockedByMe: false,
+      isBlockedByThem: false,
+      canSendText: true,
+      canSendMedia: true,
+      canPinMessages: true,
+      isCurrentChatJoined: isJoined,
+      canWriteMessages: canWrite,
     });
+    get().syncPermissionsWithInput();
 
-    const currentUserId = userSession.userId;
-    const targetUserId = target.isGroup ? null : (target.id || (target as any).userId);
-    const groupId = target.isGroup ? (target.id || (target as any).groupId) : null;
-    const secretChatId = target.isSecretChat ? target.secretChatId : null;
+    const secretChatId = normalizedTarget.isSecretChat ? normalizedTarget.secretChatId : null;
 
     try {
       if (secretChatId) {
@@ -122,7 +241,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       await get().markAsRead();
 
-      // Автоматическая доотправка неотправленных сообщений
+      // Запускаем дельта-синхронизацию для подтягивания новых сообщений
+      await get().triggerDeltaSync();
+
+      // Фоновый таймер периодической сверки (каждые 3.5 секунды)
+      if (deltaSyncInterval) clearInterval(deltaSyncInterval);
+      deltaSyncInterval = setInterval(() => {
+        get().triggerDeltaSync();
+      }, 3500);
+
+      // Свежий профиль из API
+      if (!normalizedTarget.isGroup && targetUserId && !normalizedTarget.isSecretChat) {
+        apiClient
+          .get<any>(`api/Users/${targetUserId}`)
+          .catch(() => apiClient.get<any>(`api/User/${targetUserId}`))
+          .then((res) => {
+            if (res && res.data) {
+              const fresh = res.data;
+              const isOnline = Boolean(fresh.isOnline ?? fresh.IsOnline);
+              const lastSeen = fresh.lastSeen ?? fresh.LastSeen;
+
+              const curr = get().selectedChatUser;
+              if (curr && Number(curr.id) === Number(targetUserId)) {
+                set({
+                  selectedChatUser: {
+                    ...curr,
+                    isOnline,
+                    lastSeen,
+                    avatar: fresh.avatar || curr.avatar,
+                    avatarPath: fresh.avatarPath || curr.avatarPath,
+                  },
+                });
+              }
+
+              useSidebarChatsStore.setState((state) => ({
+                allChats: state.allChats.map((c) =>
+                  !c.isGroup && Number(c.userId ?? c.id) === Number(targetUserId)
+                    ? { ...c, isOnline, lastSeen }
+                    : c
+                ),
+              }));
+            }
+          })
+          .catch(() => {});
+      }
+
+      // Доотправка сообщений
       chatService.syncUnsentMessagesAsync(signalRService).then((sent) => {
         if (sent > 0) {
           chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30).then((updated) => {
@@ -131,21 +295,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       });
     } catch (e) {
-      console.error('[ChatStore] Ошибка загрузки чата:', e);
+      console.error('[ChatStore ERROR] Ошибка загрузки чата:', e);
       set({ isHistoryLoading: false });
     }
   },
 
-  // 2. ПОДГРУЗКА СТАРЫХ СООБЩЕНИЙ ПРИ СКРОЛЛЕ ВВЕРХ (1 в 1 с WPF LoadOlderHistoryAsync)
+  sendTyping: (text?: string) => {
+    const { selectedChatUser } = get();
+    if (!selectedChatUser) return;
+    if (text !== undefined && text.trim().length === 0) return;
+
+    if (!typingDebounceTimer) {
+      const rId = selectedChatUser.isGroup
+        ? null
+        : Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? 0);
+      const gId = selectedChatUser.isGroup
+        ? Number(selectedChatUser.id ?? (selectedChatUser as any).groupId ?? 0)
+        : null;
+
+      if ((rId && rId > 0) || (gId && gId > 0)) {
+        signalRService.sendTypingAsync(rId, gId).catch((err) => {
+          console.warn('[ChatStore] Ошибка отправки typing:', err);
+        });
+      }
+
+      typingDebounceTimer = setTimeout(() => {
+        typingDebounceTimer = null;
+      }, 2000);
+    }
+  },
+
   loadOlderMessages: async () => {
     const { selectedChatUser, currentChatMessages, isHistoryLoading, isLoadingOlder } = get();
-
-    // 🟢 Блокируем вызов, если уже идет загрузка или если чат только открывается
     if (!selectedChatUser || currentChatMessages.length === 0 || isHistoryLoading || isLoadingOlder) return;
 
     set({ isLoadingOlder: true });
     const oldestTime = currentChatMessages[0].timestamp;
-    const currentUserId = userSession.userId;
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
 
     try {
       const older = await chatService.getLocalMessagesAsync(
@@ -161,7 +349,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ currentChatMessages: [...older, ...currentChatMessages] });
       }
     } catch (err) {
-      console.error('[ChatStore] Ошибка подгрузки старых сообщений:', err);
+      console.error('[ChatStore ERROR] Ошибка подгрузки старых сообщений:', err);
     } finally {
       set({ isLoadingOlder: false });
     }
@@ -180,7 +368,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return null;
   },
 
-  // 3. ОТПРАВКА СООБЩЕНИЙ
   sendMessage: async (text, attachments, editingMessage, replies) => {
     const { selectedChatUser } = get();
     if (!selectedChatUser) return;
@@ -190,11 +377,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    const currentUserId = userSession.userId;
-    const isSecret = selectedChatUser.isSecretChat && selectedChatUser.secretChatId;
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+    const isSecret = Boolean(selectedChatUser.isSecretChat && selectedChatUser.secretChatId);
     const localTempId = Date.now();
 
-    // Секретный чат (E2EE)
+    if (typingDebounceTimer) {
+      clearTimeout(typingDebounceTimer);
+      typingDebounceTimer = null;
+    }
+
     if (isSecret) {
       const secretChatId = selectedChatUser.secretChatId!;
       const replySender = replies[0]?.senderName || null;
@@ -242,6 +435,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await chatService.saveMessageLocallyAsync(newSecretMsg);
       set((state) => ({ currentChatMessages: [...state.currentChatMessages, newSecretMsg] }));
 
+      useSidebarChatsStore.getState().updateSidebar(
+        selectedChatUser.id,
+        null,
+        text || 'Вложение',
+        false,
+        LastMessageType.Text,
+        secretChatId
+      );
+
       await (signalRService as any).sendSecretMessageAsync?.(
         selectedChatUser.id,
         secretChatId,
@@ -253,7 +455,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // Обычный чат или группа
     const replyIds = replies.map((r) => r.serverId || r.id).filter(Boolean).join(',');
 
     const newMsg: IMessage = {
@@ -276,14 +477,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       repliedMessages: replies,
     };
 
-    // Мгновенное добавление в UI
     set((state) => ({ currentChatMessages: [...state.currentChatMessages, newMsg] }));
 
     try {
       await chatService.saveMessageLocallyAsync(newMsg);
     } catch (e) {
-      console.warn('[ChatStore] IndexedDB save warning:', e);
+      console.warn('[ChatStore] Ошибка кэширования сообщения:', e);
     }
+
+    useSidebarChatsStore.getState().updateSidebar(
+      newMsg.receiverId,
+      newMsg.groupId,
+      text || (attachments.length > 0 ? 'Вложение' : ''),
+      false,
+      LastMessageType.Text
+    );
 
     const attachmentDtos = (attachments || []).map((a) => ({
       type: a.type,
@@ -323,7 +531,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         await chatService.markAsSentAsync(newMsg.id, realId, undefined, text);
       }
     } catch (err) {
-      console.error('[ChatStore ERROR] Ошибка отправки:', err);
+      console.error('[ChatStore ERROR] Ошибка отправки сообщения:', err);
     }
   },
 
@@ -343,7 +551,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteMessage: async (msg, deleteForAll) => {
-    const currentUserId = userSession.userId;
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
     await chatService.deleteMessageLocallyAsync(msg.id, msg.serverId, currentUserId, deleteForAll);
 
     set((state) => ({
@@ -401,11 +611,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
   startSearch: () => set({ isChatSearchMode: true, chatSearchText: '' }),
   exitSearch: () => set({ isChatSearchMode: false, chatSearchText: '', chatSearchResults: [] }),
 
+  setChatSearchText: (query) => {
+    set({ chatSearchText: query });
+    if (!query.trim()) {
+      set({ chatSearchResults: [], isChatSearching: false });
+      return;
+    }
+
+    const { selectedChatUser } = get();
+    if (!selectedChatUser) return;
+
+    set({ isChatSearching: true });
+    const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
+    const otherUserId = !selectedChatUser.isGroup ? selectedChatUser.id : null;
+
+    chatService
+      .searchMessagesAsync(query.trim(), groupId, otherUserId)
+      .then((results) => {
+        set({ chatSearchResults: results || [], isChatSearching: false });
+      })
+      .catch(() => set({ isChatSearching: false }));
+  },
+
   markAsRead: async () => {
     const { selectedChatUser } = get();
     if (!selectedChatUser) return;
 
-    const currentUserId = userSession.userId;
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
     const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
     const targetGroupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
     const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
@@ -450,7 +684,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         await chatService.markMessagesAsReadLocallyAsync(currentUserId, targetUserId, maxOutgoingReadId);
       }
     } catch (e) {
-      console.error('[ChatStore] Ошибка прочтения:', e);
+      console.error('[ChatStore ERROR] Ошибка прочтения:', e);
     }
   },
 
@@ -466,9 +700,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 }));
 
-// ================= СЛУШАТЕЛИ СОБЫТИЙ EVENTBUS =================
+// ================= СЛУШАТЕЛИ EVENTBUS (1 В 1 С WPF) =================
 
-// 🟢 Слушатель открытия чата из сайдбара / поиска
 eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   const target = data?.target || data;
   if (target) {
@@ -476,12 +709,83 @@ eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   }
 });
 
-// 🟢 Слушатель входящих сообщений
-eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
-  const currentUserId = userSession.userId;
+eventBus.on('UserStatusChangedMessage' as any, (data: { userId: number; isOnline: boolean; lastSeen: string }) => {
   const { selectedChatUser } = useChatStore.getState();
-  const isMy = incoming.senderId === currentUserId;
+  if (selectedChatUser && !selectedChatUser.isGroup && Number(selectedChatUser.id) === Number(data.userId)) {
+    useChatStore.setState({
+      selectedChatUser: {
+        ...selectedChatUser,
+        isOnline: Boolean(data.isOnline),
+        lastSeen: data.lastSeen,
+      },
+    });
+  }
+});
+
+eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
+  const { selectedChatUser } = useChatStore.getState();
+  if (!selectedChatUser) return;
+
+  const activeId = Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? (selectedChatUser as any).groupId ?? 0);
+
+  const isCurrent = groupId
+    ? selectedChatUser.isGroup && activeId === Number(groupId)
+    : !selectedChatUser.isGroup && activeId === Number(senderId);
+
+  if (isCurrent) {
+    useChatStore.setState({
+      selectedChatUser: { ...selectedChatUser, isTyping: true },
+    });
+
+    if (activeChatTypingTimer) {
+      clearTimeout(activeChatTypingTimer);
+    }
+
+    activeChatTypingTimer = setTimeout(() => {
+      const current = useChatStore.getState().selectedChatUser;
+      if (current) {
+        useChatStore.setState({
+          selectedChatUser: { ...current, isTyping: false },
+        });
+      }
+      activeChatTypingTimer = null;
+    }, 4000);
+  }
+});
+
+eventBus.on('MessageInputTextChangedMessage' as any, ({ text }: { text: string }) => {
+  useChatStore.getState().sendTyping(text);
+});
+
+// 🟢 ОБРАБОТКА ВХОДЯЩЕГО СООБЩЕНИЯ В РЕАЛЬНОМ ВРЕМЕНИ
+eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
+  const currentUserId = Number(
+    userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+  );
+  const { selectedChatUser } = useChatStore.getState();
+  const isMy = Number(incoming.senderId) === Number(currentUserId);
   incoming.isMyMessage = isMy;
+
+  const activeChatId = selectedChatUser
+    ? Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? (selectedChatUser as any).groupId ?? 0)
+    : 0;
+
+  // Сброс typing при входящем сообщении
+  if (selectedChatUser && activeChatId > 0) {
+    const isFromCurrentChat = incoming.groupId
+      ? selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)
+      : !selectedChatUser.isGroup && activeChatId === Number(incoming.senderId);
+
+    if (isFromCurrentChat) {
+      if (activeChatTypingTimer) {
+        clearTimeout(activeChatTypingTimer);
+        activeChatTypingTimer = null;
+      }
+      if (selectedChatUser.isTyping) {
+        useChatStore.setState({ selectedChatUser: { ...selectedChatUser, isTyping: false } });
+      }
+    }
+  }
 
   if (isMy) {
     useChatStore.setState((state) => ({
@@ -501,18 +805,27 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
       }),
     }));
   } else {
-    const isChatOpen =
+    // Проверяем, открыт ли сейчас этот диалог
+    const isChatOpen = Boolean(
       selectedChatUser &&
-      ((incoming.groupId && selectedChatUser.isGroup && selectedChatUser.id === incoming.groupId) ||
-        (!incoming.groupId &&
-          !selectedChatUser.isGroup &&
-          (selectedChatUser.id === incoming.senderId || selectedChatUser.id === incoming.receiverId)));
+        activeChatId > 0 &&
+        ((incoming.groupId && selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)) ||
+          (!incoming.groupId &&
+            !selectedChatUser.isGroup &&
+            (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId))))
+    );
 
     if (isChatOpen) {
       useChatStore.setState((state) => {
-        if (state.currentChatMessages.some((m) => (m.serverId > 0 && m.serverId === incoming.serverId) || m.id === incoming.id)) {
-          return state;
-        }
+        const alreadyExists = state.currentChatMessages.some(
+          (m) =>
+            (incoming.serverId > 0 && m.serverId === incoming.serverId) ||
+            (incoming.id > 0 && m.id === incoming.id) ||
+            (m.text === incoming.text &&
+              Math.abs(new Date(m.timestamp).getTime() - new Date(incoming.timestamp).getTime()) < 2000)
+        );
+        if (alreadyExists) return state;
+
         return { currentChatMessages: [...state.currentChatMessages, incoming] };
       });
 
@@ -521,10 +834,16 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   }
 });
 
-// 🟢 Слушатель прочтения сообщений собеседником
+// 🟢 Слушатель серверного таймера синхронизации (1 в 1 с WPF)
+eventBus.on('SyncTimerMessage' as any, () => {
+  useChatStore.getState().triggerDeltaSync();
+});
+
 eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; maxReadId: number }) => {
   const { selectedChatUser } = useChatStore.getState();
-  const currentUserId = userSession.userId;
+  const currentUserId = Number(
+    userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+  );
 
   if (selectedChatUser && !selectedChatUser.isGroup && selectedChatUser.id === data.readerId) {
     useChatStore.setState((state) => ({
@@ -539,11 +858,12 @@ eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; m
   }
 });
 
-// 🟢 Слушатель дельта-синхронизации
 eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
   const { selectedChatUser } = useChatStore.getState();
   if (selectedChatUser) {
-    const currentUserId = userSession.userId;
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
     const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
     const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
     const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;

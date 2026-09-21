@@ -10,15 +10,30 @@ import { eventBus } from './eventBus';
 import { UrlHelper } from '../utils/helpers';
 import { BASE_SERVER_URL } from './apiClient';
 import { getLocalDatabase } from '../db/localDb';
-import { AttachmentDto, MessageReceivedDto } from '../types/dtos';
+import { AttachmentDto } from '../types/dtos';
 import { AttachmentType, LastMessageType } from '../types/enums';
 import { IMessage } from '../types/models';
+
+function getCleanToken(): string {
+  let raw =
+    userSession.token ||
+    localStorage.getItem('auth_token') ||
+    localStorage.getItem('token') ||
+    '';
+  if (!raw) {
+    try {
+      raw = JSON.parse(localStorage.getItem('user_session_data') || '{}').token || '';
+    } catch {}
+  }
+  // 🟢 КРИТИЧНО: SignalR требует чистый токен БЕЗ "Bearer "
+  return raw.replace(/^Bearer\s+/i, '').trim();
+}
 
 export class SignalRService {
   private hubConnection: HubConnection | null = null;
   private readonly serverUrl: string;
   private readonly hubPath: string = 'chat';
-  private connectingPromise: Promise<void> | null = null;
+  private connectingPromise: Promise<boolean> | null = null;
 
   constructor() {
     this.serverUrl = (BASE_SERVER_URL || 'https://localhost:7214').replace(/\/+$/, '');
@@ -39,58 +54,72 @@ export class SignalRService {
     if (this.isConnected) return true;
 
     if (this.connectingPromise) {
-      try {
-        await this.connectingPromise;
-        return this.isConnected;
-      } catch {
-        return false;
-      }
+      return await this.connectingPromise;
     }
 
-    const token = userSession.token;
-    if (token) {
-      try {
-        await this.initAsync(token);
-        return this.isConnected;
-      } catch {
-        return false;
-      }
-    }
+    const token = getCleanToken();
+    if (!token) return false;
 
-    return false;
+    return await this.initAsync(token);
   }
 
-  public async initAsync(token: string, onReconnected?: () => Promise<void>): Promise<void> {
-    if (!token) return;
+  public async initAsync(tokenInput?: string, onReconnected?: () => Promise<void>): Promise<boolean> {
+    const token = (tokenInput ? tokenInput.replace(/^Bearer\s+/i, '').trim() : '') || getCleanToken();
+    if (!token) return false;
 
-    if (this.hubConnection) {
-      await this.stopAsync();
+    if (this.isConnected) return true;
+
+    if (this.connectingPromise) {
+      return await this.connectingPromise;
     }
 
-    const builder = new HubConnectionBuilder()
-      .withUrl(`${this.serverUrl}/${this.hubPath}`, {
-        accessTokenFactory: () => userSession.token || token,
-      })
-      .withHubProtocol(new MessagePackHubProtocol())
-      .withAutomaticReconnect()
-      .configureLogging(LogLevel.Warning);
+    this.connectingPromise = (async () => {
+      try {
+        if (this.hubConnection) {
+          if (this.hubConnection.state === HubConnectionState.Connected) return true;
+          if (this.hubConnection.state === HubConnectionState.Connecting) {
+            while (this.hubConnection.state === HubConnectionState.Connecting) {
+              await new Promise((r) => setTimeout(r, 50));
+            }
+            if (this.hubConnection.state === HubConnectionState.Connected) return true;
+          }
+          try {
+            await this.hubConnection.stop();
+          } catch {}
+          this.hubConnection = null;
+        }
 
-    this.hubConnection = builder.build();
+        const builder = new HubConnectionBuilder()
+          .withUrl(`${this.serverUrl}/${this.hubPath}`, {
+            accessTokenFactory: () => getCleanToken(),
+          })
+          .withHubProtocol(new MessagePackHubProtocol())
+          .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
+          .configureLogging(LogLevel.Warning);
 
-    this.hubConnection.onreconnected(async () => {
-      console.info('[SignalR] Соединение восстановлено.');
-      if (onReconnected) await onReconnected();
-    });
+        this.hubConnection = builder.build();
 
-    this.registerHubHandlers();
+        this.hubConnection.onreconnected(async () => {
+          console.info('[SignalR] Соединение восстановлено.');
+          eventBus.emit('SignalRConnectedMessage' as any, undefined);
+          if (onReconnected) await onReconnected();
+        });
 
-    this.connectingPromise = this.hubConnection.start();
-    try {
-      await this.connectingPromise;
-      console.info('[SignalR] Соединение успешно установлено.');
-    } finally {
-      this.connectingPromise = null;
-    }
+        this.registerHubHandlers();
+
+        await this.hubConnection.start();
+        console.info('[SignalR] Соединение успешно установлено.');
+        eventBus.emit('SignalRConnectedMessage' as any, undefined);
+        return true;
+      } catch (err: any) {
+        console.error('[SignalR ERROR] Сбой подключения к хабу:', err);
+        return false;
+      } finally {
+        this.connectingPromise = null;
+      }
+    })();
+
+    return await this.connectingPromise;
   }
 
   public async stopAsync(): Promise<void> {
@@ -99,6 +128,7 @@ export class SignalRService {
         await this.hubConnection.stop();
       } finally {
         this.hubConnection = null;
+        this.connectingPromise = null;
       }
     }
   }
@@ -106,58 +136,101 @@ export class SignalRService {
   private registerHubHandlers(): void {
     if (!this.hubConnection) return;
 
-    this.hubConnection.on('ReceiveMessage', async (dto: MessageReceivedDto) => {
-      const currentId = Number(userSession.userId);
-      const isMyMessage = Number(dto.senderId) === currentId;
+    // 🟢 ВХОДЯЩИЕ СООБЩЕНИЯ (1 в 1 с WPF: MessageReceivedDto)
+    this.hubConnection.on('ReceiveMessage', async (rawDto: any) => {
+      console.log('⚡ [SignalR] Входящее сообщение ReceiveMessage:', rawDto);
+      if (!rawDto) return;
+
+      const currentId = Number(
+        userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+      );
+
+      const senderId = Number(rawDto.senderId ?? rawDto.SenderId ?? 0);
+      const receiverId =
+        rawDto.receiverId !== undefined
+          ? Number(rawDto.receiverId)
+          : rawDto.ReceiverId !== undefined
+          ? Number(rawDto.ReceiverId)
+          : null;
+      const groupId =
+        rawDto.groupId !== undefined
+          ? Number(rawDto.groupId)
+          : rawDto.GroupId !== undefined
+          ? Number(rawDto.GroupId)
+          : null;
+      const serverId = Number(rawDto.serverId ?? rawDto.ServerId ?? rawDto.id ?? rawDto.Id ?? 0);
+      const text = String(rawDto.text ?? rawDto.Text ?? '');
+      const isRead = Boolean(rawDto.isRead ?? rawDto.IsRead ?? false);
+      const replyToMessageIds = rawDto.replyToMessageIds ?? rawDto.ReplyToMessageIds ?? null;
+      const rawAttachments = rawDto.attachments ?? rawDto.Attachments ?? [];
+      const timestamp = rawDto.timestamp ?? rawDto.Timestamp ?? new Date().toISOString();
+      const senderName = String(rawDto.senderName ?? rawDto.SenderName ?? '');
+      const senderAvatar = rawDto.senderAvatar ?? rawDto.SenderAvatar ?? null;
+
+      const isMyMessage = senderId === currentId;
 
       const newMsg: IMessage = {
         id: 0,
-        serverId: dto.serverId,
-        senderId: dto.senderId,
-        receiverId: dto.receiverId,
-        groupId: dto.groupId,
+        serverId,
+        senderId,
+        receiverId,
+        groupId,
+        senderName: senderName || undefined,
+        senderAvatar: senderAvatar || undefined,
         isMyMessage,
         isSentToServer: true,
-        text: dto.text,
-        isRead: isMyMessage,
-        timestamp: new Date().toISOString(),
+        text,
+        isRead: isMyMessage || isRead,
+        timestamp: new Date(timestamp).toISOString(),
         isDeleted: false,
         isDeletedForMe: false,
-        replyToMessageIds: dto.replyToMessageIds,
+        replyToMessageIds,
         isPinned: false,
         viewsCount: 1,
-        attachments: (dto.attachments || []).map((a, idx) => ({
+        attachments: (rawAttachments || []).map((a: any, idx: number) => ({
           id: idx + 1,
-          messageId: dto.serverId,
-          type: a.type as AttachmentType,
-          fileName: a.fileName,
-          fileSizeStr: a.fileSizeStr,
+          messageId: serverId,
+          type: (a.type ?? a.Type) as AttachmentType,
+          fileName: a.fileName ?? a.FileName ?? '',
+          fileSizeStr: a.fileSizeStr ?? a.FileSizeStr ?? '',
           fileSizeBytes: 0,
-          url: UrlHelper.normalize(a.url, this.serverUrl),
-          thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, this.serverUrl),
-          fileHash: a.fileHash,
-          hasAudio: a.hasAudio,
-          width: a.width,
-          height: a.height,
-          durationSeconds: a.durationSeconds,
-          waveform: a.waveform,
+          url: UrlHelper.normalize(a.url ?? a.Url, this.serverUrl),
+          thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl ?? a.ThumbnailUrl, this.serverUrl),
+          fileHash: a.fileHash ?? a.FileHash ?? '',
+          hasAudio: Boolean(a.hasAudio ?? a.HasAudio),
+          width: a.width ?? a.Width ?? 0,
+          height: a.height ?? a.Height ?? 0,
+          durationSeconds: a.durationSeconds ?? a.DurationSeconds ?? 0,
+          waveform: a.waveform ?? a.Waveform ?? null,
         })),
       };
 
       try {
-        const db = getLocalDatabase(currentId);
-        const localId = await db.messages.add(newMsg);
-        newMsg.id = localId;
-      } catch { }
+        if (currentId > 0) {
+          const db = getLocalDatabase(currentId);
+          // 🟢 КРИТИЧНО: удаляем id: 0 перед сохранением в Dexie, чтобы автоинкремент сгенерировал правильный ID
+          const { id: _, ...toInsert } = newMsg;
+          const localId = await db.messages.add(toInsert as any);
+          newMsg.id = Number(localId);
+        }
+      } catch (err) {
+        console.warn('[SignalR] Ошибка сохранения сообщения в локальную БД:', err);
+      }
 
+      // Отправляем в чат и обновляем сайдбар
       eventBus.emit('ReceiveMessage', newMsg);
       eventBus.emit('SidebarUpdateMessage', {
-        userId: isMyMessage ? dto.receiverId : dto.senderId,
-        groupId: dto.groupId,
-        previewText: dto.text || 'Вложение',
+        userId: isMyMessage ? receiverId : senderId,
+        groupId,
+        previewText: text || ((newMsg.attachments?.length ?? 0) > 0 ? 'Вложение' : ''),
         incrementUnread: !isMyMessage,
         messageType: LastMessageType.Text,
       });
+    });
+
+    // 🟢 1 в 1 с WPF: Серверный таймер синхронизации дельты
+    this.hubConnection.on('SyncTimer', () => {
+      eventBus.emit('SyncTimerMessage' as any, undefined);
     });
 
     this.hubConnection.on('MessagesWereRead', (readerId: number, maxReadId: number) => {
@@ -176,8 +249,21 @@ export class SignalRService {
       eventBus.emit('MessagePinnedMessage', { serverMessageId, isPinned });
     });
 
-    this.hubConnection.on('UserStatusChanged', (userId: number, isOnline: boolean, lastSeen: string) => {
-      eventBus.emit('UserStatusChangedMessage', { userId, isOnline, lastSeen });
+    this.hubConnection.on('UserStatusChanged', (userId: any, isOnline: any, lastSeen: any) => {
+      const uid = Number(userId);
+      const online = Boolean(isOnline);
+      const seen =
+        typeof lastSeen === 'string'
+          ? lastSeen
+          : lastSeen
+          ? new Date(lastSeen).toISOString()
+          : new Date().toISOString();
+
+      eventBus.emit('UserStatusChangedMessage', {
+        userId: uid,
+        isOnline: online,
+        lastSeen: seen,
+      });
     });
 
     this.hubConnection.on('ReceiveTyping', (senderId: number, groupId: number | null) => {
@@ -236,7 +322,10 @@ export class SignalRService {
     }
   }
 
-  // ================= СООБЩЕНИЯ =================
+  public async getOnlineStatusesAsync(userIds: number[]): Promise<Record<number, boolean> | null> {
+    if (!userIds || userIds.length === 0) return null;
+    return await this.safeInvoke<Record<number, boolean>>('GetOnlineStatuses', userIds);
+  }
 
   public async sendMessageAsync(
     receiverId: number | null,
@@ -310,8 +399,6 @@ export class SignalRService {
     await this.safeInvoke('SendSecretMessage', targetUserId, secretChatId, ciphertext, nonce, tag, sequenceNumber);
   }
 
-  // ================= ЗВОНКИ И WEBRTC =================
-
   public async startCallAsync(receiverId: number): Promise<void> {
     await this.safeInvoke('StartCall', receiverId);
   }
@@ -344,8 +431,6 @@ export class SignalRService {
     await this.safeInvoke('SendGroupCallWebRTCData', groupId, targetUserId, data);
   }
 
-  // ================= ГРУППЫ И ЗАМЕТКИ =================
-
   public async subscribeToGroupAsync(groupId: number): Promise<void> {
     await this.safeInvoke('SubscribeToGroup', groupId);
   }
@@ -356,11 +441,6 @@ export class SignalRService {
 
   public async subscribeToNoteAsync(noteId: number): Promise<void> {
     await this.safeInvoke('SubscribeToNote', noteId);
-  }
-
-  public async getOnlineStatusesAsync(userIds: number[]): Promise<Record<number, boolean> | null> {
-    if (!userIds || userIds.length === 0) return null;
-    return await this.safeInvoke<Record<number, boolean>>('GetOnlineStatuses', userIds);
   }
 
   public async invokeAsync(methodName: string, ...args: any[]): Promise<any> {

@@ -31,7 +31,7 @@ import { useNavigationStore } from '../../stores/navigationStore';
 import { MessageInputUserControl } from './MessageInputUserControl';
 import { MessageItem } from './MessageItem';
 import { AsyncChatLayoutEngine } from '../../utils/chatLayoutEngine';
-import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
+import { getAvatarColor, normalizeAvatarUrl, formatChatSubtitle } from '../../utils/helpers';
 import { userSession } from '../../services/userSession';
 import { chatService } from '../../services/chat.service';
 import { eventBus } from '../../services/eventBus';
@@ -84,6 +84,7 @@ export const ChatWorkspaceView: React.FC = () => {
     selectedChatUser,
     currentChatMessages = [],
     isHistoryLoading,
+    isBlockedByThem,
     isSelectionMode,
     selectedCount,
     pinnedMessages = [],
@@ -584,25 +585,24 @@ export const ChatWorkspaceView: React.FC = () => {
                 </div>
 
                 <div style={{ fontSize: 12.5, lineHeight: 1.2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {selectedChatUser.isTyping ? (
-                    <span style={{ color: PALETTE.accent, fontWeight: 600 }}>typing...</span>
-                  ) : selectedChatUser.isGroup && !selectedChatUser.isChannel ? (
-                    <>
-                      <span style={{ color: selectedChatUser.onlineCount ? PALETTE.accent : PALETTE.textMuted, fontWeight: 600 }}>
-                        {selectedChatUser.onlineCount || 0} online
-                      </span>
-                      <span style={{ color: PALETTE.textMuted }}>• {selectedChatUser.memberCount || 1} members</span>
-                    </>
-                  ) : selectedChatUser.isChannel ? (
-                    <span style={{ color: PALETTE.textMuted }}>{selectedChatUser.memberCount || 1} subscribers</span>
-                  ) : selectedChatUser.isSecretChat ? null : selectedChatUser.isOnline ? (
-                    <span style={{ color: PALETTE.accent }}>online</span>
-                  ) : (
-                    <span style={{ color: PALETTE.textMuted }}>
-                      {selectedChatUser.lastSeen ? `last seen ${new Date(selectedChatUser.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'last seen recently'}
-                    </span>
-                  )}
-                </div>
+  {selectedChatUser.isTyping ? (
+    <span style={{ color: PALETTE.accent, fontWeight: 600 }}>typing...</span>
+  ) : selectedChatUser.isGroup && !selectedChatUser.isChannel ? (
+    <>
+      <span style={{ color: selectedChatUser.onlineCount ? PALETTE.accent : PALETTE.textMuted, fontWeight: 600 }}>
+        {selectedChatUser.onlineCount || 0} online
+      </span>
+      <span style={{ color: PALETTE.textMuted }}>• {selectedChatUser.memberCount || 1} members</span>
+    </>
+  ) : selectedChatUser.isChannel ? (
+    <span style={{ color: PALETTE.textMuted }}>{selectedChatUser.memberCount || 1} subscribers</span>
+  ) : selectedChatUser.isSecretChat ? null : (
+    /* 🟢 1 в 1 с ChatSubtitleConverter.cs и PersonalStatusText в XAML */
+    <span style={{ color: selectedChatUser.isOnline ? PALETTE.accent : PALETTE.textMuted }}>
+      {isBlockedByThem ? 'last seen a long time ago' : formatChatSubtitle(selectedChatUser as any)}
+    </span>
+  )}
+</div>
               </div>
             </div>
 
@@ -777,7 +777,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       text={currentSidebarChat?.isPinned ? 'Unpin Chat' : 'Pin Chat'}
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        if (currentSidebarChat) togglePinChat(currentSidebarChat, chatService);
+                        if (currentSidebarChat) togglePinChat(currentSidebarChat);
                       }}
                     />
 
@@ -786,7 +786,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       text={currentSidebarChat?.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        if (currentSidebarChat) toggleMuteChat(currentSidebarChat, chatService);
+                        if (currentSidebarChat) toggleMuteChat(currentSidebarChat);
                       }}
                     />
 
@@ -809,7 +809,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       text="Clear History"
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        if (currentSidebarChat) clearChatHistory(currentSidebarChat, chatService, false);
+                        if (currentSidebarChat) clearChatHistory(currentSidebarChat, false);
                       }}
                     />
 
@@ -819,7 +819,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       isDestructive
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        if (currentSidebarChat) deleteChat(currentSidebarChat, chatService);
+                        if (currentSidebarChat) deleteChat(currentSidebarChat);
                       }}
                     />
 

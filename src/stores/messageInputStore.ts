@@ -3,6 +3,7 @@ import { IAttachment, IMessage } from '../types/models';
 import { AttachmentType } from '../types/enums';
 import { voiceRecordingService } from '../services/voiceRecording.service';
 import { eventBus } from '../services/eventBus';
+import { useChatStore } from './chatStore';
 
 interface MessageInputState {
   newMessageText: string;
@@ -13,7 +14,7 @@ interface MessageInputState {
   recordingTimeStr: string;
   hintText: string;
 
-  // Права и ограничения (синхронизируются с выбранным чатом)
+  // Права и ограничения
   canWriteMessages: boolean;
   canSendMedia: boolean;
   canSendText: boolean;
@@ -68,7 +69,11 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
   isCurrentChatJoined: true,
   isAdmin: false,
 
-  setNewMessageText: (text) => set({ newMessageText: text }),
+  // 🟢 При любом вводе текста отправляем статус typing через сокет собеседнику в C# WPF
+  setNewMessageText: (text) => {
+    set({ newMessageText: text });
+    useChatStore.getState().sendTyping(text);
+  },
 
   setEditMessage: (msg) => {
     set({
@@ -128,7 +133,6 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         type = AttachmentType.Audio;
       }
 
-      // Форматирование размера файла (B, KB, MB, GB)
       const units = ['B', 'KB', 'MB', 'GB'];
       let size = file.size;
       let unitIdx = 0;
@@ -201,7 +205,6 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     };
 
     set({ pendingAttachments: [voiceAtt] });
-    // Отправка сообщений обрабатывается chatStore через SendHandler
   },
 
   reset: () => {
@@ -218,7 +221,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
   syncChatPermissions: (perms) => set(perms),
 }));
 
-// Подписки на EventBus для синхронизации ввода
+// Слушатель выбора эмодзи
 eventBus.on('EmojiPickedMessage' as any, (data: any) => {
   if (data?.emoji) {
     const current = useMessageInputStore.getState().newMessageText;
