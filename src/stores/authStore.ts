@@ -3,7 +3,7 @@ import { type IUser, UserValidator } from '../types/models';
 import { userSession } from '../services/userSession';
 import { eventBus } from '../services/eventBus';
 import { closeLocalDatabase, getLocalDatabase } from '../db/localDb';
-
+import { signalRService } from '../services/signalr.service';
 interface AuthState {
   loginUser: Partial<IUser>;
   registerUser: Partial<IUser>;
@@ -182,7 +182,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   checkAuth: async (authService, userService) => {
     let token = localStorage.getItem('jwt_token');
 
-    // Если прямого токена нет — берём токен первого сохраненного аккаунта (как в WPF!)
     if (!token) {
       const accounts = get().savedAccounts;
       const lastAccount = accounts[0];
@@ -205,6 +204,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return false;
     }
 
+    // 🟢 1. Немедленно инициализируем сессию в памяти ДО сетевых запросов
     userSession.setSession(userId, token);
 
     try {
@@ -223,7 +223,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
         getLocalDatabase(user.id);
 
-        // Обновляем в сохраненных аккаунтах с токеном
         const accounts = get().savedAccounts;
         const exists = accounts.find((a) => a.id === user.id);
         const updatedAccounts = exists
@@ -233,13 +232,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ savedAccounts: updatedAccounts });
         saveAccountsToStorage(updatedAccounts);
 
+        // 🟢 2. 1 в 1 С WPF App.xaml.cs: сразу подключаем SignalR хаб!
+        signalRService.initAsync(token).catch((err: any) => {
+          console.warn('[AuthStore] Фоновый старт SignalR:', err);
+        });
+
         eventBus.emit('UserProfileUpdatedMessage', { user });
         return true;
       }
 
       eventBus.emit('AuthFailedMessage', undefined);
       return false;
-    } catch {
+    } catch (ex) {
+      console.error('[AuthStore] Ошибка checkAuth:', ex);
       eventBus.emit('AuthFailedMessage', undefined);
       return false;
     }

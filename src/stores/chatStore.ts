@@ -44,7 +44,12 @@ interface ChatState {
   selectChatUser: (target: IUserSearchResult | null) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   ensureMessageLoadedAsync: (messageId: number) => Promise<IMessage | null>;
-  sendMessage: (text: string, attachments: IAttachment[], editingMessage: IMessage | null, replies: IMessage[]) => Promise<void>;
+  sendMessage: (
+    text: string,
+    attachments: IAttachment[],
+    editingMessage: IMessage | null,
+    replies: IMessage[]
+  ) => Promise<void>;
   editMessage: (localId: number, serverId: number, text: string) => Promise<void>;
   deleteMessage: (msg: IMessage, deleteForAll: boolean) => Promise<void>;
   togglePinMessage: (msg: IMessage, pinForAll: boolean) => Promise<void>;
@@ -136,7 +141,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  // 🟢 Синхронизация дельты сообщений 1 в 1 с C# SyncDeltaAsync
   triggerDeltaSync: async () => {
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
@@ -189,10 +193,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const groupId = target.isGroup ? Number(target.id ?? (target as any).groupId ?? 0) : null;
     const targetId = target.isGroup ? (groupId ?? 0) : (targetUserId ?? 0);
 
+    // 🟢 1 в 1 с WPF: берем актуальный статус онлайна из существующего элемента сайдбара
+    const existingSidebarChat = useSidebarChatsStore.getState().allChats.find((c) =>
+      !c.isGroup && Number(c.userId || c.id) === targetId
+    );
+
+    const isOnlineInitial = existingSidebarChat ? existingSidebarChat.isOnline : Boolean(target.isOnline);
+    const lastSeenInitial = existingSidebarChat
+      ? existingSidebarChat.lastSeen
+      : target.lastSeen || new Date().toISOString();
+
     const normalizedTarget: IUserSearchResult = {
       ...target,
       id: targetId,
       isGroup: Boolean(target.isGroup),
+      isOnline: isOnlineInitial,
+      lastSeen: lastSeenInitial,
     };
 
     const currentUserId = Number(
@@ -240,14 +256,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
 
       await get().markAsRead();
-
-      // Запускаем дельта-синхронизацию для подтягивания новых сообщений
       await get().triggerDeltaSync();
 
-      // Фоновый таймер периодической сверки (каждые 3.5 секунды)
+      // 🟢 Фоновый интервал: синхронизирует дельту сообщений И статусы онлайна 1 в 1 с WPF
       if (deltaSyncInterval) clearInterval(deltaSyncInterval);
       deltaSyncInterval = setInterval(() => {
         get().triggerDeltaSync();
+        useSidebarChatsStore.getState().syncOnlineStatuses();
       }, 3500);
 
       // Свежий профиль из API
@@ -266,8 +281,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 set({
                   selectedChatUser: {
                     ...curr,
-                    isOnline,
-                    lastSeen,
+                    isOnline: curr.isOnline || isOnline,
+                    lastSeen: isOnline ? new Date().toISOString() : lastSeen || curr.lastSeen,
                     avatar: fresh.avatar || curr.avatar,
                     avatarPath: fresh.avatarPath || curr.avatarPath,
                   },
@@ -286,12 +301,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .catch(() => {});
       }
 
-      // Доотправка сообщений
+      // Доотправка офлайн-сообщений
       chatService.syncUnsentMessagesAsync(signalRService).then((sent) => {
         if (sent > 0) {
-          chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30).then((updated) => {
-            set({ currentChatMessages: updated });
-          });
+          chatService
+            .getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30)
+            .then((updated) => {
+              set({ currentChatMessages: updated });
+            });
         }
       });
     } catch (e) {
@@ -368,6 +385,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return null;
   },
 
+  // 🟢 ПОЛНАЯ ОТПРАВКА: с поддержкой E2EE шифрования секретных чатов + обычных сообщений
   sendMessage: async (text, attachments, editingMessage, replies) => {
     const { selectedChatUser } = get();
     if (!selectedChatUser) return;
@@ -388,6 +406,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingDebounceTimer = null;
     }
 
+    // 🟢 ВЕТКА 1: СЕКРЕТНЫЙ ЧАТ (E2EE)
     if (isSecret) {
       const secretChatId = selectedChatUser.secretChatId!;
       const replySender = replies[0]?.senderName || null;
@@ -444,7 +463,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         secretChatId
       );
 
-      await (signalRService as any).sendSecretMessageAsync?.(
+      await signalRService.sendSecretMessageAsync(
         selectedChatUser.id,
         secretChatId,
         encrypted.ciphertextBase64,
@@ -455,6 +474,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
+    // 🟢 ВЕТКА 2: ОБЫЧНЫЙ ЧАТ И ГРУППА
     const replyIds = replies.map((r) => r.serverId || r.id).filter(Boolean).join(',');
 
     const newMsg: IMessage = {
@@ -661,7 +681,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (secretChatId) {
         await chatService.markSecretMessagesAsReadLocallyAsync(secretChatId);
         if (targetUserId) {
-          await (signalRService as any).markSecretChatAsReadAsync?.(targetUserId, secretChatId);
+          await signalRService.markSecretChatAsReadAsync(targetUserId, secretChatId);
         }
         return;
       }
@@ -700,7 +720,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 }));
 
-// ================= СЛУШАТЕЛИ EVENTBUS (1 В 1 С WPF) =================
+// ================= СЛУШАТЕЛИ EVENTBUS (1 В 1 С ChatViewModel.cs) =================
 
 eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   const target = data?.target || data;
@@ -709,25 +729,30 @@ eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   }
 });
 
-eventBus.on('UserStatusChangedMessage' as any, (data: { userId: number; isOnline: boolean; lastSeen: string }) => {
-  const { selectedChatUser } = useChatStore.getState();
-  if (selectedChatUser && !selectedChatUser.isGroup && Number(selectedChatUser.id) === Number(data.userId)) {
-    useChatStore.setState({
-      selectedChatUser: {
-        ...selectedChatUser,
-        isOnline: Boolean(data.isOnline),
-        lastSeen: data.lastSeen,
-      },
-    });
+// 🟢 1. Статус онлайна (UserStatusChanged)
+eventBus.on(
+  'UserStatusChangedMessage' as any,
+  ({ userId, isOnline, lastSeen }: { userId: number; isOnline: boolean; lastSeen: string }) => {
+    const { selectedChatUser } = useChatStore.getState();
+    if (selectedChatUser && !selectedChatUser.isGroup && Number(selectedChatUser.id) === Number(userId)) {
+      console.log(`[ChatStore 🔄] Обновление статуса собеседника: isOnline=${isOnline}`);
+      useChatStore.setState({
+        selectedChatUser: {
+          ...selectedChatUser,
+          isOnline: Boolean(isOnline),
+          lastSeen: isOnline ? new Date().toISOString() : lastSeen || selectedChatUser.lastSeen,
+        },
+      });
+    }
   }
-});
+);
 
+// 🟢 2. Тайпинг (UserTypingMessage)
 eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
   const { selectedChatUser } = useChatStore.getState();
   if (!selectedChatUser) return;
 
-  const activeId = Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? (selectedChatUser as any).groupId ?? 0);
-
+  const activeId = Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? 0);
   const isCurrent = groupId
     ? selectedChatUser.isGroup && activeId === Number(groupId)
     : !selectedChatUser.isGroup && activeId === Number(senderId);
@@ -737,10 +762,7 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
       selectedChatUser: { ...selectedChatUser, isTyping: true },
     });
 
-    if (activeChatTypingTimer) {
-      clearTimeout(activeChatTypingTimer);
-    }
-
+    if (activeChatTypingTimer) clearTimeout(activeChatTypingTimer);
     activeChatTypingTimer = setTimeout(() => {
       const current = useChatStore.getState().selectedChatUser;
       if (current) {
@@ -757,7 +779,7 @@ eventBus.on('MessageInputTextChangedMessage' as any, ({ text }: { text: string }
   useChatStore.getState().sendTyping(text);
 });
 
-// 🟢 ОБРАБОТКА ВХОДЯЩЕГО СООБЩЕНИЯ В РЕАЛЬНОМ ВРЕМЕНИ
+// 🟢 3. Входящее сообщение в реальном времени (ReceiveMessage)
 eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   const currentUserId = Number(
     userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
@@ -767,10 +789,9 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   incoming.isMyMessage = isMy;
 
   const activeChatId = selectedChatUser
-    ? Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? (selectedChatUser as any).groupId ?? 0)
+    ? Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? 0)
     : 0;
 
-  // Сброс typing при входящем сообщении
   if (selectedChatUser && activeChatId > 0) {
     const isFromCurrentChat = incoming.groupId
       ? selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)
@@ -805,7 +826,6 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
       }),
     }));
   } else {
-    // Проверяем, открыт ли сейчас этот диалог
     const isChatOpen = Boolean(
       selectedChatUser &&
         activeChatId > 0 &&
@@ -834,11 +854,7 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   }
 });
 
-// 🟢 Слушатель серверного таймера синхронизации (1 в 1 с WPF)
-eventBus.on('SyncTimerMessage' as any, () => {
-  useChatStore.getState().triggerDeltaSync();
-});
-
+// 🟢 4. Статус прочтения сообщений собеседником (синие галочки)
 eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; maxReadId: number }) => {
   const { selectedChatUser } = useChatStore.getState();
   const currentUserId = Number(
@@ -858,6 +874,99 @@ eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; m
   }
 });
 
+// 🟢 5. Редактирование сообщений в реальном времени (MessageEditedMessage)
+eventBus.on('MessageEditedMessage' as any, ({ serverId, newText, attachments }: any) => {
+  useChatStore.setState((state) => ({
+    currentChatMessages: state.currentChatMessages.map((m) =>
+      m.serverId === serverId
+        ? {
+            ...m,
+            text: newText,
+            editedAt: new Date().toISOString(),
+            attachments: attachments || m.attachments,
+          }
+        : m
+    ),
+    pinnedMessages: state.pinnedMessages.map((p) =>
+      p.serverId === serverId
+        ? {
+            ...p,
+            text: newText,
+            editedAt: new Date().toISOString(),
+            attachments: attachments || p.attachments,
+          }
+        : p
+    ),
+  }));
+});
+
+// 🟢 6. Удаление сообщений в реальном времени (MessageDeletedMessage)
+eventBus.on('MessageDeletedMessage' as any, ({ serverId, isForAll }: { serverId: number; isForAll: boolean }) => {
+  useChatStore.setState((state) => ({
+    currentChatMessages: isForAll
+      ? state.currentChatMessages.filter((m) => m.serverId !== serverId && m.id !== serverId)
+      : state.currentChatMessages.map((m) =>
+          m.serverId === serverId
+            ? { ...m, isDeletedForMe: true, text: 'This message was deleted' }
+            : m
+        ),
+    pinnedMessages: state.pinnedMessages.filter((p) => p.serverId !== serverId && p.id !== serverId),
+  }));
+});
+
+// 🟢 7. Закрепление сообщений в реальном времени (MessagePinnedMessage)
+eventBus.on('MessagePinnedMessage' as any, ({ serverMessageId, isPinned }: { serverMessageId: number; isPinned: boolean }) => {
+  useChatStore.setState((state) => {
+    const updatedMessages = state.currentChatMessages.map((m) =>
+      m.serverId === serverMessageId || m.id === serverMessageId ? { ...m, isPinned } : m
+    );
+
+    let updatedPins = [...state.pinnedMessages];
+    if (isPinned) {
+      const target = updatedMessages.find((m) => m.serverId === serverMessageId || m.id === serverMessageId);
+      if (target && !updatedPins.some((p) => p.serverId === serverMessageId || p.id === serverMessageId)) {
+        updatedPins.push(target);
+      }
+    } else {
+      updatedPins = updatedPins.filter((p) => p.serverId !== serverMessageId && p.id !== serverMessageId);
+    }
+
+    return { currentChatMessages: updatedMessages, pinnedMessages: updatedPins };
+  });
+});
+
+// 🟢 8. Обновление счётчика просмотров постов в каналах
+eventBus.on('MessageViewsUpdatedMessage' as any, ({ serverMessageId, viewsCount }: { serverMessageId: number; viewsCount: number }) => {
+  useChatStore.setState((state) => ({
+    currentChatMessages: state.currentChatMessages.map((m) =>
+      m.serverId === serverMessageId ? { ...m, viewsCount } : m
+    ),
+  }));
+});
+
+// 🟢 9. Изменение статуса блокировки пользователя в реальном времени
+eventBus.on('BlockStatusChangedMessage' as any, ({ blockerId, isBlocked }: { blockerId: number; isBlocked: boolean }) => {
+  const { selectedChatUser } = useChatStore.getState();
+  if (selectedChatUser && !selectedChatUser.isGroup && Number(selectedChatUser.id) === Number(blockerId)) {
+    useChatStore.setState({
+      isBlockedByThem: isBlocked,
+      canWriteMessages: !isBlocked,
+    });
+    useChatStore.getState().syncPermissionsWithInput();
+  }
+});
+
+// 🟢 10. Очистка активных сообщений
+eventBus.on('ClearActiveChatMessagesMessage' as any, () => {
+  useChatStore.setState({
+    currentChatMessages: [],
+    pinnedMessages: [],
+    selectedCount: 0,
+    isSelectionMode: false,
+  });
+});
+
+// 🟢 11. Обновление истории при Delta Sync
 eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
   const { selectedChatUser } = useChatStore.getState();
   if (selectedChatUser) {
@@ -875,4 +984,9 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
 
     useChatStore.setState({ currentChatMessages: messages, pinnedMessages: pinned });
   }
+});
+
+// 🟢 12. Серверный таймер синхронизации дельты
+eventBus.on('SyncTimerMessage' as any, () => {
+  useChatStore.getState().triggerDeltaSync();
 });

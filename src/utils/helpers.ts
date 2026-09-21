@@ -2,18 +2,17 @@ import { AttachmentType, LastMessageType } from '../types/enums';
 import { IMessage } from '../types/models';
 import { BASE_SERVER_URL } from '../services/apiClient';
 
-// ================= 1. ЦВЕТОВАЯ ПАЛИТРА ИЗ AvatarColorConverter.cs =================
 export const AVATAR_COLORS = [
-  '#E91E63', // 0 - Розовый
-  '#9C27B0', // 1 - Фиолетовый
-  '#673AB7', // 2 - Глубокий фиолетовый
-  '#3F51B5', // 3 - Индиго
-  '#2196F3', // 4 - Синий
-  '#00BCD4', // 5 - Голубой
-  '#009688', // 6 - Морская волна
-  '#4CAF50', // 7 - Зеленый
-  '#FF9800', // 8 - Оранжевый
-  '#795548', // 9 - Коричневый
+  '#E91E63',
+  '#9C27B0',
+  '#673AB7',
+  '#3F51B5',
+  '#2196F3',
+  '#00BCD4',
+  '#009688',
+  '#4CAF50',
+  '#FF9800',
+  '#795548',
 ] as const;
 
 export function getAvatarColor(id: number | string | null | undefined): string {
@@ -28,7 +27,6 @@ export function getAvatarColor(id: number | string | null | undefined): string {
   return AVATAR_COLORS[index];
 }
 
-// ================= 2. ФОРМАТТЕР ПРЕВЬЮ СООБЩЕНИЙ =================
 export class MessagePreviewHelper {
   public static formatPreview(
     rawMessageOrMessageObj: string | null | undefined | IMessage,
@@ -113,7 +111,6 @@ export class MessagePreviewHelper {
   }
 }
 
-// ================= 3. НОРМАЛИЗАТОР URL =================
 export class UrlHelper {
   public static normalize(url: string | null | undefined, serverUrl: string = BASE_SERVER_URL): string {
     if (!url) return '';
@@ -142,52 +139,53 @@ export class UrlHelper {
   }
 }
 
-// 🟢 Экспортируем функцию напрямую
 export function normalizeAvatarUrl(url?: string | null): string | null {
   if (!url) return null;
   return UrlHelper.normalize(url);
 }
-// ================= 4. КОНВЕРТЕР СТАТУСА (1 в 1 с ChatSubtitleConverter.cs) =================
+
+// 🟢 1 В 1 С WPF ChatSubtitleConverter.cs
 export function formatChatSubtitle(chatOrUser: {
   isGroup?: boolean;
   isOnline?: boolean;
   lastSeen?: string | Date | null;
   nickName?: string;
-  username?: string | null; 
+  username?: string | null;
 } | null | undefined): string {
   if (!chatOrUser) return '';
-  if (chatOrUser.isGroup) return '';
+  if (chatOrUser.isGroup) return ''; // Группам этот статус не пишем
 
+  // 1. Онлайн проверяется в первую очередь
   if (chatOrUser.isOnline) {
     return 'online';
   }
 
   const rawLastSeen = chatOrUser.lastSeen;
   if (!rawLastSeen) {
-    return '';
+    return 'last seen a long time ago';
   }
 
-  // Корректно приводим к LocalTime с учетом UTC (как в C# SpecifyKind(Utc).ToLocalTime())
-  let lastSeenDate: Date;
+  // 2. Корректное приведение к локальному времени из UTC (как в C# DateTime.SpecifyKind(Utc).ToLocalTime())
+  let lastSeenLocal: Date;
   if (typeof rawLastSeen === 'string') {
     let s = rawLastSeen.trim();
     if (!s.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(s)) {
-      s += 'Z'; // Парсим дату строго как UTC с сервера
+      s += 'Z'; // Unspecified считаем как UTC с сервера
     }
-    lastSeenDate = new Date(s);
+    lastSeenLocal = new Date(s);
   } else {
-    lastSeenDate = new Date(rawLastSeen);
+    lastSeenLocal = new Date(rawLastSeen);
   }
 
-  if (isNaN(lastSeenDate.getTime()) || lastSeenDate.getFullYear() < 1900) {
+  if (isNaN(lastSeenLocal.getTime()) || lastSeenLocal.getFullYear() < 1900) {
     return 'last seen a long time ago';
   }
 
   const now = new Date();
-  const diffSeconds = (now.getTime() - lastSeenDate.getTime()) / 1000;
+  const diffSeconds = (now.getTime() - lastSeenLocal.getTime()) / 1000;
   const diffMinutes = diffSeconds / 60;
 
-  // 🟢 Защита от рассинхрона часов (если сервер спешит на пару секунд/минут)
+  // 3. Защита от рассинхрона часов (серверные часы спешат на пару секунд/минут)
   if (diffSeconds < 0 && diffSeconds > -180) {
     return 'last seen just now';
   }
@@ -201,13 +199,13 @@ export function formatChatSubtitle(chatOrUser: {
   }
 
   const pad = (n: number) => String(n).padStart(2, '0');
-  const timeStr = `${pad(lastSeenDate.getHours())}:${pad(lastSeenDate.getMinutes())}`;
+  const timeStr = `${pad(lastSeenLocal.getHours())}:${pad(lastSeenLocal.getMinutes())}`;
 
   // Сегодня
   const isToday =
-    lastSeenDate.getDate() === now.getDate() &&
-    lastSeenDate.getMonth() === now.getMonth() &&
-    lastSeenDate.getFullYear() === now.getFullYear();
+    lastSeenLocal.getDate() === now.getDate() &&
+    lastSeenLocal.getMonth() === now.getMonth() &&
+    lastSeenLocal.getFullYear() === now.getFullYear();
 
   if (isToday) {
     return `last seen today at ${timeStr}`;
@@ -217,20 +215,20 @@ export function formatChatSubtitle(chatOrUser: {
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   const isYesterday =
-    lastSeenDate.getDate() === yesterday.getDate() &&
-    lastSeenDate.getMonth() === yesterday.getMonth() &&
-    lastSeenDate.getFullYear() === yesterday.getFullYear();
+    lastSeenLocal.getDate() === yesterday.getDate() &&
+    lastSeenLocal.getMonth() === yesterday.getMonth() &&
+    lastSeenLocal.getFullYear() === yesterday.getFullYear();
 
   if (isYesterday) {
     return `last seen yesterday at ${timeStr}`;
   }
 
-  const day = pad(lastSeenDate.getDate());
-  const month = pad(lastSeenDate.getMonth() + 1);
+  const day = pad(lastSeenLocal.getDate());
+  const month = pad(lastSeenLocal.getMonth() + 1);
 
-  if (lastSeenDate.getFullYear() === now.getFullYear()) {
+  if (lastSeenLocal.getFullYear() === now.getFullYear()) {
     return `last seen ${day}.${month} at ${timeStr}`;
   }
 
-  return `last seen ${day}.${month}.${lastSeenDate.getFullYear()}`;
+  return `last seen ${day}.${month}.${lastSeenLocal.getFullYear()}`;
 }

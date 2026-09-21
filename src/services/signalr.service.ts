@@ -17,6 +17,7 @@ import { IMessage } from '../types/models';
 function getCleanToken(): string {
   let raw =
     userSession.token ||
+    localStorage.getItem('jwt_token') ||      // 🟢 ИСПРАВЛЕНО: authStore сохраняет именно 'jwt_token'!
     localStorage.getItem('auth_token') ||
     localStorage.getItem('token') ||
     '';
@@ -25,7 +26,7 @@ function getCleanToken(): string {
       raw = JSON.parse(localStorage.getItem('user_session_data') || '{}').token || '';
     } catch {}
   }
-  // 🟢 КРИТИЧНО: SignalR требует чистый токен БЕЗ "Bearer "
+  // 🟢 SignalR требует чистый токен БЕЗ префикса "Bearer "
   return raw.replace(/^Bearer\s+/i, '').trim();
 }
 
@@ -58,7 +59,10 @@ export class SignalRService {
     }
 
     const token = getCleanToken();
-    if (!token) return false;
+    if (!token) {
+      console.warn('[SignalR] Токен не найден в памяти и localStorage. Подключение ожидает авторизации.');
+      return false;
+    }
 
     return await this.initAsync(token);
   }
@@ -99,10 +103,24 @@ export class SignalRService {
 
         this.hubConnection = builder.build();
 
-        this.hubConnection.onreconnected(async () => {
-          console.info('[SignalR] Соединение восстановлено.');
+        this.hubConnection.onreconnecting((error) => {
+          console.warn('[SignalR] Потеря связи с хабом. Переподключение...', error);
+        });
+
+        this.hubConnection.onreconnected(async (id) => {
+          console.info('[SignalR] Соединение восстановлено. ConnectionId:', id);
           eventBus.emit('SignalRConnectedMessage' as any, undefined);
-          if (onReconnected) await onReconnected();
+          if (onReconnected) {
+            try {
+              await onReconnected();
+            } catch (ex) {
+              console.error('[SignalR] Ошибка в onReconnected:', ex);
+            }
+          }
+        });
+
+        this.hubConnection.onclose((error) => {
+          console.warn('[SignalR] Соединение закрыто.', error);
         });
 
         this.registerHubHandlers();
@@ -136,7 +154,7 @@ export class SignalRService {
   private registerHubHandlers(): void {
     if (!this.hubConnection) return;
 
-    // 🟢 ВХОДЯЩИЕ СООБЩЕНИЯ (1 в 1 с WPF: MessageReceivedDto)
+    // 🟢 1. ВХОДЯЩИЕ СООБЩЕНИЯ (1 в 1 с WPF: MessageReceivedDto)
     this.hubConnection.on('ReceiveMessage', async (rawDto: any) => {
       console.log('⚡ [SignalR] Входящее сообщение ReceiveMessage:', rawDto);
       if (!rawDto) return;
@@ -208,7 +226,6 @@ export class SignalRService {
       try {
         if (currentId > 0) {
           const db = getLocalDatabase(currentId);
-          // 🟢 КРИТИЧНО: удаляем id: 0 перед сохранением в Dexie, чтобы автоинкремент сгенерировал правильный ID
           const { id: _, ...toInsert } = newMsg;
           const localId = await db.messages.add(toInsert as any);
           newMsg.id = Number(localId);
@@ -217,7 +234,6 @@ export class SignalRService {
         console.warn('[SignalR] Ошибка сохранения сообщения в локальную БД:', err);
       }
 
-      // Отправляем в чат и обновляем сайдбар
       eventBus.emit('ReceiveMessage', newMsg);
       eventBus.emit('SidebarUpdateMessage', {
         userId: isMyMessage ? receiverId : senderId,
@@ -228,27 +244,7 @@ export class SignalRService {
       });
     });
 
-    // 🟢 1 в 1 с WPF: Серверный таймер синхронизации дельты
-    this.hubConnection.on('SyncTimer', () => {
-      eventBus.emit('SyncTimerMessage' as any, undefined);
-    });
-
-    this.hubConnection.on('MessagesWereRead', (readerId: number, maxReadId: number) => {
-      eventBus.emit('MessagesWereReadMessage', { readerId, maxReadId });
-    });
-
-    this.hubConnection.on('MessageEdited', (serverId: number, newText: string, attachments: any) => {
-      eventBus.emit('MessageEditedMessage', { serverId, newText, attachments });
-    });
-
-    this.hubConnection.on('MessageDeleted', (serverId: number, isForAll: boolean) => {
-      eventBus.emit('MessageDeletedMessage', { serverId, isForAll });
-    });
-
-    this.hubConnection.on('MessagePinned', (serverMessageId: number, isPinned: boolean) => {
-      eventBus.emit('MessagePinnedMessage', { serverMessageId, isPinned });
-    });
-
+    // 🟢 2. СТАТУС ОНЛАЙНА (1 в 1 с WPF: UserStatusChangedMessage)
     this.hubConnection.on('UserStatusChanged', (userId: any, isOnline: any, lastSeen: any) => {
       const uid = Number(userId);
       const online = Boolean(isOnline);
@@ -259,6 +255,8 @@ export class SignalRService {
           ? new Date(lastSeen).toISOString()
           : new Date().toISOString();
 
+      console.log(`[SIGNALR PUSH 🔔] UserStatusChanged: UserId=${uid}, isOnline=${online}, lastSeen=${seen}`);
+
       eventBus.emit('UserStatusChangedMessage', {
         userId: uid,
         isOnline: online,
@@ -266,44 +264,120 @@ export class SignalRService {
       });
     });
 
+    // 🟢 3. СЕРВЕРНЫЙ ТАЙМЕР СИНХРОНИЗАЦИИ (1 в 1 с WPF)
+    this.hubConnection.on('SyncTimer', () => {
+      eventBus.emit('SyncTimerMessage' as any, undefined);
+    });
+
+    // 🟢 4. СЕКРЕТНЫЕ ЧАТЫ (E2EE Handshake)
+    this.hubConnection.on('IncomingSecretChatRequest', (initiatorId: number, initiatorName: string, initiatorAvatar: any, secretChatId: string, pubKey: string) => {
+      eventBus.emit('IncomingSecretChatRequestMessage' as any, { initiatorId, initiatorName, initiatorAvatar, secretChatId, pubKey });
+    });
+
+    this.hubConnection.on('SecretChatAccepted', (responderId: number, secretChatId: string, pubKey: string) => {
+      eventBus.emit('SecretChatAcceptedMessage' as any, { responderId, secretChatId, pubKey });
+    });
+
+    this.hubConnection.on('ReceiveSecretMessage', (senderId: number, secretChatId: string, ciphertext: string, nonce: string, tag: string, seq: number, timestamp: any) => {
+      eventBus.emit('ReceiveSecretMessage' as any, { senderId, secretChatId, ciphertext, nonce, tag, seq, timestamp });
+    });
+
+    this.hubConnection.on('SecretChatDiscarded', (senderId: number, secretChatId: string) => {
+      eventBus.emit('SecretChatDiscardedMessage' as any, { senderId, secretChatId });
+    });
+
+    this.hubConnection.on('SecretChatWereRead', (readerId: number, secretChatId: string) => {
+      eventBus.emit('SecretChatWereReadMessage' as any, { readerId, secretChatId });
+    });
+
+    // 🟢 5. СООБЩЕНИЯ И ДЕЙСТВИЯ
+    this.hubConnection.on('MessagesWereRead', (readerId: number, maxReadId: number) => {
+      eventBus.emit('MessagesWereReadMessage', { readerId: Number(readerId), maxReadId: Number(maxReadId) });
+    });
+
+    this.hubConnection.on('MessageEdited', (serverId: number, newText: string, attachments: any) => {
+      eventBus.emit('MessageEditedMessage', { serverId: Number(serverId), newText, attachments });
+    });
+
+    this.hubConnection.on('MessageDeleted', (serverId: number, isForAll: boolean) => {
+      eventBus.emit('MessageDeletedMessage', { serverId: Number(serverId), isForAll: Boolean(isForAll) });
+    });
+
+    this.hubConnection.on('MessagePinned', (serverMessageId: number, isPinned: boolean) => {
+      eventBus.emit('MessagePinnedMessage', { serverMessageId: Number(serverMessageId), isPinned: Boolean(isPinned) });
+    });
+
+    this.hubConnection.on('MessageViewsUpdated', (serverMessageId: number, viewsCount: number) => {
+      eventBus.emit('MessageViewsUpdatedMessage', { serverMessageId: Number(serverMessageId), viewsCount: Number(viewsCount) });
+    });
+
+    this.hubConnection.on('ChatClearedForBoth', (blockerId: number) => {
+      eventBus.emit('ChatClearedForBothMessage', { blockerId: Number(blockerId) });
+    });
+
+    this.hubConnection.on('BlockStatusChanged', (blockerId: number, isBlocked: boolean) => {
+      eventBus.emit('BlockStatusChangedMessage' as any, {
+        targetUserId: Number(blockerId),
+        blockerId: Number(blockerId),
+        isBlocked: Boolean(isBlocked),
+      });
+    });
+
     this.hubConnection.on('ReceiveTyping', (senderId: number, groupId: number | null) => {
-      eventBus.emit('UserTypingMessage', { senderId, groupId });
+      eventBus.emit('UserTypingMessage', { senderId: Number(senderId), groupId: groupId ? Number(groupId) : null });
+    });
+
+    // 🟢 6. ГРУППЫ И ЗВОНКИ
+    this.hubConnection.on('UserJoinedGroup', (groupId: number, member: any, memberCount: number, onlineCount: number) => {
+      eventBus.emit('UserJoinedGroupMessage' as any, { groupId, member, memberCount, onlineCount });
+    });
+
+    this.hubConnection.on('UserLeftGroup', (groupId: number, userId: number, memberCount: number, onlineCount: number) => {
+      eventBus.emit('UserLeftGroupMessage' as any, { groupId, userId, memberCount, onlineCount });
+    });
+
+    this.hubConnection.on('GroupUpdated', (groupId: number, newName: string, newAvatar: any, newDescription: string | null) => {
+      eventBus.emit('GroupUpdatedMessage' as any, { groupId, newName, newAvatar, newDescription });
+    });
+
+    this.hubConnection.on('GroupPermissionsChanged', (groupId: number, canText: boolean, canMedia: boolean, canPin: boolean) => {
+      eventBus.emit('GroupPermissionsChangedMessage' as any, { groupId, canText, canMedia, canPin });
     });
 
     this.hubConnection.on('ReceiveWebRTCData', (senderId: number, data: string) => {
-      eventBus.emit('WebRTCDataMessage', { senderId, data });
+      eventBus.emit('WebRTCDataMessage', { senderId: Number(senderId), data });
     });
 
     this.hubConnection.on('IncomingCall', (callerId: number, callerName: string, callerAvatar: string | null) => {
-      eventBus.emit('IncomingCallMessage', { callerId, callerName, callerAvatar });
+      eventBus.emit('IncomingCallMessage', { callerId: Number(callerId), callerName, callerAvatar });
     });
 
     this.hubConnection.on('CallResponse', (receiverId: number, accepted: boolean) => {
-      eventBus.emit('CallResponseMessage', { receiverId, accepted });
+      eventBus.emit('CallResponseMessage', { receiverId: Number(receiverId), accepted: Boolean(accepted) });
     });
 
     this.hubConnection.on('CallEnded', (targetId: number) => {
-      eventBus.emit('CallEndedMessage', { targetId });
+      eventBus.emit('CallEndedMessage', { targetId: Number(targetId) });
     });
 
     this.hubConnection.on('IncomingGroupCall', (groupId: number, groupName: string, callerId: number, callerName: string, callerAvatar: string | null) => {
-      eventBus.emit('IncomingGroupCallMessage', { groupId, groupName, callerId, callerName, callerAvatar });
+      eventBus.emit('IncomingGroupCallMessage', { groupId: Number(groupId), groupName, callerId: Number(callerId), callerName, callerAvatar });
     });
 
     this.hubConnection.on('GroupCallJoined', (groupId: number, participants: any[]) => {
-      eventBus.emit('GroupCallJoinedMessage', { groupId, participants });
+      eventBus.emit('GroupCallJoinedMessage', { groupId: Number(groupId), participants });
     });
 
     this.hubConnection.on('UserJoinedGroupCall', (groupId: number, participant: any) => {
-      eventBus.emit('UserJoinedGroupCallMessage', { groupId, participant });
+      eventBus.emit('UserJoinedGroupCallMessage', { groupId: Number(groupId), participant });
     });
 
     this.hubConnection.on('UserLeftGroupCall', (groupId: number, userId: number) => {
-      eventBus.emit('UserLeftGroupCallMessage', { groupId, userId });
+      eventBus.emit('UserLeftGroupCallMessage', { groupId: Number(groupId), userId: Number(userId) });
     });
 
     this.hubConnection.on('ReceiveGroupCallWebRTCData', (groupId: number, senderId: number, data: string) => {
-      eventBus.emit('GroupCallWebRTCDataMessage', { groupId, senderId, data });
+      eventBus.emit('GroupCallWebRTCDataMessage', { groupId: Number(groupId), senderId: Number(senderId), data });
     });
   }
 
@@ -322,6 +396,7 @@ export class SignalRService {
     }
   }
 
+  // 🟢 RPC Запрос списка онлайнов
   public async getOnlineStatusesAsync(userIds: number[]): Promise<Record<number, boolean> | null> {
     if (!userIds || userIds.length === 0) return null;
     return await this.safeInvoke<Record<number, boolean>>('GetOnlineStatuses', userIds);
@@ -382,6 +457,18 @@ export class SignalRService {
   public async markChatAsReadAsync(targetUserId: number | null, groupId: number | null): Promise<number> {
     const result = await this.safeInvoke<number>('MarkAsRead', targetUserId, groupId);
     return result ?? 0;
+  }
+
+  public async requestSecretChatAsync(targetUserId: number, secretChatId: string, publicKey: string): Promise<void> {
+    await this.safeInvoke('RequestSecretChat', targetUserId, secretChatId, publicKey);
+  }
+
+  public async acceptSecretChatAsync(targetUserId: number, secretChatId: string, publicKey: string): Promise<void> {
+    await this.safeInvoke('AcceptSecretChat', targetUserId, secretChatId, publicKey);
+  }
+
+  public async discardSecretChatAsync(targetUserId: number, secretChatId: string): Promise<void> {
+    await this.safeInvoke('DiscardSecretChat', targetUserId, secretChatId);
   }
 
   public async markSecretChatAsReadAsync(targetUserId: number, secretChatId: string): Promise<void> {

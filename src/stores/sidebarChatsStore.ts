@@ -6,6 +6,7 @@ import { userSession } from '../services/userSession';
 import { signalRService } from '../services/signalr.service';
 import { chatService } from '../services/chat.service';
 import { apiClient } from '../services/apiClient';
+import { MessagePreviewHelper } from '../utils/helpers';
 import { useChatStore } from './chatStore';
 
 interface SidebarChatsState {
@@ -27,12 +28,25 @@ interface SidebarChatsState {
     messageType?: LastMessageType,
     secretChatId?: string | null
   ) => void;
+  updateSidebarAfterDeletion: (userId: number | null, groupId: number | null) => Promise<void>;
+  updateSidebarForEdit: (
+    userId: number | null,
+    groupId: number | null,
+    localId: number,
+    serverId: number,
+    newText: string
+  ) => Promise<void>;
   togglePinChat: (chat: IChatListItem) => Promise<void>;
   toggleMuteChat: (chat: IChatListItem) => Promise<void>;
+  blockUser: (chat: IChatListItem) => Promise<void>;
   deleteChat: (chat: IChatListItem, groupService?: any) => Promise<void>;
   clearChatHistory: (chat: IChatListItem, deleteForAll: boolean) => Promise<void>;
   syncOnlineStatuses: () => Promise<void>;
+  startGlobalStatusPolling: () => void;
+  stopGlobalStatusPolling: () => void;
 }
+
+let globalStatusTimer: ReturnType<typeof setInterval> | null = null;
 
 function sortChats(chats: IChatListItem[]): IChatListItem[] {
   return [...chats].sort((a, b) => {
@@ -95,9 +109,26 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     set({ selectedFolderId: isSystem ? null : folderId, isSystemFolder: isSystem });
   },
 
+  startGlobalStatusPolling: () => {
+    if (globalStatusTimer) return;
+    // 🟢 Глобальный легкий опрос через сокет раз в 7 секунд, даже когда чат не открыт
+    globalStatusTimer = setInterval(() => {
+      get().syncOnlineStatuses();
+    }, 7000);
+  },
+
+  stopGlobalStatusPolling: () => {
+    if (globalStatusTimer) {
+      clearInterval(globalStatusTimer);
+      globalStatusTimer = null;
+    }
+  },
+
   loadChats: async (forceReload = false) => {
     const isForce = typeof forceReload === 'boolean' ? forceReload : false;
-    const currentUserId = Number(userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0);
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
 
     if (isForce) {
       set({ selectedFolderId: null, isSystemFolder: true });
@@ -141,6 +172,18 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       }
 
       for (const sc of cachedSecrets) {
+        const secretMessages = await chatService.getLocalMessagesAsync(currentUserId, null, null, sc.secretChatId, 1);
+        const lastSecretMsg = secretMessages?.length ? secretMessages[secretMessages.length - 1] : null;
+
+        let displayText = sc.lastMessage || (sc.isEstablished ? '🔒 Секретный чат создан.' : '🔒 Ожидание подключения собеседника...');
+        let finalType = LastMessageType.Text;
+
+        if (lastSecretMsg) {
+          const [preview, type] = MessagePreviewHelper.formatPreview(lastSecretMsg, currentUserId, false, false);
+          displayText = preview;
+          finalType = type;
+        }
+
         merged.push({
           id: sc.targetUserId,
           userId: sc.targetUserId,
@@ -149,9 +192,9 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
           isSecretChat: true,
           secretChatId: sc.secretChatId,
           keyFingerprint: sc.keyFingerprint,
-          lastMessage: sc.lastMessage || '🔒 Секретный чат создан.',
-          lastMessageType: LastMessageType.Text,
-          lastMessageTime: sc.lastMessageTime || new Date().toISOString(),
+          lastMessage: displayText,
+          lastMessageType: finalType,
+          lastMessageTime: lastSecretMsg?.timestamp || sc.lastMessageTime || new Date().toISOString(),
           unreadCount: 0,
           isPinned: false,
           isMuted: false,
@@ -175,7 +218,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       const sorted = sortChats(merged);
       set({ allChats: sorted });
 
-      // 🟢 СРАЗУ ЖЕ СИНХРОНИЗИРУЕМ ОНЛАЙНЫ ПОСЛЕ ЗАГРУЗКИ СПИСКА
+      get().startGlobalStatusPolling();
       await get().syncOnlineStatuses();
     } catch (e) {
       console.error('[SidebarChatsStore ERROR] Ошибка загрузки чатов:', e);
@@ -229,37 +272,6 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
 
     set({ selectedChatUser: resolvedUser, currentSidebarChat: sidebarItem });
     eventBus.emit('SelectChatUserMessage', { target: resolvedUser });
-
-    // 🟢 Фоновое обновление профиля и статуса выбранного собеседника
-    if (!resolvedUser.isGroup) {
-      const targetId = resolvedUser.id;
-
-      const fetchProfile = userService
-        ? userService.getUserProfileAsync(targetId)
-        : apiClient
-            .get<any>(`api/Users/${targetId}`)
-            .catch(() => apiClient.get<any>(`api/User/${targetId}`))
-            .then((r) => r.data);
-
-      Promise.resolve(fetchProfile).then((fresh: any) => {
-        if (fresh) {
-          const isOnline = Boolean(fresh.isOnline ?? fresh.IsOnline);
-          const lastSeen = fresh.lastSeen ?? fresh.LastSeen;
-
-          set((state) => ({
-            selectedChatUser:
-              state.selectedChatUser?.id === targetId
-                ? { ...state.selectedChatUser, isOnline, lastSeen }
-                : state.selectedChatUser,
-            allChats: state.allChats.map((c) =>
-              !c.isGroup && Number(c.userId ?? c.id) === targetId
-                ? { ...c, isOnline, lastSeen }
-                : c
-            ),
-          }));
-        }
-      });
-    }
   },
 
   updateSidebar: (userId, groupId, lastMessage, incrementUnread = false, messageType = LastMessageType.Text, secretChatId = null) => {
@@ -286,6 +298,70 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     }
   },
 
+  updateSidebarAfterDeletion: async (userId: number | null, groupId: number | null) => {
+    try {
+      const currentUserId = Number(
+        userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+      );
+      const lastMsg = await chatService.getLastMessageForChatAsync(currentUserId, userId, groupId);
+
+      const chat = get().allChats.find((c) =>
+        (groupId && groupId > 0 && c.groupId === groupId) ||
+        (userId && userId > 0 && !c.isGroup && Number(c.userId || c.id) === userId)
+      );
+
+      if (chat) {
+        const [formattedText, msgType] = MessagePreviewHelper.formatPreview(
+          lastMsg,
+          currentUserId,
+          chat.isGroup,
+          chat.isChannel
+        );
+
+        const updated = get().allChats.map((c) => {
+          if (c.id === chat.id) {
+            return {
+              ...c,
+              lastMessage: formattedText,
+              lastMessageType: msgType,
+              lastMessageTime: lastMsg ? lastMsg.timestamp : c.lastMessageTime,
+            };
+          }
+          return c;
+        });
+
+        set({ allChats: sortChats(updated) });
+      }
+    } catch (ex) {
+      console.error('[SidebarChatsStore ERROR] Ошибка обновления сайдбара после удаления:', ex);
+    }
+  },
+
+  updateSidebarForEdit: async (userId, groupId, localId, serverId, newText) => {
+    const chat = get().allChats.find((c) =>
+      (groupId && c.groupId === groupId) || (!groupId && Number(c.userId || c.id) === userId)
+    );
+    if (!chat) return;
+
+    try {
+      const currentUserId = Number(
+        userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+      );
+      const trueLastMsg = await chatService.getLastMessageForChatAsync(currentUserId, userId, groupId);
+
+      if (trueLastMsg && (trueLastMsg.id === localId || trueLastMsg.serverId === serverId)) {
+        const updated = get().allChats.map((c) =>
+          c.id === chat.id
+            ? { ...c, lastMessage: newText, lastMessageType: LastMessageType.Text }
+            : c
+        );
+        set({ allChats: updated });
+      }
+    } catch (ex) {
+      console.error('[SidebarChatsStore ERROR] Ошибка обновления сайдбара при редактировании:', ex);
+    }
+  },
+
   togglePinChat: async (chat) => {
     const isNowPinned = await chatService.togglePinChatAsync(chat.userId, chat.groupId);
     if (isNowPinned !== null) {
@@ -302,7 +378,44 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     }
   },
 
+  blockUser: async (chat) => {
+    if (chat.isGroup || !chat.userId) return;
+    try {
+      const res = await apiClient.post<any>(`api/Users/block/${chat.userId}`);
+      if (res && res.data) {
+        const isBlocked = Boolean(res.data.isBlocked ?? res.data);
+        set((state) => ({
+          allChats: state.allChats.map((c) => (c.id === chat.id ? { ...c, isBlocked } : c)),
+        }));
+        eventBus.emit('BlockStatusChangedMessage' as any, { blockerId: chat.userId, isBlocked });
+      }
+    } catch (ex) {
+      console.error('[SidebarChatsStore ERROR] Ошибка блокировки пользователя:', ex);
+    }
+  },
+
   deleteChat: async (chat, groupService) => {
+    if (chat.isSecretChat && chat.secretChatId) {
+      try {
+        if (chat.userId) {
+          await signalRService.discardSecretChatAsync(chat.userId, chat.secretChatId);
+        }
+        await chatService.deleteSecretChatLocallyAsync(chat.secretChatId);
+      } catch (ex) {
+        console.error('[SidebarChatsStore ERROR] Ошибка удаления секретного чата:', ex);
+      }
+
+      const updated = get().allChats.filter((c) => c.secretChatId !== chat.secretChatId);
+      set({ allChats: updated });
+
+      if (get().selectedChatUser?.secretChatId === chat.secretChatId) {
+        set({ selectedChatUser: null, currentSidebarChat: null });
+        eventBus.emit('SelectChatUserMessage', { target: null });
+        eventBus.emit('ClearActiveChatMessagesMessage' as any, undefined);
+      }
+      return;
+    }
+
     if (chat.isGroup && chat.groupId) {
       await groupService?.leaveGroupAsync(chat.groupId);
       await signalRService.unsubscribeFromGroupAsync(chat.groupId);
@@ -321,10 +434,15 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
 
   clearChatHistory: async (chat, deleteForAll) => {
     await chatService.clearChatHistoryAsync(chat.userId, chat.groupId, deleteForAll);
-    get().updateSidebar(chat.userId, chat.groupId, '', false, LastMessageType.None);
+    if (deleteForAll) {
+      get().updateSidebar(chat.userId, chat.groupId, '', false, LastMessageType.None);
+    } else {
+      await get().updateSidebarAfterDeletion(chat.userId ?? null, chat.groupId ?? null);
+    }
   },
 
-  // 🟢 1 В 1 С WPF: Автоматически подтягивает статусы онлайна сразу при загрузке
+  // 🟢 1 В 1 С WPF SidebarChatsViewModel.SyncOnlineStatusesAsync:
+  // БЕЗ лишних HTTP-запросов! Опрашивает только SignalR RPC GetOnlineStatuses.
   syncOnlineStatuses: async () => {
     const currentChats = get().allChats;
     const userIds = Array.from(
@@ -336,77 +454,172 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       )
     );
 
+    const activeUser = useChatStore.getState().selectedChatUser;
+    if (activeUser && !activeUser.isGroup) {
+      const activeId = Number(activeUser.id ?? (activeUser as any).userId ?? 0);
+      if (activeId > 0 && !userIds.includes(activeId)) {
+        userIds.push(activeId);
+      }
+    }
+
     if (userIds.length === 0) return;
 
     try {
-      // 1. Опрашиваем сокет SignalR
-      const statusesPromise = signalRService
-        .ensureConnectedAsync()
-        .then((connected) => (connected ? signalRService.getOnlineStatusesAsync(userIds) : null))
-        .catch(() => null);
-
-      // 2. 🟢 1 в 1 с WPF UserService: запрашиваем профили из базы данных
-      const profilesPromise = Promise.all(
-        userIds.map(async (uid) => {
-          try {
-            const res = await apiClient
-              .get<any>(`api/Users/${uid}`)
-              .catch(() => apiClient.get<any>(`api/User/${uid}`));
-            return { uid, user: res?.data };
-          } catch {
-            return { uid, user: null };
-          }
-        })
-      );
-
-      const [statuses, profiles] = await Promise.all([statusesPromise, profilesPromise]);
+      const statuses = await signalRService.getOnlineStatusesAsync(userIds);
+      if (!statuses) return;
 
       set((state) => ({
         allChats: state.allChats.map((c) => {
           const uid = Number(c.userId ?? (c as any).UserId ?? c.id ?? (c as any).Id ?? 0);
           if (!c.isGroup && uid > 0) {
-            const signalROnline = statuses ? extractOnline(statuses, uid) : undefined;
-            const prof = profiles.find((p) => p.uid === uid)?.user;
-            const apiOnline = prof ? Boolean(prof.isOnline ?? prof.IsOnline) : undefined;
-            const apiLastSeen = prof ? prof.lastSeen ?? prof.LastSeen : undefined;
-
-            // 🟢 Если либо сокет, либо база данных сообщает online — пользователь зеленый
-            const finalOnline = signalROnline === true || apiOnline === true || (c.isOnline && signalROnline !== false);
-
-            return {
-              ...c,
-              isOnline: finalOnline,
-              lastSeen: apiLastSeen || c.lastSeen,
-            };
+            const isOnline = extractOnline(statuses, uid);
+            if (isOnline !== undefined) {
+              return {
+                ...c,
+                isOnline,
+                lastSeen: isOnline ? new Date().toISOString() : c.lastSeen,
+              };
+            }
           }
           return c;
         }),
       }));
 
-      // Если открыт чат — обновляем и его статус
-      const activeChat = useChatStore.getState().selectedChatUser;
-      if (activeChat && !activeChat.isGroup) {
-        const activeId = Number(activeChat.id ?? (activeChat as any).userId ?? 0);
-        const chatInStore = get().allChats.find((c) => !c.isGroup && Number(c.userId || c.id) === activeId);
-        if (chatInStore) {
+      // Обновляем шапку активного чата
+      const currentActive = useChatStore.getState().selectedChatUser;
+      if (currentActive && !currentActive.isGroup) {
+        const activeId = Number(currentActive.id ?? (currentActive as any).userId ?? 0);
+        const isOnlineNow = extractOnline(statuses, activeId);
+
+        if (isOnlineNow !== undefined && isOnlineNow !== currentActive.isOnline) {
           useChatStore.setState({
             selectedChatUser: {
-              ...activeChat,
-              isOnline: chatInStore.isOnline,
-              lastSeen: chatInStore.lastSeen,
+              ...currentActive,
+              isOnline: isOnlineNow,
+              lastSeen: isOnlineNow ? new Date().toISOString() : currentActive.lastSeen,
             },
           });
         }
       }
     } catch (err) {
-      console.warn('[SidebarChatsStore ERROR] Ошибка синхронизации статусов онлайна:', err);
+      console.warn('[SidebarChatsStore] Ошибка синхронизации статусов онлайна:', err);
     }
   },
 }));
 
-// ================= СЛУШАТЕЛИ EVENTBUS =================
+// ================= ВСЕ СЛУШАТЕЛИ EVENTBUS (1 В 1 С SidebarChatsViewModel.cs) =================
 
-eventBus.on('SidebarUpdateMessage', (data) => {
+// 🟢 1. Статус онлайна (UserStatusChangedMessage)
+eventBus.on('UserStatusChangedMessage' as any, ({ userId, isOnline, lastSeen }: { userId: number; isOnline: boolean; lastSeen: string }) => {
+  const numId = Number(userId);
+
+  console.log(`%c[STATUS-LOG 🔔] Пришёл статус от сервера: UserId=${numId}, isOnline=${isOnline}, LastSeen=${lastSeen}`, 'color: #00bcd4; font-weight: bold;');
+
+  useSidebarChatsStore.setState((state) => {
+    let found = false;
+    const updatedChats = state.allChats.map((c) => {
+      const uid = Number(c.userId ?? (c as any).UserId ?? c.id ?? (c as any).Id ?? 0);
+      if (!c.isGroup && uid === numId) {
+        found = true;
+        console.log(`%c[STATUS-LOG ✅] Сменили статус в сайдбаре для чата "${c.nickName}" на: ${isOnline ? 'ONLINE' : 'OFFLINE'}`, 'color: #4caf50; font-weight: bold;');
+        return {
+          ...c,
+          isOnline: Boolean(isOnline),
+          lastSeen: isOnline ? new Date().toISOString() : (lastSeen || c.lastSeen),
+        };
+      }
+      return c;
+    });
+
+    if (!found) {
+      console.warn(`[STATUS-LOG ⚠️] Пользователь с Id=${numId} не найден в списке allChats:`, state.allChats.map(c => ({ nick: c.nickName, id: c.id, userId: c.userId })));
+    }
+
+    return { allChats: updatedChats };
+  });
+
+  // Обновляем шапку активного диалога
+  const activeChat = useChatStore.getState().selectedChatUser;
+  if (activeChat && !activeChat.isGroup && Number(activeChat.id ?? (activeChat as any).userId) === numId) {
+    useChatStore.setState({
+      selectedChatUser: {
+        ...activeChat,
+        isOnline: Boolean(isOnline),
+        lastSeen: isOnline ? new Date().toISOString() : (lastSeen || activeChat.lastSeen),
+      },
+    });
+  }
+});
+
+// 🟢 2. Синхронизация при выборе чата (SelectChatUserMessage)
+eventBus.on('SelectChatUserMessage' as any, (data: any) => {
+  const target = data?.target || data;
+  if (target) {
+    const existing = useSidebarChatsStore.getState().allChats.find((c) =>
+      (target.isGroup && c.groupId === target.id) || (!target.isGroup && Number(c.userId || c.id) === target.id)
+    );
+    useSidebarChatsStore.setState({
+      selectedChatUser: target,
+      currentSidebarChat: existing || null,
+    });
+  }
+});
+
+// 🟢 3. Обновление сайдбара после удаления сообщения (SidebarUpdateAfterDeletionMessage)
+eventBus.on('SidebarUpdateAfterDeletionMessage' as any, ({ userId, groupId }: { userId: number | null; groupId: number | null }) => {
+  useSidebarChatsStore.getState().updateSidebarAfterDeletion(userId, groupId);
+});
+
+// 🟢 4. Обновление сайдбара при редактировании сообщения (SidebarUpdateForEditMessage)
+eventBus.on('SidebarUpdateForEditMessage' as any, ({ userId, groupId, localId, serverId, newText }: any) => {
+  useSidebarChatsStore.getState().updateSidebarForEdit(userId, groupId, localId, serverId, newText);
+});
+
+// 🟢 5. Создание секретного чата (SecretChatCreatedMessage)
+eventBus.on('SecretChatCreatedMessage' as any, ({ secretChat }: any) => {
+  if (!secretChat) return;
+  const store = useSidebarChatsStore.getState();
+  const existing = store.allChats.filter((c) => c.secretChatId !== secretChat.secretChatId);
+  useSidebarChatsStore.setState({
+    allChats: sortChats([secretChat, ...existing]),
+  });
+});
+
+// 🟢 6. Секретный чат подтверждён собеседником (SecretChatEstablishedMessage)
+eventBus.on('SecretChatEstablishedMessage' as any, ({ secretChatId, keyFingerprint }: any) => {
+  useSidebarChatsStore.setState((state) => ({
+    allChats: state.allChats.map((c) =>
+      c.secretChatId === secretChatId
+        ? { ...c, keyFingerprint, lastMessage: '🔒 Секретный чат создан.', lastMessageTime: new Date().toISOString() }
+        : c
+    ),
+  }));
+});
+
+// 🟢 7. Секретный чат сброшен/удалён (SecretChatDiscardedMessage)
+eventBus.on('SecretChatDiscardedMessage' as any, ({ secretChatId }: any) => {
+  const store = useSidebarChatsStore.getState();
+  const updated = store.allChats.filter((c) => c.secretChatId !== secretChatId);
+  useSidebarChatsStore.setState({ allChats: updated });
+
+  if (store.selectedChatUser?.secretChatId === secretChatId) {
+    useSidebarChatsStore.setState({ selectedChatUser: null, currentSidebarChat: null });
+    eventBus.emit('SelectChatUserMessage', { target: null });
+  }
+});
+
+// 🟢 8. Серверный таймер синхронизации (SyncTimerMessage)
+eventBus.on('SyncTimerMessage' as any, () => {
+  useSidebarChatsStore.getState().syncOnlineStatuses();
+});
+
+// 🟢 9. Восстановление сокета SignalR (SignalRConnectedMessage)
+eventBus.on('SignalRConnectedMessage' as any, () => {
+  useSidebarChatsStore.getState().syncOnlineStatuses();
+});
+
+// 🟢 10. Обычное обновление превью (SidebarUpdateMessage)
+eventBus.on('SidebarUpdateMessage' as any, (data: any) => {
   useSidebarChatsStore.getState().updateSidebar(
     data.userId,
     data.groupId,
@@ -417,7 +630,8 @@ eventBus.on('SidebarUpdateMessage', (data) => {
   );
 });
 
-eventBus.on('UserTypingMessage', ({ senderId, groupId }) => {
+// 🟢 11. Индикатор тайпинга (UserTypingMessage)
+eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
   const store = useSidebarChatsStore.getState();
   const key = groupId ? `g_${groupId}` : `u_${senderId}`;
 
@@ -449,6 +663,7 @@ eventBus.on('UserTypingMessage', ({ senderId, groupId }) => {
   store.typingTimers.set(key, timer);
 });
 
+// 🟢 12. Сброс счётчика непрочитанных (ActiveChatUnreadResetMessage)
 eventBus.on('ActiveChatUnreadResetMessage' as any, (data: any) => {
   useSidebarChatsStore.setState((state) => ({
     allChats: state.allChats.map((chat) => {
@@ -463,38 +678,34 @@ eventBus.on('ActiveChatUnreadResetMessage' as any, (data: any) => {
   }));
 });
 
-// 🟢 При получении push-уведомления от сокета статус обновляется моментально в реальном времени
-eventBus.on('UserStatusChangedMessage', ({ userId, isOnline, lastSeen }) => {
-  const numId = Number(userId);
-
+// 🟢 13. Обновление информации о группе (GroupUpdatedMessage)
+eventBus.on('GroupUpdatedMessage' as any, ({ groupId, newName, newAvatar, newDescription }: any) => {
   useSidebarChatsStore.setState((state) => ({
-    allChats: state.allChats.map((c) => {
-      const uid = Number(c.userId ?? (c as any).UserId ?? c.id ?? (c as any).Id ?? 0);
-      if (!c.isGroup && uid === numId) {
-        return { ...c, isOnline: Boolean(isOnline), lastSeen: lastSeen || c.lastSeen };
-      }
-      return c;
-    }),
+    allChats: state.allChats.map((c) =>
+      c.isGroup && c.groupId === groupId
+        ? {
+            ...c,
+            groupName: newName || c.groupName,
+            avatar: newAvatar || (c as any).avatar,
+            avatarPath: newAvatar ? null : c.avatarPath,
+            groupDescription: newDescription || c.groupDescription,
+          }
+        : c
+    ),
   }));
-
-  const activeChat = useChatStore.getState().selectedChatUser;
-  if (activeChat && !activeChat.isGroup && Number(activeChat.id) === numId) {
-    useChatStore.setState({
-      selectedChatUser: {
-        ...activeChat,
-        isOnline: Boolean(isOnline),
-        lastSeen: lastSeen || activeChat.lastSeen,
-      },
-    });
-  }
 });
 
-// 🟢 При соединении сокета:
-eventBus.on('SignalRConnectedMessage' as any, () => {
+// 🟢 14. Очистка диалога собеседником для обоих (ChatClearedForBothMessage)
+eventBus.on('ChatClearedForBothMessage' as any, ({ blockerId }: { blockerId: number }) => {
   const store = useSidebarChatsStore.getState();
-  if (store.allChats.length === 0) {
-    store.loadChats(false);
-  } else {
-    store.syncOnlineStatuses();
+  const updated = store.allChats.map((c) =>
+    !c.isGroup && Number(c.userId || c.id) === blockerId
+      ? { ...c, lastMessage: '', lastMessageType: LastMessageType.None }
+      : c
+  );
+  useSidebarChatsStore.setState({ allChats: updated });
+
+  if (store.selectedChatUser && !store.selectedChatUser.isGroup && Number(store.selectedChatUser.id) === blockerId) {
+    eventBus.emit('ClearActiveChatMessagesMessage' as any, undefined);
   }
 });
