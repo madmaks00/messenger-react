@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   mdiLock,
+  mdiPin,
   mdiPinOutline,
   mdiPinOffOutline,
   mdiMagnify,
@@ -35,31 +36,30 @@ import { userSession } from '../../services/userSession';
 import { chatService } from '../../services/chat.service';
 import { eventBus } from '../../services/eventBus';
 
-// Цвета 1 в 1 из DefaultDark.xaml
 const PALETTE = {
   bgChat: '#11141B',
   chatHeaderBg: '#161A23',
   chatHeaderBorder: '#1F2533',
   chatHeaderTitle: '#FFFFFF',
-  accent: '#1E9BEB',               // Color.Accent / AppAccentBrush
-  accentMarker: '#5E92CE',         // PinnedPopupAccentMarkerBrush
-  tgCheckmark: '#80BFFF',          // TgCheckmark
-  textMuted: '#7D8494',            // TextMuted
-  activeButtonBg: 'rgba(255, 255, 255, 0.16)', // HeaderSearchActiveBgBrush = #2AFFFFFF
-  pinnedPopupBg: '#1C212D',        // PinnedPopupBackgroundBrush
-  pinnedPopupBorder: '#2A303C',    // PinnedPopupBorderBrush
-  pinnedPopupHover: '#232A3B',     // PinnedPopupItemHoverBgBrush
-  contextMenuBg: '#1C212D',        // ChatContextMenuBackgroundBrush
-  contextMenuBorder: '#2A303C',    // ChatContextMenuBorderBrush
-  contextMenuHover: '#232A3B',     // ChatMenuItemHighlightBrush
-  contextMenuDivider: '#2A303C',   // ContextMenuDividerBrush
-  destructive: '#FF3B30',          // MembersMenuDestructiveActionTextBrush
-  emptyIconContainerBg: '#232A3B', // EmptyChatIconContainerBgBrush
-  scrollButtonBg: '#232A3B',       // ScrollToBottomButtonBgBrush
-  scrollButtonBorder: '#2A303C',   // ScrollToBottomButtonBorderBrush
-  fogTop: 'rgba(17, 20, 27, 0)',   // ChatFogTopColor
-  fogMid: 'rgba(17, 20, 27, 0.8)', // ChatFogMidColor
-  fogBottom: '#11141B',            // ChatFogBottomColor
+  accent: '#1E9BEB',
+  accentMarker: '#5E92CE',
+  tgCheckmark: '#80BFFF',
+  textMuted: '#7D8494',
+  activeButtonBg: 'rgba(255, 255, 255, 0.16)',
+  pinnedPopupBg: '#1C212D',
+  pinnedPopupBorder: '#2A303C',
+  pinnedPopupHover: '#232A3B',
+  contextMenuBg: '#1C212D',
+  contextMenuBorder: '#2A303C',
+  contextMenuHover: '#232A3B',
+  contextMenuDivider: '#2A303C',
+  destructive: '#FF3B30',
+  emptyIconContainerBg: '#232A3B',
+  scrollButtonBg: '#232A3B',
+  scrollButtonBorder: '#2A303C',
+  fogTop: 'rgba(17, 20, 27, 0)',
+  fogMid: 'rgba(17, 20, 27, 0.8)',
+  fogBottom: '#11141B',
 };
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
@@ -83,17 +83,17 @@ export const ChatWorkspaceView: React.FC = () => {
   const {
     selectedChatUser,
     currentChatMessages = [],
-    isChatLoading,
+    isHistoryLoading,
     isSelectionMode,
     selectedCount,
     pinnedMessages = [],
     isChatSearchMode,
-    loadOlderMessages,
     togglePinMessage,
     deleteMessage,
     toggleSelectMessage,
     clearSelection,
     forwardMessages,
+    markAsRead,
   } = useChatStore();
 
   const { togglePinChat, toggleMuteChat, clearChatHistory, deleteChat, currentSidebarChat } = useSidebarChatsStore();
@@ -110,7 +110,14 @@ export const ChatWorkspaceView: React.FC = () => {
   const isAtBottomRef = useRef(true);
   const animFrameRef = useRef<number | null>(null);
 
-  // Закрытие попапов при клике вовне (StaysOpen="False")
+  // 🟢 1 В 1 С WPF: ЯКОРНОЕ ПОЗИЦИОНИРОВАНИЕ (anchorMsgId + anchorRelativeOffset)
+  const isLoadingHistoryRef = useRef(false); // Аналог SmoothScrollViewerHelper.IsLoadingHistory
+  const pendingAnchorRef = useRef<{ anchorMsgId: number; anchorRelativeOffset: number } | null>(null);
+  const prevLastMessageIdRef = useRef<number | null>(null);
+  const prevChatIdRef = useRef<number | null>(null);
+  const lastScrollTopRef = useRef<number>(0);
+
+  // Закрытие попапов при клике вовне
   useEffect(() => {
     const handleOutside = () => {
       setIsPinnedPopupOpen(false);
@@ -120,7 +127,7 @@ export const ChatWorkspaceView: React.FC = () => {
     return () => document.removeEventListener('click', handleOutside);
   }, []);
 
-  // ================= РАСЧЕТ ВЫСОТЫ И ЛЕЙАУТА (TotalContentHeight = Y + Height + 82.0) =================
+  // ================= РАСЧЕТ ВЫСОТЫ И ЛЕЙАУТА (1 В 1 С TelegramVirtualizingPanel.cs) =================
   const { layoutItems, totalContentHeight } = useMemo(() => {
     const msgs = currentChatMessages || [];
     if (msgs.length === 0) return { layoutItems: [], totalContentHeight: 0 };
@@ -143,11 +150,14 @@ export const ChatWorkspaceView: React.FC = () => {
       if (!result) return { layoutItems: [], totalContentHeight: 0 };
 
       const items = (result as any).items || (result as any).layoutItems || [];
-      const height = (result as any).totalHeight ?? (result as any).totalContentHeight ?? 0;
+      const lastItem = items.length > 0 ? items[items.length - 1] : null;
+
+      // 🟢 В WPF: TotalContentHeight = last.YOffset + last.TotalHeight + 82.0;
+      const exactTotalHeight = lastItem ? Math.ceil(lastItem.yOffset + lastItem.totalHeight + 82.0) : 0;
 
       return {
         layoutItems: Array.isArray(items) ? items : [],
-        totalContentHeight: typeof height === 'number' && height > 0 ? height + 82 : 0,
+        totalContentHeight: exactTotalHeight,
       };
     } catch (err) {
       console.error('[ChatWorkspaceView] Layout calculation error:', err);
@@ -182,7 +192,7 @@ export const ChatWorkspaceView: React.FC = () => {
     return items.slice(firstIndex, lastIndex + 1);
   }, [layoutItems, scrollTop, viewportHeight]);
 
-  // ================= V-SYNC ПЛАВНЫЙ СКРОЛЛ (CubicEaseOut 200ms) =================
+  // ================= V-SYNC ПЛАВНЫЙ СКРОЛЛ =================
   const scrollToOffsetAnimated = useCallback((targetOffset: number, onCompleted?: () => void) => {
     if (!scrollRef.current) return;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -226,47 +236,170 @@ export const ChatWorkspaceView: React.FC = () => {
 
   const scrollToBottom = useCallback(() => {
     if (!scrollRef.current) return;
-    const maxScroll = Math.max(0, totalContentHeight - viewportHeight);
+    const maxScroll = Math.max(0, scrollRef.current.scrollHeight - scrollRef.current.clientHeight);
     scrollToOffsetAnimated(maxScroll, () => {
       isAtBottomRef.current = true;
       setShowScrollBottomBtn(false);
     });
-  }, [totalContentHeight, viewportHeight, scrollToOffsetAnimated]);
+  }, [scrollToOffsetAnimated]);
 
-  // В файле ChatWorkspaceView.tsx:
-const { markAsRead } = useChatStore(); // 👈 достаем markAsRead из стора
+  // 🟢 1. АВТОСКРОЛЛ В САМЫЙ НИЗ ТОЛЬКО ПРИ ПЕРВОНАЧАЛЬНОМ ОТКРЫТИИ ЧАТА
+  useLayoutEffect(() => {
+    if (!scrollRef.current || !selectedChatUser) return;
 
-const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-  const target = e.currentTarget;
-  setScrollTop(target.scrollTop);
+    const chatId = selectedChatUser.id;
+    const chatChanged = chatId !== prevChatIdRef.current;
 
-  const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-  const atBottom = distanceFromBottom < 20;
-  isAtBottomRef.current = atBottom;
-
-  setShowScrollBottomBtn(distanceFromBottom > 60);
-
-  // 🟢 Если доскроллили до низа — помечаем накопившиеся сообщения прочитанными
-  if (atBottom) {
-    markAsRead();
-  }
-
-  if (target.scrollTop < 50 && !isChatLoading) {
-    loadOlderMessages?.();
-  }
-};
-
-  useEffect(() => {
-    if (scrollRef.current && totalContentHeight > 0) {
-      scrollRef.current.scrollTop = totalContentHeight;
+    if (chatChanged && !isHistoryLoading && totalContentHeight > 0 && currentChatMessages.length > 0) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      setScrollTop(scrollRef.current.scrollHeight);
       isAtBottomRef.current = true;
       setShowScrollBottomBtn(false);
-    }
-  }, [selectedChatUser?.id]);
+      prevChatIdRef.current = chatId;
 
+      const lastMsg = currentChatMessages[currentChatMessages.length - 1];
+      prevLastMessageIdRef.current = lastMsg ? (lastMsg.id || lastMsg.serverId) : null;
+    }
+  }, [selectedChatUser?.id, isHistoryLoading, totalContentHeight, currentChatMessages]);
+
+  // 🟢 2. БЕСШОВНОЕ ВОССТАНОВЛЕНИЕ СКРОЛЛА (1 в 1 с WPF RefreshCanvasLayoutAsync)
+  useLayoutEffect(() => {
+    if (pendingAnchorRef.current && scrollRef.current && layoutItems.length > 0) {
+      const { anchorMsgId, anchorRelativeOffset } = pendingAnchorRef.current;
+      pendingAnchorRef.current = null;
+
+      // Ищем сообщение-якорь в пересчитанном лейауте
+      const anchorItem = layoutItems.find((m) => m.id === anchorMsgId || (m.serverId > 0 && m.serverId === anchorMsgId));
+
+      if (anchorItem) {
+        // Выставляем скролл ТОЧНО на новую позицию якоря со старым смещением
+        const targetOffset = Math.max(0, anchorItem.yOffset + anchorRelativeOffset);
+        scrollRef.current.scrollTop = targetOffset;
+        setScrollTop(targetOffset);
+      }
+    }
+  }, [layoutItems]);
+
+  // 🟢 3. СКРОЛЛ ВНИЗ ТОЛЬКО ПРИ ДОБАВЛЕНИИ В КОНЕЦ (1 в 1 с WPF isAddedAtBottom)
+  useEffect(() => {
+    if (currentChatMessages.length === 0) {
+      prevLastMessageIdRef.current = null;
+      return;
+    }
+
+    const lastMsg = currentChatMessages[currentChatMessages.length - 1];
+    const lastMsgId = lastMsg.id || lastMsg.serverId;
+
+    // В WPF: bool isAddedAtBottom = e.NewStartingIndex >= Count - 1;
+    const isAddedAtBottom = prevLastMessageIdRef.current !== null && lastMsgId !== prevLastMessageIdRef.current;
+    prevLastMessageIdRef.current = lastMsgId;
+
+    // ⛔ Если идет подгрузка старых сообщений наверх — НИКОГДА НЕ СКРОЛЛИМ ВНИЗ!
+    if (isLoadingHistoryRef.current || pendingAnchorRef.current !== null) {
+      return;
+    }
+
+    // 🟢 В WPF: bool shouldScroll = isAddedAtBottom && (_isAtBottom || isMyMessage);
+    if (isAddedAtBottom) {
+      const isMy = lastMsg.isMyMessage;
+      if (isAtBottomRef.current || isMy) {
+        scrollToBottom();
+      }
+    }
+  }, [currentChatMessages, scrollToBottom]);
+
+  // 🟢 4. ПОДГРУЗКА СТАРОЙ ИСТОРИИ (1 в 1 с WPF LoadOlderHistoryAsync)
+  const handleLoadOlderHistory = async () => {
+    if (
+      isLoadingHistoryRef.current ||
+      !scrollRef.current ||
+      !selectedChatUser ||
+      currentChatMessages.length === 0 ||
+      layoutItems.length === 0
+    ) {
+      return;
+    }
+
+    isLoadingHistoryRef.current = true;
+
+    try {
+      const currentScrollOffset = scrollRef.current.scrollTop;
+
+      // 1. В WPF: long anchorMsgId = FastChatPanel.GetFirstVisibleMessageId(currentScrollOffset);
+      const firstVisible = layoutItems.find((m) => m.yOffset + m.totalHeight >= currentScrollOffset) || layoutItems[0];
+      if (!firstVisible) {
+        isLoadingHistoryRef.current = false;
+        return;
+      }
+
+      const anchorMsgId = firstVisible.id || (firstVisible as any).serverId;
+      const anchorRelativeOffset = currentScrollOffset - firstVisible.yOffset;
+
+      // 2. В WPF: var oldMessages = await vm.GetOlderMessagesDataAsync();
+      const oldestTime = currentChatMessages[0].timestamp;
+      const older = await chatService.getLocalMessagesAsync(
+        userSession.userId,
+        selectedChatUser.isGroup ? null : selectedChatUser.id,
+        selectedChatUser.isGroup ? selectedChatUser.id : null,
+        selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null,
+        30,
+        oldestTime
+      );
+
+      // 3. В WPF: vm.CurrentChatMessages.Insert(0, msg); await RefreshCanvasLayoutAsync(anchorMsgId, anchorRelativeOffset);
+      if (older && older.length > 0) {
+        pendingAnchorRef.current = {
+          anchorMsgId,
+          anchorRelativeOffset,
+        };
+
+        useChatStore.setState((state) => ({
+          currentChatMessages: [...older, ...state.currentChatMessages],
+        }));
+      }
+    } catch (err) {
+      console.error('[ChatWorkspaceView] Load older history error:', err);
+    } finally {
+      setTimeout(() => {
+        isLoadingHistoryRef.current = false;
+      }, 150);
+    }
+  };
+
+  // 🟢 5. ОБРАБОТЧИК СКРОЛЛА (1 в 1 с WPF ChatScrollViewer_ScrollChanged)
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const currentScroll = target.scrollTop;
+    const verticalChange = currentScroll - lastScrollTopRef.current;
+    lastScrollTopRef.current = currentScroll;
+
+    setScrollTop(currentScroll);
+
+    const distanceFromBottom = target.scrollHeight - currentScroll - target.clientHeight;
+    const atBottom = distanceFromBottom < 25;
+    isAtBottomRef.current = atBottom;
+
+    setShowScrollBottomBtn(distanceFromBottom > 60);
+
+    if (atBottom) {
+      markAsRead();
+    }
+
+    // 🟢 В WPF: if (e.VerticalChange < 0 && scrollViewer.VerticalOffset < 50 && !IsLoadingHistory)
+    if (verticalChange < 0 && currentScroll < 80 && !isLoadingHistoryRef.current && !isHistoryLoading) {
+      handleLoadOlderHistory();
+    }
+  };
+
+  // Сохранение положения при изменении размера окна
   useEffect(() => {
     const handleResize = () => {
-      if (scrollRef.current) setViewportHeight(scrollRef.current.clientHeight);
+      if (scrollRef.current) {
+        setViewportHeight(scrollRef.current.clientHeight);
+        if (isAtBottomRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }
     };
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -314,7 +447,6 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
 
   const msgs = currentChatMessages || [];
 
-  // 🟢 Получение аватара со всеми фолбэками (как в сайдбаре)
   const avatarRaw =
     selectedChatUser?.avatarPath ||
     (selectedChatUser as any)?.avatar ||
@@ -333,7 +465,7 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: PALETTE.bgChat, position: 'relative', overflow: 'hidden' }}>
       
-      {/* ================= ШАПКА ЧАТА (Ровно 54px, ChatHeaderBackgroundBrush = #161A23, Border = #1F2533) ================= */}
+      {/* ================= ШАПКА ЧАТА (54px) ================= */}
       <div
         style={{
           height: 54,
@@ -349,7 +481,6 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
           position: 'relative',
         }}
       >
-        {/* РЕЖИМ ВЫДЕЛЕНИЯ (IsSelectionMode) */}
         {isSelectionMode ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -404,15 +535,11 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
             </div>
           </div>
         ) : (
-          /* ОБЫЧНЫЙ РЕЖИМ ШАПКИ */
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            
-            {/* Профиль собеседника */}
             <div
               onClick={() => openProfile?.()}
               style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', minWidth: 0, flex: 1 }}
             >
-              {/* Аватарка 40x40 (1 в 1 как в SidebarChatsView) */}
               <div style={{ position: 'relative', width: 40, height: 40, marginRight: 12, flexShrink: 0 }}>
                 <div
                   style={{
@@ -433,7 +560,6 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
                   }}
                 >
                   <span>{firstLetter}</span>
-
                   {avatarSrc && (
                     <img
                       src={avatarSrc}
@@ -441,19 +567,12 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
                       }}
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                      }}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                   )}
                 </div>
               </div>
 
-              {/* Имя и статус */}
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 1 }}>
                   {selectedChatUser.isSecretChat && (
@@ -487,10 +606,7 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
               </div>
             </div>
 
-            {/* Правые кнопки действий */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
-              
-              {/* 1. Закрепы */}
               <div style={{ position: 'relative' }}>
                 <HeaderIconButton
                   isActive={isPinnedPopupOpen}
@@ -501,7 +617,7 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
                   }}
                 >
                   <div style={{ transform: 'rotate(45deg)', display: 'flex', alignItems: 'center' }}>
-                    <MdiIcon path={mdiPinOutline} size={22} />
+                    <MdiIcon path={mdiPin} size={22} />
                   </div>
                 </HeaderIconButton>
 
@@ -585,7 +701,6 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
                 )}
               </div>
 
-              {/* 2. Поиск */}
               <HeaderIconButton
                 isActive={isChatSearchMode}
                 title="Search"
@@ -600,7 +715,6 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
                 <MdiIcon path={mdiMagnify} size={22} />
               </HeaderIconButton>
 
-              {/* 3. Звонок */}
               {!selectedChatUser.isChannel && (
                 <HeaderIconButton
                   title="Call"
@@ -610,7 +724,6 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
                 </HeaderIconButton>
               )}
 
-              {/* 4. Меню «три точки» */}
               <div style={{ position: 'relative' }}>
                 <HeaderIconButton
                   isActive={isHeaderMenuOpen}
@@ -732,13 +845,13 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
       {/* ================= ОБЛАСТЬ СООБЩЕНИЙ ================= */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         
-        {isChatLoading && (
+        {isHistoryLoading && msgs.length === 0 && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: PALETTE.textMuted }}>
             <div style={{ fontSize: 15 }}>Loading history...</div>
           </div>
         )}
 
-        {!selectedChatUser.isSecretChat && msgs.length === 0 && !isChatLoading && (
+        {!selectedChatUser.isSecretChat && msgs.length === 0 && !isHistoryLoading && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 5, userSelect: 'none', marginBottom: 50 }}>
             <div style={{ width: 100, height: 100, borderRadius: 50, background: PALETTE.emptyIconContainerBg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
               <MdiIcon path={selectedChatUser.isChannel ? mdiBullhornOutline : mdiMessageTextOutline} size={50} color={PALETTE.accent} />
@@ -752,55 +865,7 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
           </div>
         )}
 
-        {selectedChatUser.isSecretChat && msgs.length === 0 && !isChatLoading && (
-          <div
-            style={{
-              maxWidth: 380,
-              margin: '60px auto',
-              background: '#1E293B',
-              border: '1px solid #334155',
-              borderRadius: 16,
-              padding: '24px 20px',
-              textAlign: 'center',
-              userSelect: 'none',
-              zIndex: 6,
-            }}
-          >
-            <div style={{ width: 60, height: 60, borderRadius: 30, background: '#166534', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-              <MdiIcon path={mdiLockCheck} size={32} color="#4ADE80" />
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#F8FAFC', marginBottom: 10 }}>Secret Chat</div>
-            <div style={{ fontSize: 13, color: '#94A3B8', textAlign: 'left', margin: '0 auto', maxWidth: 280, lineHeight: '22px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
-                <MdiIcon path={mdiCheck} size={16} color="#4ADE80" />
-                <span>End-to-end encryption (E2EE)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
-                <MdiIcon path={mdiCheck} size={16} color="#4ADE80" />
-                <span>Leave no traces on server</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0' }}>
-                <MdiIcon path={mdiCheck} size={16} color="#4ADE80" />
-                <span>Messages stored on device only</span>
-              </div>
-            </div>
-
-            {selectedChatUser.keyFingerprint ? (
-              <div style={{ marginTop: 15, padding: '12px 6px', background: '#0F172A', borderRadius: 8 }}>
-                <div style={{ fontFamily: 'Consolas, monospace', fontWeight: 'bold', color: '#F8FAFC', fontSize: 14 }}>
-                  {selectedChatUser.keyFingerprint}
-                </div>
-                <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>Encryption Key Fingerprint</div>
-              </div>
-            ) : (
-              <div style={{ marginTop: 15, padding: '12px 6px', background: '#0F172A', borderRadius: 8, color: '#F59E0B', fontSize: 12.5, fontWeight: 600 }}>
-                Waiting for user to connect...
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Виртуализированный скроллер */}
+        {/* ВИРТУАЛИЗИРОВАННЫЙ СКРОЛЛЕР */}
         <div
           ref={scrollRef}
           className="wpf-scroll-viewer"
@@ -842,8 +907,6 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
             bottom: 0,
             zIndex: 20,
             pointerEvents: 'none',
-            display: 'flex',
-            flexDirection: 'column',
           }}
         >
           {/* 1. Эффект тумана */}
@@ -863,10 +926,9 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
           {/* 2. Кнопка спуска вниз */}
           <div
             style={{
-              alignSelf: 'flex-end',
-              marginRight: 34,
-              marginBottom: 15,
-              position: 'relative',
+              position: 'absolute',
+              right: 34,
+              bottom: 80,
               zIndex: 10,
               opacity: showScrollBottomBtn ? 1 : 0,
               transform: showScrollBottomBtn ? 'translateY(0)' : 'translateY(25px)',
@@ -895,7 +957,7 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
             </button>
           </div>
 
-          {/* 3. Единый модульный контрол ввода */}
+          {/* 3. Модульный инпут */}
           <div
             style={{
               margin: '0 30px 20px 30px',
@@ -913,7 +975,6 @@ const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
   );
 };
 
-// Компонент кнопки в шапке (стили TelegramStyleActionButton / TelegramStyleActionToggleButton из App.xaml)
 const HeaderIconButton: React.FC<{
   isActive?: boolean;
   title: string;
@@ -946,7 +1007,7 @@ const HeaderIconButton: React.FC<{
         justifyContent: 'center',
         borderRadius: '50%',
         padding: 0,
-        color: isActive || isHovered ? '#FFFFFF' : PALETTE.textMuted, // #7D8494 в покое, белый при клике/наведении
+        color: isActive || isHovered ? '#FFFFFF' : PALETTE.textMuted,
         transition: 'background-color 0.15s ease, color 0.15s ease',
       }}
     >
@@ -955,7 +1016,6 @@ const HeaderIconButton: React.FC<{
   );
 };
 
-// Элемент контекстного меню
 const HeaderMenuItem: React.FC<{
   icon: string;
   text: string;

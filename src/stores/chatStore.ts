@@ -22,6 +22,7 @@ interface ChatState {
   chatSearchText: string;
   isChatLoading: boolean;
   isHistoryLoading: boolean;
+  isLoadingOlder: boolean; // 🟢 Флаг подгрузки старых страниц (отдельно от isHistoryLoading!)
   isScrolledToBottom: boolean;
   unreadCountInActiveChat: number;
 
@@ -64,6 +65,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   chatSearchText: '',
   isChatLoading: false,
   isHistoryLoading: false,
+  isLoadingOlder: false,
   isScrolledToBottom: true,
   unreadCountInActiveChat: 0,
 
@@ -77,7 +79,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isSelectionMode: false,
   selectedCount: 0,
 
-  // 1. ВЫБОР ЧАТА (Открытие диалога)
+  // 1. ВЫБОР ЧАТА (Открытие диалога — 1 в 1 с WPF IsHistoryLoading)
   selectChatUser: async (target) => {
     if (!target) {
       set({ selectedChatUser: null, currentChatMessages: [], pinnedMessages: [] });
@@ -89,6 +91,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       selectedChatUser: target,
       isHistoryLoading: true,
+      isLoadingOlder: false,
       currentChatMessages: [],
       pinnedMessages: [],
       isSelectionMode: false,
@@ -119,7 +122,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       await get().markAsRead();
 
-      // Автоматическая доотправка сообщений, если они зависли в офлайне
+      // Автоматическая доотправка неотправленных сообщений
       chatService.syncUnsentMessagesAsync(signalRService).then((sent) => {
         if (sent > 0) {
           chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30).then((updated) => {
@@ -133,11 +136,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  // 2. ПОДГРУЗКА СТАРЫХ СООБЩЕНИЙ ПРИ СКРОЛЛЕ ВВЕРХ (1 в 1 с WPF LoadOlderHistoryAsync)
   loadOlderMessages: async () => {
-    const { selectedChatUser, currentChatMessages, isHistoryLoading } = get();
-    if (!selectedChatUser || currentChatMessages.length === 0 || isHistoryLoading) return;
+    const { selectedChatUser, currentChatMessages, isHistoryLoading, isLoadingOlder } = get();
 
-    set({ isHistoryLoading: true });
+    // 🟢 Блокируем вызов, если уже идет загрузка или если чат только открывается
+    if (!selectedChatUser || currentChatMessages.length === 0 || isHistoryLoading || isLoadingOlder) return;
+
+    set({ isLoadingOlder: true });
     const oldestTime = currentChatMessages[0].timestamp;
     const currentUserId = userSession.userId;
 
@@ -151,11 +157,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         oldestTime
       );
 
-      if (older.length > 0) {
+      if (older && older.length > 0) {
         set({ currentChatMessages: [...older, ...currentChatMessages] });
       }
+    } catch (err) {
+      console.error('[ChatStore] Ошибка подгрузки старых сообщений:', err);
     } finally {
-      set({ isHistoryLoading: false });
+      set({ isLoadingOlder: false });
     }
   },
 
@@ -172,7 +180,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return null;
   },
 
-  // 2. ОТПРАВКА СООБЩЕНИЙ
+  // 3. ОТПРАВКА СООБЩЕНИЙ
   sendMessage: async (text, attachments, editingMessage, replies) => {
     const { selectedChatUser } = get();
     if (!selectedChatUser) return;
@@ -257,7 +265,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       text,
       timestamp: new Date().toISOString(),
       isMyMessage: true,
-      isSentToServer: false, // Временно показываем таймер до подтверждения сервером
+      isSentToServer: false,
       isRead: false,
       isDeleted: false,
       isDeletedForMe: false,
@@ -303,7 +311,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         attachmentDtos.length > 0 ? (attachmentDtos as any) : null
       );
 
-      // Смена таймера на галочку
       if (realId && realId > 0) {
         set((state) => ({
           currentChatMessages: state.currentChatMessages.map((m) =>
@@ -461,7 +468,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
 // ================= СЛУШАТЕЛИ СОБЫТИЙ EVENTBUS =================
 
-// 🟢 ГЛАВНЫЙ СЛУШАТЕЛЬ: Открытие чата из сайдбара / поиска
+// 🟢 Слушатель открытия чата из сайдбара / поиска
 eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   const target = data?.target || data;
   if (target) {
