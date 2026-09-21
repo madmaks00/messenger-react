@@ -94,7 +94,7 @@ export const MessageInputUserControl: React.FC = () => {
     }
   }, []);
 
-  // Автоматический пересчет высоты textarea от 46px до 200px
+  // Автоматический пересчет высоты textarea от 40px до 180px
   useEffect(() => {
     if (inputTextBoxRef.current) {
       inputTextBoxRef.current.style.height = 'auto';
@@ -147,6 +147,34 @@ export const MessageInputUserControl: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
       
+      {/* 🟢 1 В 1 С WPF: Белый цвет с HintOpacity="0.56" */}
+      <style>{`
+        .wpf-message-input::placeholder {
+          color: rgba(255, 255, 255, 0.56) !important;
+          opacity: 1 !important;
+          font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+          font-size: 14px !important;
+        }
+        .wpf-message-input::-webkit-input-placeholder {
+          color: rgba(255, 255, 255, 0.56) !important;
+          opacity: 1 !important;
+          font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+          font-size: 14px !important;
+        }
+        .wpf-message-input::-moz-placeholder {
+          color: rgba(255, 255, 255, 0.56) !important;
+          opacity: 1 !important;
+          font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+          font-size: 14px !important;
+        }
+        .wpf-message-input:-ms-input-placeholder {
+          color: rgba(255, 255, 255, 0.56) !important;
+          opacity: 1 !important;
+          font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+          font-size: 14px !important;
+        }
+      `}</style>
+
       {/* 1. ПЛАШКА РЕДАКТИРОВАНИЯ (EditorStatusBarBgBrush = #1C212D, BorderLeft = 2px #1E9BEB) */}
       {editingMessage && (
         <div
@@ -413,10 +441,14 @@ export const MessageInputUserControl: React.FC = () => {
               )}
               <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} style={{ display: 'none' }} />
 
-              {/* 2. Поле ввода сообщения: FontSize="14", LineHeight="20", VerticalAlignment="Center" */}
+              {/* 2. Поле ввода сообщения:
+                  FontSize="14", LineHeight="20", VerticalAlignment="Center"
+                  CaretBrush="White", SmartHint Foreground="White" + HintOpacity="0.56"
+              */}
               {!isRecordingVoice && (
                 <textarea
                   ref={inputTextBoxRef}
+                  className="wpf-message-input"
                   rows={1}
                   value={newMessageText}
                   onChange={(e) => setNewMessageText(e.target.value)}
@@ -428,12 +460,13 @@ export const MessageInputUserControl: React.FC = () => {
                     border: 'none',
                     outline: 'none',
                     color: COLORS.inputText,
+                    caretColor: '#FFFFFF', // 1 в 1 с CaretBrush="White"
                     fontSize: 14,
                     lineHeight: '20px',
                     padding: '8px 8px 10px 8px',
                     resize: 'none',
                     maxHeight: 180,
-                    fontFamily: 'Segoe UI, -apple-system, sans-serif',
+                    fontFamily: 'Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif',
                     boxSizing: 'border-box',
                   }}
                 />

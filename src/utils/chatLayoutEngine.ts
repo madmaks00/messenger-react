@@ -76,7 +76,7 @@ export class AsyncChatLayoutEngine {
       const isCall = Boolean(m.isCallMessage || (m.text && m.text.startsWith('CALL:')));
       const isMediaOnly = mediaAttachments.length > 0 && !m.text && documentAttachments.length === 0 && audioAttachments.length === 0;
 
-      // 🟢 СТРОГАЯ ПРОВЕРКА: мое это сообщение или чужое
+      // 🟢 Строгая проверка принадлежности сообщения текущему пользователю
       const isMy = Boolean(m.isMyMessage) || (curId > 0 && Number(m.senderId) === curId);
 
       return {
@@ -129,77 +129,85 @@ export class AsyncChatLayoutEngine {
     messages: IMessageLayoutModel[],
     containerWidth: number = 600
   ): { items: IMessageLayoutModel[]; totalHeight: number } {
-    let currentY = 15.0;
+    // 🟢 Коэффициент масштабирования дисплея (125% = 1.25, 100% = 1.0)
+    const dpi = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const snap = (v: number) => Math.round(v * dpi) / dpi;
+
+    let currentY = snap(15.0);
     const maxBubbleWidth = Math.min(containerWidth * 0.75, 500.0);
-    const gap = 2.0; // 🟢 gap строго 2px как в WPF!
+
+    // 🟢 Строго 2.0px, привязанные к физическим пикселям матрицы
+    const gap = snap(1.0);
 
     for (const msg of messages) {
-      msg.yOffset = currentY;
+      msg.yOffset = snap(currentY);
       let bubbleHeight = 0;
 
       if (msg.isCallMessage) {
-        bubbleHeight = 61.0;
-        if (msg.isForwarded && !msg.isDeletedForMe) bubbleHeight += 45.0;
+        bubbleHeight = snap(54.0);
+        if (msg.isForwarded && !msg.isDeletedForMe) bubbleHeight += snap(45.0);
       } else if (msg.isDeletedForMe) {
-        bubbleHeight = 38.0;
-      } else if (msg.voices.length === 1) {
-        bubbleHeight = 53.5;
+        bubbleHeight = snap(34.0);
+      } else if (msg.voices && msg.voices.length === 1) {
+        bubbleHeight = snap(52.0);
       } else {
-        const hasMedia = msg.previewMedia.length > 0;
-        const hasDocs = msg.documents.length > 0;
-        const hasAudios = msg.audios.length > 0;
+        const hasMedia = msg.previewMedia && msg.previewMedia.length > 0;
+        const hasDocs = msg.documents && msg.documents.length > 0;
+        const hasAudios = msg.audios && msg.audios.length > 0;
         const hasText = Boolean(msg.text && msg.text.trim().length > 0);
 
+        // 19.0px под отступы (7px top + 12px bottom)
         const textGridPaddingAndMargin = hasText ? 19.0 : 0.0;
         let textContentHeight = 0.0;
 
         if (hasText) {
-          const estimatedLines = Math.max(1, Math.ceil(msg.text.length / 32));
+          const availableTextWidth = maxBubbleWidth - (msg.isMyMessage ? 85 : 65);
+          const charsPerLine = Math.max(10, Math.floor(availableTextWidth / 8.5));
+          const estimatedLines = Math.max(1, Math.ceil(msg.text.length / charsPerLine));
           textContentHeight = estimatedLines * 20.0;
         }
 
-        bubbleHeight = textGridPaddingAndMargin + textContentHeight;
+        bubbleHeight = snap(textGridPaddingAndMargin + textContentHeight);
 
         if (hasMedia) {
-          let mediaTextGap = 0.0;
-          if (hasText) {
-            if (msg.isMyMessage && msg.isForwarded) mediaTextGap = 5.0;
-            else if (msg.isMyMessage && !msg.isForwarded) mediaTextGap = -1.0;
-            else if (!msg.isMyMessage && msg.isForwarded) mediaTextGap = 5.0;
-            else mediaTextGap = 5.5;
-          }
-
+          let mediaTextGap = hasText ? 5.0 : 0.0;
           if (msg.previewMedia.length === 1) {
             const first = msg.previewMedia[0];
             const dims = this.calculateMediaDimensionsFromPixels(first.width || 340, first.height || 240);
             msg.mediaWidth = dims.width;
             msg.mediaHeight = dims.height;
-            bubbleHeight += dims.height + mediaTextGap;
+            bubbleHeight += snap(dims.height + mediaTextGap);
           } else {
             const dims = this.calculateAlbumDimensions(msg.previewMedia.length);
             msg.mediaWidth = dims.width;
             msg.mediaHeight = dims.height;
-            bubbleHeight += dims.height + mediaTextGap;
+            bubbleHeight += snap(dims.height + mediaTextGap);
           }
         }
 
-        if (hasDocs) bubbleHeight += (msg.documents.length * 163.0 + 20.0) / 3.0;
+        if (hasDocs) bubbleHeight += snap(msg.documents.length * 52.0);
         if (hasAudios) {
           const count = msg.audios.length;
-          bubbleHeight += count === 1 ? 55.0 : count === 2 ? 101.0 : count === 3 ? 146.5 : count === 4 ? 192.0 : 192.0 + (count - 4) * 45.56;
+          bubbleHeight += snap(count === 1 ? 55.0 : count === 2 ? 101.0 : count === 3 ? 146.5 : 192.0);
         }
-
-        if (msg.repliedMessages.length > 0) {
-          bubbleHeight += msg.repliedMessages.length * 44.0 + 6.5;
+        if (msg.repliedMessages && msg.repliedMessages.length > 0) {
+          bubbleHeight += snap(msg.repliedMessages.length * 36.0 + 8.0);
+        }
+        if (msg.isForwarded && !msg.isDeletedForMe) {
+          bubbleHeight += snap(24.0);
+        }
+        if (!msg.isMyMessage && (msg.isGroupMessage || msg.isChannel) && !msg.isForwarded && !msg.isDeletedForMe) {
+          bubbleHeight += snap(22.0);
         }
       }
 
-      msg.totalHeight = Math.round(bubbleHeight + gap);
-      currentY += msg.totalHeight;
+      // msg.totalHeight всегда строго равен bubbleHeight + gap
+      msg.totalHeight = snap(bubbleHeight + gap);
+      currentY = snap(currentY + msg.totalHeight);
     }
 
     const last = messages[messages.length - 1];
-    const totalHeight = last ? last.yOffset + last.totalHeight + 82.0 : 0;
+    const totalHeight = last ? snap(last.yOffset + last.totalHeight + 82.0) : 0;
 
     return { items: messages, totalHeight };
   }

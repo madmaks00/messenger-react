@@ -102,9 +102,40 @@ html, body, #root {
 .wpf-story-gradient {
   background: linear-gradient(135deg, #8A2387 0%, #E94057 50%, #F27121 100%);
 }
+
 /* 🟢 Цвет и размер текста подсказки "Search Chat" 1 в 1 с WPF Material Design */
 .wpf-search-input::placeholder {
   color: #8E95A5 !important;
   opacity: 1 !important; /* Убирает встроенное затемнение Chrome */
   font-size: 14.5px !important;
+}
+
+/* 🟢 ПОДСКАЗКА ПОЛЯ ВВОДА (1 в 1 с WPF: белый цвет + 56% прозрачность, как у SmartHint) */
+.wpf-message-input::placeholder {
+  color: rgba(255, 255, 255, 0.56) !important;
+  opacity: 1 !important;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+  font-size: 14px !important;
+}
+
+/* Вендорные префиксы */
+.wpf-message-input::-webkit-input-placeholder {
+  color: rgba(255, 255, 255, 0.56) !important;
+  opacity: 1 !important;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+  font-size: 14px !important;
+}
+
+.wpf-message-input::-moz-placeholder {
+  color: rgba(255, 255, 255, 0.56) !important;
+  opacity: 1 !important;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+  font-size: 14px !important;
+}
+
+.wpf-message-input:-ms-input-placeholder {
+  color: rgba(255, 255, 255, 0.56) !important;
+  opacity: 1 !important;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+  font-size: 14px !important;
 }

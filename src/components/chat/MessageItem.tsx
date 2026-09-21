@@ -96,18 +96,20 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
   // 🟢 Отступы строго по Triggers из WPF ChatWorkspaceView.xaml
   const getBubblePadding = () => {
-    if (model.isMediaOnly) return '0px';
-    if (model.isDeletedForMe) return '6px 48px 7px 10px';
-    if (model.isChannel) return model.isEdited ? '0px 130px 6px 10px' : '0px 85px 6px 10px';
+  if (model.isMediaOnly) return '0px';
+  if (model.isDeletedForMe) return '6px 48px 12px 12px';
+  if (model.isChannel) return model.isEdited ? '0px 130px 12px 12px' : '0px 85px 12px 12px';
 
-    if (isMy) {
-      if (model.isEdited) return '7px 125px 7px 7px';
-      return '7px 70px 7px 7px'; // 70px справа под время и галочки
-    } else {
-      if (model.isEdited) return '7px 100px 7px 7px';
-      return '7px 50px 7px 7px'; // 50px справа под время
-    }
-  };
+  if (isMy) {
+    if (model.isEdited) return '7px 125px 12px 12px';
+    // 7px сверху, 70px справа, 12px снизу, 12px слева
+    return '7px 70px 12px 12px';
+  } else {
+    if (model.isEdited) return '7px 100px 12px 12px';
+    // 7px сверху, 50px справа, 12px снизу, 12px слева
+    return '7px 50px 12px 12px';
+  }
+};
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -237,7 +239,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           </svg>
         )}
 
-        {/* 🟢 САМ БАБЛ (My: 16,16,2,16 / Other: 16,16,16,2 / MediaOnly: 16) */}
+        {/* САМ БАБЛ */}
         <div
           style={{
             position: 'relative',
@@ -248,7 +250,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               ? '16px 16px 2px 16px'
               : '16px 16px 16px 2px',
             boxSizing: 'border-box',
-            overflow: 'visible', // НЕ ОБРЕЗАЕТ ХВОСТИК!
+            overflow: 'visible',
+            // 🟢 Вычитаем ровно 1px (под наш новый gap = 1.0)
+            minHeight: model.isMediaOnly ? undefined : `${model.totalHeight - 1}px`,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
           }}
         >
           {/* Иконка закрепа (MessagePinIcon) */}
@@ -351,7 +358,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <VoiceWaveform
-                  waveform={model.voices[0].waveform}
+                  waveform={model.voices[0].waveform || undefined} // 👈 добавьте || undefined
                   durationSeconds={model.voices[0].durationSeconds || 1}
                 />
                 <div style={{ fontSize: 11.5, color: '#FFFFFF', opacity: 0.7, marginTop: 1 }}>

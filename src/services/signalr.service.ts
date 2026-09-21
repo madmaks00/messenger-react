@@ -24,11 +24,17 @@ export class SignalRService {
     this.serverUrl = (BASE_SERVER_URL || 'https://localhost:7214').replace(/\/+$/, '');
   }
 
+  public get connection(): HubConnection {
+    if (!this.hubConnection) {
+      throw new Error(`SignalR: Подключение к хабу '${this.hubPath}' не инициализировано.`);
+    }
+    return this.hubConnection;
+  }
+
   public get isConnected(): boolean {
     return this.hubConnection !== null && this.hubConnection.state === HubConnectionState.Connected;
   }
 
-  // 🟢 Автоматическое подключение, если сокет еще не стартовал
   public async ensureConnectedAsync(): Promise<boolean> {
     if (this.isConnected) return true;
 
@@ -169,6 +175,50 @@ export class SignalRService {
     this.hubConnection.on('MessagePinned', (serverMessageId: number, isPinned: boolean) => {
       eventBus.emit('MessagePinnedMessage', { serverMessageId, isPinned });
     });
+
+    this.hubConnection.on('UserStatusChanged', (userId: number, isOnline: boolean, lastSeen: string) => {
+      eventBus.emit('UserStatusChangedMessage', { userId, isOnline, lastSeen });
+    });
+
+    this.hubConnection.on('ReceiveTyping', (senderId: number, groupId: number | null) => {
+      eventBus.emit('UserTypingMessage', { senderId, groupId });
+    });
+
+    this.hubConnection.on('ReceiveWebRTCData', (senderId: number, data: string) => {
+      eventBus.emit('WebRTCDataMessage', { senderId, data });
+    });
+
+    this.hubConnection.on('IncomingCall', (callerId: number, callerName: string, callerAvatar: string | null) => {
+      eventBus.emit('IncomingCallMessage', { callerId, callerName, callerAvatar });
+    });
+
+    this.hubConnection.on('CallResponse', (receiverId: number, accepted: boolean) => {
+      eventBus.emit('CallResponseMessage', { receiverId, accepted });
+    });
+
+    this.hubConnection.on('CallEnded', (targetId: number) => {
+      eventBus.emit('CallEndedMessage', { targetId });
+    });
+
+    this.hubConnection.on('IncomingGroupCall', (groupId: number, groupName: string, callerId: number, callerName: string, callerAvatar: string | null) => {
+      eventBus.emit('IncomingGroupCallMessage', { groupId, groupName, callerId, callerName, callerAvatar });
+    });
+
+    this.hubConnection.on('GroupCallJoined', (groupId: number, participants: any[]) => {
+      eventBus.emit('GroupCallJoinedMessage', { groupId, participants });
+    });
+
+    this.hubConnection.on('UserJoinedGroupCall', (groupId: number, participant: any) => {
+      eventBus.emit('UserJoinedGroupCallMessage', { groupId, participant });
+    });
+
+    this.hubConnection.on('UserLeftGroupCall', (groupId: number, userId: number) => {
+      eventBus.emit('UserLeftGroupCallMessage', { groupId, userId });
+    });
+
+    this.hubConnection.on('ReceiveGroupCallWebRTCData', (groupId: number, senderId: number, data: string) => {
+      eventBus.emit('GroupCallWebRTCDataMessage', { groupId, senderId, data });
+    });
   }
 
   private async safeInvoke<T = void>(methodName: string, ...args: any[]): Promise<T | null> {
@@ -185,6 +235,8 @@ export class SignalRService {
       return null;
     }
   }
+
+  // ================= СООБЩЕНИЯ =================
 
   public async sendMessageAsync(
     receiverId: number | null,
@@ -212,18 +264,107 @@ export class SignalRService {
     return result ?? 0;
   }
 
-  public async getOnlineStatusesAsync(userIds: number[]): Promise<Record<number, boolean> | null> {
-    if (!userIds || userIds.length === 0) return null;
-    return await this.safeInvoke<Record<number, boolean>>('GetOnlineStatuses', userIds);
+  public async editMessageAsync(serverId: number, newText: string, attachments: AttachmentDto[] | null = null): Promise<void> {
+    await this.safeInvoke('EditMessage', serverId, newText, attachments);
+  }
+
+  public async deleteMessageAsync(serverId: number, deleteForAll: boolean): Promise<void> {
+    await this.safeInvoke('DeleteMessage', serverId, deleteForAll);
+  }
+
+  public async setPinAsync(serverMessageId: number, pinForAll: boolean, isPinning: boolean): Promise<void> {
+    await this.safeInvoke('SetPinMessage', serverMessageId, pinForAll, isPinning);
+  }
+
+  public async togglePinAsync(serverMessageId: number, pinForAll: boolean): Promise<void> {
+    await this.safeInvoke('TogglePinMessage', serverMessageId, pinForAll);
+  }
+
+  public async trackPostViewsAsync(messageIds: number[]): Promise<void> {
+    if (messageIds && messageIds.length > 0) {
+      await this.safeInvoke('TrackPostViews', messageIds);
+    }
+  }
+
+  public async sendTypingAsync(receiverId: number | null, groupId: number | null): Promise<void> {
+    await this.safeInvoke('UserIsTyping', receiverId, groupId);
+  }
+
+  public async markChatAsReadAsync(targetUserId: number | null, groupId: number | null): Promise<number> {
+    const result = await this.safeInvoke<number>('MarkAsRead', targetUserId, groupId);
+    return result ?? 0;
+  }
+
+  public async markSecretChatAsReadAsync(targetUserId: number, secretChatId: string): Promise<void> {
+    await this.safeInvoke('MarkSecretChatAsRead', targetUserId, secretChatId);
+  }
+
+  public async sendSecretMessageAsync(
+    targetUserId: number,
+    secretChatId: string,
+    ciphertext: string,
+    nonce: string,
+    tag: string,
+    sequenceNumber: number
+  ): Promise<void> {
+    await this.safeInvoke('SendSecretMessage', targetUserId, secretChatId, ciphertext, nonce, tag, sequenceNumber);
+  }
+
+  // ================= ЗВОНКИ И WEBRTC =================
+
+  public async startCallAsync(receiverId: number): Promise<void> {
+    await this.safeInvoke('StartCall', receiverId);
+  }
+
+  public async answerCallAsync(callerId: number, accept: boolean): Promise<void> {
+    await this.safeInvoke('AnswerCall', callerId, accept);
+  }
+
+  public async endCallAsync(targetId: number): Promise<void> {
+    await this.safeInvoke('EndCall', targetId);
+  }
+
+  public async sendWebRTCDataAsync(targetId: number, data: string): Promise<void> {
+    await this.safeInvoke('SendWebRTCData', targetId, data);
+  }
+
+  public async startGroupCallAsync(groupId: number): Promise<void> {
+    await this.safeInvoke('StartGroupCall', groupId);
+  }
+
+  public async joinGroupCallAsync(groupId: number): Promise<void> {
+    await this.safeInvoke('JoinGroupCall', groupId);
+  }
+
+  public async leaveGroupCallAsync(groupId: number): Promise<void> {
+    await this.safeInvoke('LeaveGroupCall', groupId);
+  }
+
+  public async sendGroupCallWebRTCDataAsync(groupId: number, targetUserId: number, data: string): Promise<void> {
+    await this.safeInvoke('SendGroupCallWebRTCData', groupId, targetUserId, data);
+  }
+
+  // ================= ГРУППЫ И ЗАМЕТКИ =================
+
+  public async subscribeToGroupAsync(groupId: number): Promise<void> {
+    await this.safeInvoke('SubscribeToGroup', groupId);
+  }
+
+  public async unsubscribeFromGroupAsync(groupId: number): Promise<void> {
+    await this.safeInvoke('UnsubscribeFromGroup', groupId);
   }
 
   public async subscribeToNoteAsync(noteId: number): Promise<void> {
     await this.safeInvoke('SubscribeToNote', noteId);
   }
 
-  public async markChatAsReadAsync(targetUserId: number | null, groupId: number | null): Promise<number> {
-    const result = await this.safeInvoke<number>('MarkAsRead', targetUserId, groupId);
-    return result ?? 0;
+  public async getOnlineStatusesAsync(userIds: number[]): Promise<Record<number, boolean> | null> {
+    if (!userIds || userIds.length === 0) return null;
+    return await this.safeInvoke<Record<number, boolean>>('GetOnlineStatuses', userIds);
+  }
+
+  public async invokeAsync(methodName: string, ...args: any[]): Promise<any> {
+    return await this.safeInvoke(methodName, ...args);
   }
 }
 
