@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import type { INote, IMessage, IAttachment } from '../types/models';
+import type { INote, IMessage, IAttachment, IUser } from '../types/models';
 import { NoteShapeType } from '../types/enums';
 import { apiClient } from '../services/apiClient';
 import { userSession } from '../services/userSession';
 import { signalRService } from '../services/signalr.service';
 import { eventBus } from '../services/eventBus';
+import { normalizeAvatarUrl } from '../utils/helpers';
 
 interface NotesState {
   myNotes: INote[];
@@ -26,6 +27,8 @@ interface NotesState {
   selectNote: (note: INote | null) => Promise<void>;
   createNewNote: () => Promise<void>;
   deleteNote: (note: INote) => Promise<void>;
+  beginEditNote: (noteId: number) => void;
+  cancelEditNote: (noteId: number) => void;
   commitEditNote: (note: INote, newTitle: string) => Promise<void>;
   toggleNoteSidebar: () => void;
   toggleNoteView: () => void;
@@ -37,7 +40,26 @@ interface NotesState {
   setCustomColor: (slot: 1 | 2, color: string) => void;
   setColorPickerOpen: (open: boolean) => void;
   saveCurrentNoteInkData: (serializedJson: string, thumbnailBase64?: string) => Promise<void>;
-  sendNoteMessage: (text: string, attachments: IAttachment[]) => Promise<void>;
+  sendNoteMessage: (text: string, attachments?: IAttachment[]) => Promise<void>;
+}
+
+// Локальный кэш авторов, чтобы не опрашивать сервер повторно
+const userProfileCache = new Map<number, IUser>();
+
+async function fetchUserProfileDeduplicated(userId: number): Promise<IUser | null> {
+  if (userProfileCache.has(userId)) {
+    return userProfileCache.get(userId)!;
+  }
+  try {
+    const res = await apiClient
+      .get<IUser>(`api/Users/${userId}`)
+      .catch(() => apiClient.get<IUser>(`api/User/${userId}`));
+    if (res && res.data) {
+      userProfileCache.set(userId, res.data);
+      return res.data;
+    }
+  } catch {}
+  return null;
 }
 
 export const useNotesStore = create<NotesState>((set, get) => ({
@@ -58,16 +80,15 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   initialize: async () => {
     try {
-      // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "GET api/Notes" (GetRemoteNotesAsync)
       const res = await apiClient.get<INote[]>('api/Notes');
       const notes = res.data || [];
       set({ myNotes: notes });
 
       if (notes.length > 0 && !get().selectedNote) {
-        get().selectNote(notes[0]);
+        await get().selectNote(notes[0]);
       }
     } catch (e) {
-      console.error('[NotesStore] Ошибка загрузки api/Notes:', e);
+      console.error('[NotesStore] Ошибка инициализации заметок:', e);
     }
   },
 
@@ -85,19 +106,69 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
     if (note.id) {
       try {
-        // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "api/Notes/{id}/messages"
+        const currentUserId = Number(
+          userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+        );
+
+        const sessionUser = JSON.parse(localStorage.getItem('user_session_data') || '{}');
+        const myName = sessionUser.nickName || sessionUser.username || 'Me';
+        const myAvatar = sessionUser.avatarPath || sessionUser.avatar || null;
+
         const res = await apiClient.get<IMessage[]>(`api/Notes/${note.id}/messages`);
-        set({ currentChatMessages: res.data || [] });
+        const rawMessages = res.data || [];
+
+        // 🟢 ДЕДУПЛИКАЦИЯ: находим уникальные чужие ID, чтобы не спамить в API
+        const uniqueOtherUserIds = Array.from(
+          new Set(
+            rawMessages
+              .map((m) => Number(m.senderId))
+              .filter((id) => id > 0 && id !== currentUserId && !userProfileCache.has(id))
+          )
+        );
+
+        for (const uid of uniqueOtherUserIds) {
+          await fetchUserProfileDeduplicated(uid);
+        }
+
+        const enrichedMessages: IMessage[] = rawMessages.map((m) => {
+          const senderId = Number(m.senderId);
+          const isMy = senderId === currentUserId;
+
+          let senderName = m.senderName;
+          let senderAvatar = m.senderAvatar;
+
+          if (isMy) {
+            senderName = myName;
+            senderAvatar = myAvatar;
+          } else if (!senderName || senderName === 'Unknown User') {
+            const cached = userProfileCache.get(senderId);
+            senderName = cached?.nickName || cached?.username || `User ${senderId}`;
+            senderAvatar = cached?.avatarPath || (cached as any)?.avatar;
+          }
+
+          return {
+            ...m,
+            isMyMessage: isMy,
+            senderName,
+            senderAvatar: normalizeAvatarUrl(senderAvatar),
+          };
+        });
+
+        set({ currentChatMessages: enrichedMessages });
         await signalRService?.subscribeToNoteAsync?.(note.id);
-      } catch {}
+      } catch (err) {
+        console.error('[NotesStore] Ошибка загрузки сообщений заметки:', err);
+      }
     }
   },
 
   createNewNote: async () => {
-    const userId = userSession.userId;
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
     const count = get().myNotes.length + 1;
     const newNote: INote = {
-      userId,
+      userId: currentUserId,
       title: `New Note ${count}`,
       iconKind: 'BookmarkOutline',
       iconColor: '#3B82F6',
@@ -105,7 +176,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     };
 
     try {
-      // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "POST api/Notes/upsert"
       const res = await apiClient.post<INote>('api/Notes/upsert', newNote);
       if (res.data?.id) newNote.id = res.data.id;
 
@@ -120,19 +190,32 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   deleteNote: async (note) => {
     if (!note.id) return;
     try {
-      // 🟢 ВЫЗОВ C# ЭНДПОИНТА: "DELETE api/Notes/{id}"
       await apiClient.delete(`api/Notes/${note.id}`);
       const updated = get().myNotes.filter((n) => n.id !== note.id);
       set({
         myNotes: updated,
         selectedNote: get().selectedNote?.id === note.id ? (updated[0] || null) : get().selectedNote,
       });
-    } catch {}
+    } catch (err) {
+      console.error('[NotesStore] Ошибка удаления заметки:', err);
+    }
+  },
+
+  beginEditNote: (noteId: number) => {
+    set((state) => ({
+      myNotes: state.myNotes.map((n) => (n.id === noteId ? { ...n, isEditing: true, editingName: n.title } : { ...n, isEditing: false })),
+    }));
+  },
+
+  cancelEditNote: (noteId: number) => {
+    set((state) => ({
+      myNotes: state.myNotes.map((n) => (n.id === noteId ? { ...n, isEditing: false } : n)),
+    }));
   },
 
   commitEditNote: async (note, newTitle) => {
     const finalTitle = newTitle.trim() || 'Unnamed Note';
-    const updatedNote = { ...note, title: finalTitle, lastEditedTime: new Date().toISOString() };
+    const updatedNote = { ...note, title: finalTitle, isEditing: false, lastEditedTime: new Date().toISOString() };
 
     set((state) => ({
       myNotes: state.myNotes.map((n) => (n.id === note.id ? updatedNote : n)),
@@ -141,7 +224,9 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
     try {
       await apiClient.post('api/Notes/upsert', updatedNote);
-    } catch {}
+    } catch (err) {
+      console.error('[NotesStore] Ошибка переименования заметки:', err);
+    }
   },
 
   toggleNoteSidebar: () => set((state) => ({ isNoteSidebarHidden: !state.isNoteSidebarHidden })),
@@ -177,17 +262,31 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
     try {
       await apiClient.post('api/Notes/upsert', updated);
-    } catch {}
+    } catch (err) {
+      console.error('[NotesStore] Ошибка сохранения данных холста:', err);
+    }
   },
 
-  sendNoteMessage: async (text, attachments) => {
+  sendNoteMessage: async (text, attachments = []) => {
     const { selectedNote, currentChatMessages } = get();
     if (!selectedNote || !selectedNote.id) return;
+    if (!text.trim() && attachments.length === 0) return;
 
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+
+    const sessionUser = JSON.parse(localStorage.getItem('user_session_data') || '{}');
+    const myName = sessionUser.nickName || sessionUser.username || 'Me';
+    const myAvatar = sessionUser.avatarPath || sessionUser.avatar || null;
+
+    const tempId = Date.now();
     const newMsg: IMessage = {
-      id: Date.now(),
+      id: tempId,
       serverId: 0,
-      senderId: userSession.userId,
+      senderId: currentUserId,
+      senderName: myName,
+      senderAvatar: myAvatar || undefined,
       noteId: selectedNote.id,
       text,
       isMyMessage: true,
@@ -217,10 +316,45 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       );
 
       if (serverId > 0) {
-        newMsg.serverId = serverId;
-        newMsg.isSentToServer = true;
-        set({ currentChatMessages: [...get().currentChatMessages] });
+        set((state) => ({
+          currentChatMessages: state.currentChatMessages.map((m) =>
+            m.id === tempId ? { ...m, serverId, isSentToServer: true } : m
+          ),
+        }));
       }
-    } catch {}
+    } catch (err) {
+      console.error('[NotesStore] Ошибка отправки сообщения заметки:', err);
+    }
   },
 }));
+
+// Слушатель входящих сообщений заметки через SignalR
+eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
+  const { selectedNote, currentChatMessages } = useNotesStore.getState();
+  if (incoming.noteId && selectedNote && Number(incoming.noteId) === Number(selectedNote.id)) {
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+    const isMy = Number(incoming.senderId) === currentUserId;
+
+    let senderName = incoming.senderName;
+    let senderAvatar = incoming.senderAvatar;
+
+    if (!senderName || senderName === 'Unknown User') {
+      const profile = await fetchUserProfileDeduplicated(Number(incoming.senderId));
+      senderName = profile?.nickName || profile?.username || (isMy ? 'Me' : `User ${incoming.senderId}`);
+      senderAvatar = profile?.avatarPath || (profile as any)?.avatar;
+    }
+
+    const preparedMsg: IMessage = {
+      ...incoming,
+      isMyMessage: isMy,
+      senderName,
+      senderAvatar: normalizeAvatarUrl(senderAvatar),
+    };
+
+    useNotesStore.setState({
+      currentChatMessages: [...currentChatMessages, preparedMsg],
+    });
+  }
+});

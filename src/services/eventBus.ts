@@ -100,7 +100,12 @@ export type AppEvents = {
   GroupMuteStatusChangedMessage: { groupId: number; isMuted: boolean };
   GroupPinStatusChangedMessage: { groupId: number; isPinned: boolean };
   UserMuteStatusChangedMessage: { userId: number; isMuted: boolean };
-
+TaskCreated: any;
+  TaskUpdated: any;
+  TaskDeleted: { taskId: number };
+  TaskListCreated: any;
+  TaskListUpdated: any;
+  TaskListDeleted: { listId: number };
   // Calls & WebRTC
   IncomingCallMessage: { callerId: number; callerName: string; callerAvatar?: string | null };
   CallResponseMessage: { receiverId: number; accepted: boolean };

@@ -10,11 +10,12 @@ import {
 
 import { SidebarHeaderUserControl } from '../common/SidebarHeaderUserControl';
 import { SearchInputUserControl } from '../common/SearchInputUserControl';
-import { useTodoStore, ITodoList } from '../../stores/todoStore';
+import { useTodoStore } from '../../stores/todoStore';
 import { useSmoothScroll } from '../../hooks/useSmoothScroll';
 import { resolveMdiIcon } from '../../utils/iconResolver';
+import { ITodoList } from '../../types/models';
 
-const ITEM_HEIGHT = 50;
+const ITEM_HEIGHT = 50; // panels:SidebarListVirtualizingPanel ItemHeight="50"
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
@@ -27,7 +28,7 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
     width={size}
     height={size}
     fill={color}
-    style={{ display: 'inline-block', flexShrink: 0, ...style }}
+    style={{ display: 'inline-block', flexShrink: 0, verticalAlign: 'middle', ...style }}
   >
     <path d={path} />
   </svg>
@@ -44,6 +45,7 @@ export const SidebarTasksView: React.FC = () => {
     cancelEditList,
     commitEditList,
     deleteTaskList,
+    openEditListDialog,
   } = useTodoStore();
 
   const [hoveredId, setHoveredId] = useState<number | null>(null);
@@ -52,17 +54,19 @@ export const SidebarTasksView: React.FC = () => {
 
   const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
 
-  const filteredLists = myTaskLists.filter((l) =>
-    l.listName.toLowerCase().includes(listSearchText.toLowerCase())
-  );
+  // Фильтрация списков по ListSearchText 1 в 1 с OnListSearchTextChanged
+  const filteredLists = myTaskLists.filter((l) => {
+    if (!listSearchText.trim()) return true;
+    return l.listName.toLowerCase().includes(listSearchText.toLowerCase());
+  });
 
   return (
     <div
       style={{
-        width: '100%', // 🟢 Растягивается на всю ширину сплиттера
+        width: '100%',
         minWidth: 0,
         height: '100%',
-        backgroundColor: '#161A23',
+        backgroundColor: '#161A23', // BgList
         display: 'flex',
         flexDirection: 'column',
         userSelect: 'none',
@@ -70,14 +74,19 @@ export const SidebarTasksView: React.FC = () => {
         boxSizing: 'border-box',
       }}
     >
+      {/* 0: ШАПКА 1 В 1 С XAML: SidebarHeaderUserControl Title="Tasks" IconKind="ClipboardListOutline" */}
       <SidebarHeaderUserControl title="Tasks" iconPath={mdiClipboardListOutline} />
 
+      {/* 1: ПОИСК 1 В 1 С XAML: SearchInputUserControl Margin="6,0,6,10" HintText="Search lists..." */}
       <SearchInputUserControl
         text={listSearchText}
         hintText="Search lists..."
         onChange={setListSearchText}
+        onClear={() => setListSearchText('')}
+        margin="0 6px 10px 6px"
       />
 
+      {/* 2: ВИРТУАЛИЗИРОВАННЫЙ СПИСОК (MyTaskLists) */}
       <div
         ref={containerRef}
         className="wpf-scroll-viewer"
@@ -90,14 +99,15 @@ export const SidebarTasksView: React.FC = () => {
           boxSizing: 'border-box',
         }}
       >
-        {filteredLists.length === 0 ? (
+        {myTaskLists.length === 0 ? (
+          /* 🟢 ЗАГЛУШКА 1 В 1 С XAML: Margin="20,130,20,0" Border 80x80 CornerRadius="40" */
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '130px 20px 0 20px' }}>
             <div
               style={{
                 width: 80,
                 height: 80,
                 borderRadius: 40,
-                backgroundColor: '#1C212D',
+                backgroundColor: '#1C212D', // TasksSidebarEmptyStateBgBrush
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -110,17 +120,23 @@ export const SidebarTasksView: React.FC = () => {
               No Task Lists
             </span>
           </div>
+        ) : filteredLists.length === 0 ? (
+          <div style={{ color: '#7D8494', fontSize: 14, textAlign: 'center', margin: '40px 0' }}>
+            No task lists found
+          </div>
         ) : (
-          filteredLists.map((list: ITodoList) => {
+          filteredLists.map((list) => {
             const isSelected = selectedTaskList?.localId === list.localId;
             const isHovered = hoveredId === list.localId;
+            const isEditing = Boolean(list.isEditing);
             const listIconPath = resolveMdiIcon(list.iconKind, mdiFormatListBulleted);
 
             return (
+              /* TaskListItemTemplate: RadioButton GroupName="TaskCategories" Style="{StaticResource SidebarListItemStyle}" Margin="6,2" Height="50" */
               <div
                 key={list.localId}
-                onClick={() => !list.isEditing && selectTaskList(list)}
-                onMouseEnter={() => setHoveredId(list.localId)}
+                onClick={() => !isEditing && selectTaskList(list)}
+                onMouseEnter={() => setHoveredId(list.localId!)}
                 onMouseLeave={() => setHoveredId(null)}
                 style={{
                   height: ITEM_HEIGHT,
@@ -138,18 +154,24 @@ export const SidebarTasksView: React.FC = () => {
                   boxSizing: 'border-box',
                   transition: 'background-color 0.12s ease',
                   position: 'relative',
-                  width: 'auto', // 🟢 Занимает всю ширину контейнера
                 }}
               >
-                {/* Иконка */}
+                {/* 🟢 ИКОНКА С НАВИСАЮЩИМ БЕЙДЖИКОМ (Button Width="28" Height="28" Margin="0,0,10,0") */}
                 <div
+                  onClick={(e) => {
+                    if (isEditing) {
+                      e.stopPropagation();
+                      openEditListDialog(list);
+                    }
+                  }}
+                  title={isEditing ? 'Change Icon & Color' : undefined}
                   style={{
                     width: 28,
                     height: 28,
                     marginRight: 10,
                     position: 'relative',
-                    cursor: list.isEditing ? 'pointer' : 'default',
                     flexShrink: 0,
+                    cursor: isEditing ? 'pointer' : 'default',
                   }}
                 >
                   <MdiIcon
@@ -159,7 +181,8 @@ export const SidebarTasksView: React.FC = () => {
                     style={{ position: 'absolute', left: 0, top: 0 }}
                   />
 
-                  {list.isEditing && (
+                  {/* Бейджик карандаша при IsEditing */}
+                  {isEditing && (
                     <div
                       style={{
                         position: 'absolute',
@@ -168,7 +191,7 @@ export const SidebarTasksView: React.FC = () => {
                         width: 14,
                         height: 14,
                         borderRadius: 7,
-                        backgroundColor: '#1E9BEB',
+                        backgroundColor: '#1E9BEB', // AppAccentBrush
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -179,9 +202,9 @@ export const SidebarTasksView: React.FC = () => {
                   )}
                 </div>
 
-                {/* Название / инпут */}
+                {/* 🟢 ТЕКСТ (Режим чтения) / ПОЛЕ ВВОДА (Режим редактирования) */}
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
-                  {list.isEditing ? (
+                  {isEditing ? (
                     <input
                       ref={editInputRef}
                       autoFocus
@@ -189,27 +212,34 @@ export const SidebarTasksView: React.FC = () => {
                       defaultValue={list.listName}
                       onChange={(e) => setEditingText(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitEditList(list.localId, editingText || list.listName);
-                        if (e.key === 'Escape') cancelEditList(list.localId);
+                        if (e.key === 'Enter') {
+                          commitEditList({ ...list, editingName: editingText || list.listName });
+                        }
+                        if (e.key === 'Escape') {
+                          cancelEditList(list);
+                        }
                       }}
-                      onBlur={() => commitEditList(list.localId, editingText || list.listName)}
+                      onBlur={() => {
+                        commitEditList({ ...list, editingName: editingText || list.listName });
+                      }}
                       style={{
                         width: '100%',
                         background: 'transparent',
                         border: 'none',
-                        borderBottom: '1px solid #3B82F6',
+                        borderBottom: '1px solid #3B82F6', // TaskListItemTitleInputFocusedBorderBrush
                         color: '#FFFFFF',
                         fontSize: 14.5,
                         fontWeight: 600,
                         outline: 'none',
                         padding: '2px 0',
                         caretColor: '#FFFFFF',
+                        fontFamily: "'Segoe UI', -apple-system, sans-serif",
                       }}
                     />
                   ) : (
                     <span
                       style={{
-                        color: '#FFFFFF',
+                        color: '#FFFFFF', // TaskListItemNameTextBrush
                         fontSize: 14.5,
                         fontWeight: 600,
                         overflow: 'hidden',
@@ -222,16 +252,16 @@ export const SidebarTasksView: React.FC = () => {
                   )}
                 </div>
 
-                {/* Правая часть */}
+                {/* 🟢 ПРАВАЯ ЧАСТЬ: СЧЕТЧИК И КНОПКИ */}
                 <div style={{ display: 'flex', alignItems: 'center', marginLeft: 6, flexShrink: 0 }}>
-                  {!list.isEditing && list.uncompletedCount > 0 && (
+                  {!isEditing && list.uncompletedCount > 0 && (
                     <div
                       style={{
                         borderRadius: 10,
                         minWidth: 20,
                         height: 20,
                         padding: '0 6px',
-                        backgroundColor: list.urgencyColor || '#2A303C',
+                        backgroundColor: list.urgencyColor || '#2A303C', // TaskListItemCountBadgeBgBrush с подстановкой UrgencyColor
                         color: '#FFFFFF',
                         fontSize: 11.5,
                         fontWeight: 'bold',
@@ -246,7 +276,7 @@ export const SidebarTasksView: React.FC = () => {
                     </div>
                   )}
 
-                  {!list.isEditing && (
+                  {!isEditing && (
                     <div
                       style={{
                         display: 'flex',
@@ -261,9 +291,9 @@ export const SidebarTasksView: React.FC = () => {
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingText(list.listName);
-                          beginEditList(list.localId);
+                          beginEditList(list);
                         }}
-                        style={actionBtnStyle}
+                        style={{ ...actionBtnStyle, color: '#3B82F6' }}
                       >
                         <MdiIcon path={mdiPencilOutline} size={16} color="#3B82F6" />
                       </button>
@@ -274,7 +304,7 @@ export const SidebarTasksView: React.FC = () => {
                           e.stopPropagation();
                           deleteTaskList(list);
                         }}
-                        style={actionBtnStyle}
+                        style={{ ...actionBtnStyle, color: '#EF4444' }}
                       >
                         <MdiIcon path={mdiTrashCanOutline} size={16} color="#EF4444" />
                       </button>

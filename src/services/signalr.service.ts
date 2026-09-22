@@ -379,6 +379,38 @@ export class SignalRService {
     this.hubConnection.on('ReceiveGroupCallWebRTCData', (groupId: number, senderId: number, data: string) => {
       eventBus.emit('GroupCallWebRTCDataMessage', { groupId: Number(groupId), senderId: Number(senderId), data });
     });
+    // (добавьте внутри registerHubHandlers() в src/services/signalr.service.ts):
+
+    // 🟢 7. ЗАДАЧИ И СПИСКИ (Multi-Device Realtime Sync)
+    this.hubConnection.on('TaskCreated', (taskDto: any) => {
+      console.log('⚡ [SignalR] Новая задача с другого устройства:', taskDto);
+      eventBus.emit('TaskCreated', taskDto);
+    });
+
+    this.hubConnection.on('TaskUpdated', (taskDto: any) => {
+      console.log('⚡ [SignalR] Задача обновлена на другом устройстве:', taskDto);
+      eventBus.emit('TaskUpdated', taskDto);
+    });
+
+    this.hubConnection.on('TaskDeleted', (taskId: number) => {
+      console.log('⚡ [SignalR] Задача удалена на другом устройстве:', taskId);
+      eventBus.emit('TaskDeleted', { taskId: Number(taskId) });
+    });
+
+    this.hubConnection.on('TaskListCreated', (listDto: any) => {
+      console.log('⚡ [SignalR] Новый список с другого устройства:', listDto);
+      eventBus.emit('TaskListCreated', listDto);
+    });
+
+    this.hubConnection.on('TaskListUpdated', (listDto: any) => {
+      console.log('⚡ [SignalR] Список обновлен на другом устройстве:', listDto);
+      eventBus.emit('TaskListUpdated', listDto);
+    });
+
+    this.hubConnection.on('TaskListDeleted', (listId: number) => {
+      console.log('⚡ [SignalR] Список удален на другом устройстве:', listId);
+      eventBus.emit('TaskListDeleted', { listId: Number(listId) });
+    });
   }
 
   private async safeInvoke<T = void>(methodName: string, ...args: any[]): Promise<T | null> {
