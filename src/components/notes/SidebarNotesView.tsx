@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   mdiBookmarkOutline,
   mdiFileDocumentPlusOutline,
@@ -14,7 +14,7 @@ import { useSmoothScroll } from '../../hooks/useSmoothScroll';
 import { resolveMdiIcon } from '../../utils/iconResolver';
 import { INote } from '../../types/models';
 
-const ITEM_HEIGHT = 50; // 🟢 panels:SidebarListVirtualizingPanel ItemHeight="50"
+const ITEM_HEIGHT = 50; // panels:SidebarListVirtualizingPanel ItemHeight="50"
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
@@ -40,10 +40,12 @@ export const SidebarNotesView: React.FC = () => {
     noteSearchText,
     selectNote,
     setNoteSearchText,
+    clearNoteSearch,
     deleteNote,
     beginEditNote,
     cancelEditNote,
     commitEditNote,
+    createNewNote,
   } = useNotesStore();
 
   const [hoveredId, setHoveredId] = useState<number | null>(null);
@@ -51,6 +53,12 @@ export const SidebarNotesView: React.FC = () => {
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
+
+  useEffect(() => {
+    const handleCreate = () => createNewNote();
+    window.addEventListener('CreateNewNote', handleCreate);
+    return () => window.removeEventListener('CreateNewNote', handleCreate);
+  }, [createNewNote]);
 
   const filteredNotes = myNotes.filter((n) =>
     n.title.toLowerCase().includes(noteSearchText.toLowerCase())
@@ -78,11 +86,11 @@ export const SidebarNotesView: React.FC = () => {
         text={noteSearchText}
         hintText="Search notes..."
         onChange={setNoteSearchText}
-        onClear={() => setNoteSearchText('')}
+        onClear={clearNoteSearch}
         margin="0 6px 10px 6px"
       />
 
-      {/* 2. ВИРТУАЛИЗИРОВАННЫЙ СПИСОК ЗАМЕТОК: ItemHeight="50" */}
+      {/* 2. СПИСОК ЗАМЕТОК: ItemHeight="50" */}
       <div
         ref={containerRef}
         className="wpf-scroll-viewer"
@@ -95,7 +103,7 @@ export const SidebarNotesView: React.FC = () => {
           boxSizing: 'border-box',
         }}
       >
-        {filteredNotes.length === 0 ? (
+        {myNotes.length === 0 ? (
           /* ЗАГЛУШКА: Margin="20,130,20,0" Border Width="80" Height="80" CornerRadius="40" */
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '130px 20px 0 20px' }}>
             <div
@@ -115,6 +123,10 @@ export const SidebarNotesView: React.FC = () => {
             <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
               No Notes
             </span>
+          </div>
+        ) : filteredNotes.length === 0 ? (
+          <div style={{ color: '#7D8494', fontSize: 14, textAlign: 'center', margin: '40px 0' }}>
+            No notes found
           </div>
         ) : (
           filteredNotes.map((note: INote) => {
@@ -148,7 +160,7 @@ export const SidebarNotesView: React.FC = () => {
                   width: 'auto',
                 }}
               >
-                {/* 🟢 ИКОНКА С НАВИСАЮЩИМ БЕЙДЖИКОМ (Единая кнопка 28x28) */}
+                {/* ИКОНКА С НАВИСАЮЩИМ БЕЙДЖИКОМ (Button 28x28 Margin="0,0,10,0") */}
                 <div
                   style={{
                     width: 28,
@@ -166,7 +178,7 @@ export const SidebarNotesView: React.FC = () => {
                     style={{ position: 'absolute', left: 0, top: 0 }}
                   />
 
-                  {/* Бейджик карандаша (14x14) строго внутри кнопки при IsEditing */}
+                  {/* Бейджик карандаша (14x14) при IsEditing */}
                   {isEditing && (
                     <div
                       style={{
@@ -187,7 +199,7 @@ export const SidebarNotesView: React.FC = () => {
                   )}
                 </div>
 
-                {/* 🟢 ТЕКСТ / ПОЛЕ ВВОДА ИМЕНИ */}
+                {/* ТЕКСТ / ПОЛЕ ВВОДА ИМЕНИ */}
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
                   {isEditing ? (
                     <input
@@ -234,7 +246,7 @@ export const SidebarNotesView: React.FC = () => {
                   )}
                 </div>
 
-                {/* 🟢 ПРАВАЯ ЧАСТЬ: КНОПКИ ДЕЙСТВИЙ (PencilOutline 16x16, TrashCanOutline 16x16) */}
+                {/* ПРАВАЯ ЧАСТЬ: КНОПКИ ДЕЙСТВИЙ */}
                 {!isEditing && (
                   <div
                     style={{

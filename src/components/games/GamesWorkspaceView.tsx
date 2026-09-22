@@ -1,5 +1,15 @@
 import React from 'react';
+import { mdiGamepadVariantOutline, mdiPlusCircleOutline, mdiLogin, mdiGrid, mdiCheckerboard, mdiChessKnight, mdiFerry, mdiPalette, mdiPencil } from '@mdi/js';
 import { useGamesStore } from '../../stores/gamesStore';
+
+const ICON_MAP: Record<string, string> = {
+  Grid: mdiGrid,
+  Checkerboard: mdiCheckerboard,
+  ChessKnight: mdiChessKnight,
+  Ferry: mdiFerry,
+  Palette: mdiPalette,
+  Pencil: mdiPencil,
+};
 
 export const GamesWorkspaceView: React.FC = () => {
   const {
@@ -9,160 +19,196 @@ export const GamesWorkspaceView: React.FC = () => {
     openJoinDialog,
     closeJoinDialog,
     setInputRoomId,
-    createRoom,
-    joinRoom,
+    createGameRoom,
+    joinGameRoom,
   } = useGamesStore();
 
   if (!selectedGame) {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0B141B', color: '#64748B' }}>
-        <div style={{ padding: '16px 24px', borderRadius: 20, background: '#1E293B', display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span>🎮</span>
-          <span style={{ color: '#E2E8F0', fontWeight: 600 }}>Select a game to start playing</span>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--bg-chat, #11141B)',
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: 'var(--game-tile-hover-bg, #1C212D)',
+            borderRadius: 20,
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <svg viewBox="0 0 24 24" width={20} height={20} fill="var(--app-accent, #1E9BEB)" style={{ marginRight: 10 }}>
+            <path d={mdiGamepadVariantOutline} />
+          </svg>
+          <span style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 600 }}>
+            Select a game to start playing
+          </span>
         </div>
       </div>
     );
   }
 
+  const iconSvg = ICON_MAP[selectedGame.iconKind] || mdiGamepadVariantOutline;
+
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0B141B', position: 'relative' }}>
-      {/* КАРТОЧКА ВЫБРАННОЙ ИГРЫ */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-        {/* Иконка в круге 80x80 */}
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'var(--bg-chat, #11141B)',
+        position: 'relative',
+        userSelect: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {/* Иконка в круге 80x80 с тенью */}
         <div
           style={{
             width: 80,
             height: 80,
             borderRadius: 40,
-            backgroundColor: '#1E2330',
-            border: '1px solid #334155',
+            backgroundColor: '#161A23',
+            border: '1px solid #1F2533',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 38,
-            marginBottom: 16,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+            marginBottom: 15,
+            boxShadow: '0 5px 25px rgba(0, 210, 255, 0.15)',
           }}
         >
-          {selectedGame.internalId === 'TicTacToe' && '❌'}
-          {selectedGame.internalId === 'Checkers' && '⚪'}
-          {selectedGame.internalId === 'Chess' && '♞'}
-          {selectedGame.internalId === 'Battleship' && '🚢'}
-          {selectedGame.internalId === 'DrawAndRate' && '🎨'}
-          {selectedGame.internalId === 'DrawAndGuess' && '✏️'}
+          <svg viewBox="0 0 24 24" width={40} height={40} fill="#00D2FF">
+            <path d={iconSvg} />
+          </svg>
         </div>
 
-        {/* Название */}
-        <h1 style={{ fontSize: 28, fontWeight: 'bold', color: '#FFF', margin: '0 0 40px 0' }}>
+        {/* Название выбранной игры */}
+        <h1 style={{ color: '#FFFFFF', fontSize: 28, fontWeight: 'bold', margin: '0 0 40px 0' }}>
           {selectedGame.name}
         </h1>
 
-        {/* КНОПКА: CREATE ROOM (Ширина 280, высота 52) */}
+        {/* Кнопка CREATE ROOM */}
         <button
-          onClick={createRoom}
+          onClick={createGameRoom}
           style={{
             width: 280,
             height: 52,
-            borderRadius: 12,
-            backgroundColor: 'var(--app-accent, #3B82F6)',
-            color: '#FFF',
+            backgroundColor: 'var(--app-accent, #1E9BEB)',
+            color: '#FFFFFF',
             border: 'none',
-            fontSize: 15,
-            fontWeight: 'bold',
+            borderRadius: 12,
+            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 8,
-            cursor: 'pointer',
-            boxShadow: '0 10px 25px rgba(59, 130, 246, 0.35)',
+            boxShadow: '0 0 20px rgba(0, 210, 255, 0.25)',
           }}
         >
-          <span>➕</span>
-          <span>CREATE ROOM</span>
+          <svg viewBox="0 0 24 24" width={22} height={22} fill="#FFFFFF" style={{ marginRight: 8 }}>
+            <path d={mdiPlusCircleOutline} />
+          </svg>
+          <span style={{ fontSize: 15, fontWeight: 'bold' }}>CREATE ROOM</span>
         </button>
 
-        {/* РАЗДЕЛИТЕЛЬ "OR" */}
+        {/* Разделитель OR */}
         <div style={{ display: 'flex', alignItems: 'center', width: 280, margin: '20px 0' }}>
-          <div style={{ flex: 1, height: 1, backgroundColor: '#334155' }} />
-          <span style={{ padding: '0 15px', color: '#64748B', fontSize: 13, fontWeight: 'bold' }}>OR</span>
-          <div style={{ flex: 1, height: 1, backgroundColor: '#334155' }} />
+          <div style={{ flex: 1, height: 1, backgroundColor: '#2A303C', marginRight: 15 }} />
+          <span style={{ color: '#4A5568', fontSize: 13, fontWeight: 'bold' }}>OR</span>
+          <div style={{ flex: 1, height: 1, backgroundColor: '#2A303C', marginLeft: 15 }} />
         </div>
 
-        {/* КНОПКА: JOIN ROOM */}
+        {/* Кнопка JOIN ROOM */}
         <button
           onClick={openJoinDialog}
           style={{
             width: 280,
             height: 52,
+            backgroundColor: '#111620',
+            color: '#FFFFFF',
+            border: '2px solid #252D3D',
             borderRadius: 12,
-            backgroundColor: 'transparent',
-            color: '#E2E8F0',
-            border: '2px solid #334155',
-            fontSize: 15,
-            fontWeight: 'bold',
+            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 8,
-            cursor: 'pointer',
           }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1A212F')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#111620')}
         >
-          <span>🚪</span>
-          <span>JOIN ROOM</span>
+          <svg viewBox="0 0 24 24" width={22} height={22} fill="#FFFFFF" style={{ marginRight: 8 }}>
+            <path d={mdiLogin} />
+          </svg>
+          <span style={{ fontSize: 15, fontWeight: 'bold' }}>JOIN ROOM</span>
         </button>
       </div>
 
-      {/* ДИАЛОГ ВВОДА КОДА КОМНАТЫ */}
+      {/* Диалог подключения к комнате */}
       {isJoinGameDialogOpen && (
         <div
           onClick={closeJoinDialog}
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
             zIndex: 100,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backdropFilter: 'blur(4px)',
+            backdropFilter: 'blur(3px)',
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
               width: 360,
-              backgroundColor: '#1E2330',
+              backgroundColor: '#111620',
               borderRadius: 16,
               padding: 30,
-              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-              border: '1px solid #334155',
+              border: '1px solid #252D3D',
+              boxShadow: '0 10px 40px rgba(0, 0, 0, 0.4)',
               textAlign: 'center',
+              boxSizing: 'border-box',
             }}
           >
-            <h2 style={{ fontSize: 20, fontWeight: 'bold', color: '#FFF', margin: '0 0 6px 0' }}>Join Room</h2>
-            <p style={{ fontSize: 14, color: '#94A3B8', margin: '0 0 24px 0' }}>Enter the Room ID to join the match.</p>
+            <div style={{ color: '#FFFFFF', fontSize: 20, fontWeight: 'bold', marginBottom: 5 }}>Join Room</div>
+            <div style={{ color: '#8B94A5', fontSize: 14, marginBottom: 25 }}>Enter the Room ID to join the match.</div>
 
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--app-accent, #38BDF8)', textAlign: 'left', marginBottom: 6 }}>
+            <div style={{ textAlign: 'left', color: '#8B94A5', fontSize: 12, fontWeight: 600, margin: '0 0 5px 5px' }}>
               ROOM ID
             </div>
-            <div style={{ background: '#161B26', border: '2px solid #334155', borderRadius: 8, marginBottom: 25 }}>
+            <div
+              style={{
+                backgroundColor: '#080A0E',
+                border: '2px solid #1C2331',
+                borderRadius: 8,
+                marginBottom: 25,
+              }}
+            >
               <input
                 type="text"
                 autoFocus
                 placeholder="e.g. B4F8A1"
                 value={inputRoomId}
                 onChange={(e) => setInputRoomId(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && joinGameRoom()}
                 style={{
                   width: '100%',
                   background: 'transparent',
                   border: 'none',
-                  color: '#FFF',
+                  color: '#FFFFFF',
                   fontSize: 20,
                   fontWeight: 'bold',
                   textAlign: 'center',
-                  padding: '12px 10px',
+                  padding: '10px 15px',
                   outline: 'none',
-                  letterSpacing: 2,
+                  textTransform: 'uppercase',
                   boxSizing: 'border-box',
                 }}
               />
@@ -171,21 +217,31 @@ export const GamesWorkspaceView: React.FC = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15 }}>
               <button
                 onClick={closeJoinDialog}
-                style={{ height: 44, borderRadius: 8, background: 'transparent', border: 'none', color: '#94A3B8', fontWeight: 'bold', cursor: 'pointer' }}
+                style={{
+                  height: 44,
+                  backgroundColor: 'transparent',
+                  color: '#8B94A5',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                }}
               >
                 CANCEL
               </button>
               <button
-                onClick={joinRoom}
+                onClick={joinGameRoom}
                 style={{
                   height: 44,
-                  borderRadius: 8,
-                  backgroundColor: 'var(--app-accent, #3B82F6)',
-                  color: '#FFF',
+                  backgroundColor: 'var(--app-accent, #1E9BEB)',
+                  color: '#FFFFFF',
                   border: 'none',
+                  borderRadius: 8,
+                  fontSize: 13,
                   fontWeight: 'bold',
                   cursor: 'pointer',
-                  boxShadow: '0 4px 15px rgba(59, 130, 246, 0.4)',
+                  boxShadow: '0 0 10px rgba(0, 210, 255, 0.3)',
                 }}
               >
                 JOIN

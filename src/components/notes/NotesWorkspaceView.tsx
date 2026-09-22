@@ -10,11 +10,11 @@ import {
 } from '@mdi/js';
 import { useNotesStore } from '../../stores/notesStore';
 import { NotesCanvas } from './NotesCanvas';
-import { getAvatarColor } from '../../utils/helpers';
+import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 import { resolveMdiIcon } from '../../utils/iconResolver';
-import { IAttachment } from '../../types/models';
+import { BASE_SERVER_URL } from '../../services/apiClient';
+import { IMessage } from '../../types/models';
 import { AttachmentType } from '../../types/enums';
-
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
   size = 20,
@@ -32,6 +32,205 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
   </svg>
 );
 
+function resolveAttachmentUrl(att: any): string {
+  if (!att) return '';
+  const raw =
+    att.url ||
+    att.Url ||
+    att.localImagePath ||
+    att.LocalImagePath ||
+    att.thumbnailUrl ||
+    att.ThumbnailUrl ||
+    '';
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://')
+  ) {
+    return trimmed;
+  }
+  const base = (BASE_SERVER_URL || 'https://localhost:7214').replace(/\/+$/, '');
+  const clean = trimmed.replace(/^\/+/, '');
+  return `${base}/${clean}`;
+}
+
+// 🟢 КОМПОНЕНТ СООБЩЕНИЯ С ДИНАМИЧЕСКИМ ФОНОМ (Прозрачный для чистого медиа, цветной при наличии текста/документов)
+const NoteMessageItem: React.FC<{ msg: IMessage }> = ({ msg }) => {
+  const isMy = Boolean(msg.isMyMessage);
+  const firstLetter = (msg.senderName || 'U').charAt(0).toUpperCase();
+  const avatarUrl = msg.senderAvatar ? normalizeAvatarUrl(msg.senderAvatar) : null;
+
+  const validAttachments = (msg.attachments || [])
+    .map((att) => ({ ...att, resolvedUrl: resolveAttachmentUrl(att) }))
+    .filter((att) => Boolean(att.resolvedUrl));
+
+  const hasText = Boolean(msg.text && msg.text.trim().length > 0);
+
+  // Если нет ни текста, ни валидных картинок — не выводим
+  if (!hasText && validAttachments.length === 0) {
+    return null;
+  }
+
+  // Проверка: является ли вложение фото или видео (type 0 или 1)
+  const isMediaAttachment = (type: any) =>
+    type === AttachmentType.Photo || type === AttachmentType.Video || type === 0 || type === 1;
+
+  const hasMedia = validAttachments.some((att) => isMediaAttachment(att.type));
+  const hasNonMedia = validAttachments.some((att) => !isMediaAttachment(att.type));
+
+  // 🟢 Режим "только медиа": есть фото/видео, НЕТ текста и НЕТ документов/файлов
+  const isMediaOnly = !hasText && !hasNonMedia && hasMedia;
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        margin: '6px 0',
+        padding: '0 20px',
+        boxSizing: 'border-box',
+      }}
+    >
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'flex-start',
+          maxWidth: 800,
+          boxSizing: 'border-box',
+        }}
+      >
+        {/* АВАТАРКА */}
+        <div
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: getAvatarColor(msg.senderId),
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#FFFFFF',
+            fontWeight: 'bold',
+            fontSize: 15,
+            marginRight: 12,
+            flexShrink: 0,
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <span>{firstLetter}</span>
+          {avatarUrl && (
+            <img
+              src={avatarUrl}
+              alt=""
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+              }}
+            />
+          )}
+        </div>
+
+        {/* ТЕЛО СООБЩЕНИЯ */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', margin: '2px 0 4px 2px' }}>
+            <span
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: isMy ? '#60A5FA' : '#E2E8F0',
+                lineHeight: 1,
+              }}
+            >
+              {msg.senderName || 'User'}
+            </span>
+
+            <span
+              style={{
+                fontSize: 11,
+                color: '#64748B',
+                marginLeft: 8,
+                lineHeight: 1,
+              }}
+            >
+              {msg.timestamp
+                ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : ''}
+            </span>
+          </div>
+
+          {/* 🟢 БАБЛ: прозрачный без синей обводки для одиночных фото/видео, цветной при тексте/файлах */}
+          <div
+            style={{
+              alignSelf: 'flex-start',
+              minWidth: isMediaOnly ? undefined : 40,
+              borderRadius: isMediaOnly ? 10 : '0 10px 10px 10px',
+              backgroundColor: isMediaOnly ? 'transparent' : isMy ? '#1E9BEB' : '#1E293B',
+              color: '#FFFFFF',
+              boxSizing: 'border-box',
+              overflow: 'hidden',
+            }}
+          >
+            {validAttachments.length > 0 && (
+              <div style={{ padding: isMediaOnly ? 0 : '2px 2px 0 2px' }}>
+                {validAttachments.map((att, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      maxWidth: 400,
+                      maxHeight: 400,
+                      borderRadius: 10,
+                      overflow: 'hidden',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <img
+                      src={att.resolvedUrl}
+                      alt=""
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: 400,
+                        borderRadius: 10,
+                        display: 'block',
+                        objectFit: 'contain',
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {hasText && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  fontSize: 14,
+                  lineHeight: '19px',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {msg.text}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const NotesWorkspaceView: React.FC = () => {
   const {
     selectedNote,
@@ -43,7 +242,7 @@ export const NotesWorkspaceView: React.FC = () => {
   } = useNotesStore();
 
   const [inputText, setInputText] = useState('');
-  const [pendingFiles, setPendingFiles] = useState<IAttachment[]>([]);
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<{ file: File; previewUrl: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -54,44 +253,38 @@ export const NotesWorkspaceView: React.FC = () => {
   }, [currentChatMessages, isNoteChatMode]);
 
   const handleSend = () => {
-    if (!inputText.trim() && pendingFiles.length === 0) return;
-    sendNoteMessage(inputText.trim(), pendingFiles);
+    if (!inputText.trim() && pendingUploadFiles.length === 0) return;
+    const files = pendingUploadFiles.map((p) => p.file);
+    sendNoteMessage(inputText.trim(), files);
     setInputText('');
-    setPendingFiles([]);
+    setPendingUploadFiles([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const newAttachments: IAttachment[] = Array.from(files).map((f, idx) => ({
-  id: Date.now() + idx,
-  messageId: 0,
-  type: f.type.startsWith('image/') ? AttachmentType.Photo : AttachmentType.Document,
-  fileName: f.name,
-  fileSizeStr: `${(f.size / 1024).toFixed(1)} KB`,
-  fileSizeBytes: f.size,
-  url: URL.createObjectURL(f),
-  localImagePath: URL.createObjectURL(f),
-  hasAudio: false,
-  width: 0,
-  height: 0,
-  durationSeconds: 0,
-}));
+    const newFiles = Array.from(files).map((f) => ({
+      file: f,
+      previewUrl: URL.createObjectURL(f),
+    }));
 
-    setPendingFiles((prev) => [...prev, ...newAttachments]);
+    setPendingUploadFiles((prev) => [...prev, ...newFiles]);
   };
 
-  // Заглушка, если заметка не выбрана (NullToVisibilityConverter)
   if (!selectedNote) {
     return (
       <div
         style={{
           flex: 1,
+          width: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#11141B', // BgChat
+          backgroundColor: '#11141B',
           userSelect: 'none',
         }}
       >
@@ -99,7 +292,7 @@ export const NotesWorkspaceView: React.FC = () => {
           style={{
             padding: '10px 20px',
             borderRadius: 20,
-            backgroundColor: '#1C212D', // NotesEmptyStateBgBrush
+            backgroundColor: '#1C212D',
             display: 'flex',
             alignItems: 'center',
             gap: 10,
@@ -122,23 +315,23 @@ export const NotesWorkspaceView: React.FC = () => {
     <div
       style={{
         flex: 1,
+        width: '100%',
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: '#11141B', // BgChat
+        backgroundColor: '#11141B',
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      {/* ======================================================== */}
-      {/* 🟢 СЛОЙ 0: ШАПКА 1 В 1 С XAML (Высота 54px, Padding 15,0,5,0) */}
-      {/* ======================================================== */}
+      {/* ШАПКА ЗАМЕТКИ */}
       <div
         style={{
           height: 54,
           minHeight: 54,
-          backgroundColor: '#161A23', // ChatHeaderBackgroundBrush
-          borderBottom: '1px solid #1F2533', // ChatHeaderBorderBrush
+          width: '100%',
+          backgroundColor: '#161A23',
+          borderBottom: '1px solid #1F2533',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -148,7 +341,6 @@ export const NotesWorkspaceView: React.FC = () => {
           userSelect: 'none',
         }}
       >
-        {/* СЛЕВА: НАЗВАНИЕ ЗАМЕТКИ И ДИНАМИЧЕСКАЯ ИКОНКА */}
         <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
           <MdiIcon
             path={noteIconPath}
@@ -158,7 +350,7 @@ export const NotesWorkspaceView: React.FC = () => {
           />
           <span
             style={{
-              color: '#FFFFFF', // ChatHeaderTitleBrush
+              color: '#FFFFFF',
               fontSize: 15,
               fontWeight: 600,
               overflow: 'hidden',
@@ -170,7 +362,6 @@ export const NotesWorkspaceView: React.FC = () => {
           </span>
         </div>
 
-        {/* СПРАВА: ЧИСТЫЕ ВКЛАДКИ С ПОДЧЕРКИВАНИЕМ (HeaderTabButtonStyle) */}
         <div style={{ display: 'flex', height: '100%', alignItems: 'stretch' }}>
           <button
             onClick={() => !isNoteChatMode && toggleNoteView()}
@@ -180,7 +371,7 @@ export const NotesWorkspaceView: React.FC = () => {
               padding: '0 16px',
               fontSize: 14,
               fontWeight: isNoteChatMode ? 'bold' : 600,
-              color: isNoteChatMode ? '#FFFFFF' : '#8B95A5', // NotesHeaderFloatingModesInactiveTextBrush
+              color: isNoteChatMode ? '#FFFFFF' : '#8B95A5',
               position: 'relative',
               cursor: 'pointer',
               display: 'flex',
@@ -199,7 +390,7 @@ export const NotesWorkspaceView: React.FC = () => {
                   right: 16,
                   height: 3,
                   borderRadius: '1.5px 1.5px 0 0',
-                  backgroundColor: '#1E9BEB', // AppAccentBrush
+                  backgroundColor: '#1E9BEB',
                   boxShadow: '0 0 8px rgba(30, 155, 235, 0.8)',
                 }}
               />
@@ -242,162 +433,30 @@ export const NotesWorkspaceView: React.FC = () => {
         </div>
       </div>
 
-      {/* ======================================================== */}
-      {/* 🟢 СЛОЙ 1: КОНТЕНТ (ЧАТ ОБСУЖДЕНИЯ ИЛИ ХОЛСТ)           */}
-      {/* ======================================================== */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      {/* КОНТЕНТ */}
+      <div style={{ flex: 1, width: '100%', position: 'relative', overflow: 'hidden' }}>
         {isNoteChatMode ? (
-          /* РЕЖИМ 2: ОБСУЖДЕНИЕ (CHAT) */
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', position: 'relative' }}>
             
-            {/* СПИСОК СООБЩЕНИЙ ЗАМЕТКИ: NoteMessagesList */}
+            {/* СКРОЛЛЕР СООБЩЕНИЙ */}
             <div
               className="wpf-scroll-viewer"
               style={{
                 flex: 1,
+                width: '100%',
                 overflowY: 'auto',
                 overflowX: 'hidden',
-                padding: '15px 0 85px 0', // ItemsPresenter Margin="0,15,0,40" + запас под инпут
+                padding: '15px 0 85px 0',
                 boxSizing: 'border-box',
               }}
             >
-              {/* Grid MaxWidth="800" HorizontalAlignment="Center" Margin="15,0" */}
-              <div style={{ maxWidth: 800, margin: '0 auto', padding: '0 15px' }}>
-                {currentChatMessages.map((msg) => {
-                  const isMy = Boolean(msg.isMyMessage);
-                  const firstLetter = (msg.senderName || 'U').charAt(0).toUpperCase();
-
-                  return (
-                    <div
-                      key={msg.id || msg.serverId}
-                      style={{
-                        display: 'flex',
-                        margin: '6px 0', // Margin="0,6"
-                        alignItems: 'flex-start',
-                      }}
-                    >
-                      {/* 1. АВАТАРКА СЛЕВА 40x40 (Margin="0,0,12,0") */}
-                      <div
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 20,
-                          backgroundColor: getAvatarColor(msg.senderId),
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#FFFFFF',
-                          fontWeight: 'bold',
-                          fontSize: 15,
-                          marginRight: 12,
-                          flexShrink: 0,
-                          position: 'relative',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <span>{firstLetter}</span>
-                        {msg.senderAvatar && (
-                          <img
-                            src={msg.senderAvatar}
-                            alt=""
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                            style={{
-                              position: 'absolute',
-                              inset: 0,
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                            }}
-                          />
-                        )}
-                      </div>
-
-                      {/* 2. КОНТЕНТ СООБЩЕНИЯ (StackPanel Grid.Column="1") */}
-                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                        
-                        {/* Шапка сообщения: SenderNameText + Timestamp */}
-                        <div style={{ display: 'flex', alignItems: 'flex-end', margin: '2px 0 4px 2px' }}>
-                          <span
-                            style={{
-                              fontSize: 14,
-                              fontWeight: 600,
-                              color: isMy ? '#60A5FA' : '#E2E8F0', // NotesChatMyAuthorNameBrush (#60A5FA) : NotesChatAuthorNameBrush (#E2E8F0)
-                              lineHeight: 1,
-                            }}
-                          >
-                            {msg.senderName || (isMy ? 'Me' : 'Unknown User')}
-                          </span>
-
-                          <span
-                            style={{
-                              fontSize: 11,
-                              color: '#64748B', // NotesChatTimestampBrush
-                              marginLeft: 8,
-                              lineHeight: 1,
-                            }}
-                          >
-                            {msg.timestamp
-                              ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                              : ''}
-                          </span>
-                        </div>
-
-                        {/* Плашка (Бабл) сообщения: CornerRadius="0,10,10,10" HorizontalAlignment="Left" MinWidth="40" */}
-                        <div
-                          style={{
-                            alignSelf: 'flex-start',
-                            minWidth: 40,
-                            borderRadius: '0 10px 10px 10px',
-                            backgroundColor: isMy ? '#1E9BEB' : '#1E293B', // NotesChatMyBubbleBgBrush (#1E9BEB) : NotesChatOtherBubbleBgBrush (#1E293B)
-                            color: '#FFFFFF',
-                            boxSizing: 'border-box',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {/* Вложения (если есть) */}
-                          {msg.attachments && msg.attachments.length > 0 && (
-                            <div style={{ padding: '2px 2px 0 2px' }}>
-                              {msg.attachments.map((att, i) => (
-                                <img
-                                  key={i}
-                                  src={att.url || att.localImagePath || undefined}
-                                  alt=""
-                                  style={{
-                                    maxWidth: 400,
-                                    maxHeight: 400,
-                                    borderRadius: 10,
-                                    display: 'block',
-                                  }}
-                                />
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Текст сообщения: Padding="12,8" FontSize="14" */}
-                          {msg.text && (
-                            <div
-                              style={{
-                                padding: '8px 12px',
-                                fontSize: 14,
-                                lineHeight: '19px',
-                                wordBreak: 'break-word',
-                              }}
-                            >
-                              {msg.text}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={messagesEndRef} />
-              </div>
+              {currentChatMessages.map((msg) => (
+                <NoteMessageItem key={msg.id || msg.serverId} msg={msg} />
+              ))}
+              <div ref={messagesEndRef} />
             </div>
 
-            {/* ЭФФЕКТ ТУМАНА (Height="80" LinearGradientBrush) */}
+            {/* ЭФФЕКТ ТУМАНА ВНИЗУ */}
             <div
               style={{
                 position: 'absolute',
@@ -411,16 +470,16 @@ export const NotesWorkspaceView: React.FC = () => {
               }}
             />
 
-            {/* 🟢 ЕДИНЫЙ МОДУЛЬНЫЙ КОНТРОЛ ВВОДА: MessageInputUserControl Margin="30,0,30,20" */}
+            {/* ПОЛЕ ВВОДА (Margin="30,0,30,20") */}
             <div
               style={{
                 margin: '0 30px 20px 30px',
                 position: 'relative',
                 zIndex: 10,
+                boxSizing: 'border-box',
               }}
             >
-              {/* Полоса прикрепленных файлов */}
-              {pendingFiles.length > 0 && (
+              {pendingUploadFiles.length > 0 && (
                 <div
                   style={{
                     backgroundColor: '#1C212D',
@@ -431,7 +490,7 @@ export const NotesWorkspaceView: React.FC = () => {
                     gap: 8,
                   }}
                 >
-                  {pendingFiles.map((file, idx) => (
+                  {pendingUploadFiles.map((item, idx) => (
                     <div
                       key={idx}
                       style={{
@@ -443,9 +502,9 @@ export const NotesWorkspaceView: React.FC = () => {
                         backgroundColor: '#232A3B',
                       }}
                     >
-                      <img src={file.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img src={item.previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       <button
-                        onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+                        onClick={() => setPendingUploadFiles((prev) => prev.filter((_, i) => i !== idx))}
                         style={{
                           position: 'absolute',
                           top: 2,
@@ -469,21 +528,20 @@ export const NotesWorkspaceView: React.FC = () => {
                 </div>
               )}
 
-              {/* Инпут-бар 1 в 1 с XAML: BorderBrush="#2A303C" BorderThickness="1.2" CornerRadius="20" Padding="10,1,2,1" MinHeight="40" MaxHeight="200" */}
               <div
                 style={{
                   minHeight: 40,
                   maxHeight: 200,
-                  backgroundColor: '#1C212D', // InputAreaBackgroundBrush
-                  border: '1.2px solid #2A303C', // InputAreaBorderBrush
+                  backgroundColor: '#1C212D',
+                  border: '1.2px solid #2A303C',
                   borderRadius: 20,
                   padding: '1px 2px 1px 10px',
                   display: 'flex',
                   alignItems: 'center',
                   boxSizing: 'border-box',
+                  width: '100%',
                 }}
               >
-                {/* 1. Кнопка скрепки 36x36 (Rotate -45°) */}
                 <input
                   type="file"
                   multiple
@@ -511,7 +569,6 @@ export const NotesWorkspaceView: React.FC = () => {
                   <MdiIcon path={mdiAttachment} size={24} color="#7D8494" />
                 </button>
 
-                {/* 2. Текстовое поле ввода: Hint="Write a note or comment..." */}
                 <input
                   type="text"
                   placeholder="Write a note or comment..."
@@ -525,14 +582,13 @@ export const NotesWorkspaceView: React.FC = () => {
                     background: 'transparent',
                     border: 'none',
                     outline: 'none',
-                    color: '#FFFFFF', // InputAreaTextBrush
+                    color: '#FFFFFF',
                     fontSize: 14,
                     padding: '8px 8px',
                     fontFamily: "'Segoe UI', -apple-system, sans-serif",
                   }}
                 />
 
-                {/* 3. Кнопка Эмодзи 36x36 */}
                 <button
                   style={{
                     width: 36,
@@ -551,14 +607,13 @@ export const NotesWorkspaceView: React.FC = () => {
                   <MdiIcon path={mdiEmoticonOutline} size={22} color="#7D8494" />
                 </button>
 
-                {/* 4. Кнопка действия (Отправка / Микрофон 38x38 #1E9BEB) */}
                 <button
                   onClick={handleSend}
                   style={{
                     width: 38,
                     height: 38,
                     borderRadius: 19,
-                    backgroundColor: '#1E9BEB', // AppAccentBrush
+                    backgroundColor: '#1E9BEB',
                     border: 'none',
                     color: '#FFFFFF',
                     cursor: 'pointer',
@@ -570,7 +625,7 @@ export const NotesWorkspaceView: React.FC = () => {
                   }}
                 >
                   <MdiIcon
-                    path={inputText.trim() || pendingFiles.length > 0 ? mdiSend : mdiMicrophone}
+                    path={inputText.trim() || pendingUploadFiles.length > 0 ? mdiSend : mdiMicrophone}
                     size={20}
                     color="#FFFFFF"
                   />
@@ -579,7 +634,6 @@ export const NotesWorkspaceView: React.FC = () => {
             </div>
           </div>
         ) : (
-          /* РЕЖИМ 1: ХОЛСТ (CANVAS) */
           <NotesCanvas />
         )}
       </div>

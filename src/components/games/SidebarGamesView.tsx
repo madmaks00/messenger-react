@@ -1,25 +1,28 @@
 import React, { useState } from 'react';
-import { mdiGamepadVariantOutline, mdiCheck } from '@mdi/js';
-
-import { SidebarHeaderUserControl } from '../common/SidebarHeaderUserControl';
+import { mdiGamepadVariantOutline, mdiCheck, mdiGrid, mdiCheckerboard, mdiChessKnight, mdiFerry, mdiPalette, mdiPencil } from '@mdi/js';
+import { SidebarHeaderUserControl } from "../common/SidebarHeaderUserControl";
 import { useGamesStore } from '../../stores/gamesStore';
-import { useSmoothScroll } from '../../hooks/useSmoothScroll';
-import { resolveMdiIcon } from '../../utils/iconResolver';
 import { IGameItem } from '../../types/models';
+
+const ICON_MAP: Record<string, string> = {
+  Grid: mdiGrid,
+  Checkerboard: mdiCheckerboard,
+  ChessKnight: mdiChessKnight,
+  Ferry: mdiFerry,
+  Palette: mdiPalette,
+  Pencil: mdiPencil,
+};
 
 export const SidebarGamesView: React.FC = () => {
   const { availableGames, selectedGame, selectGame } = useGamesStore();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
-
   return (
     <div
       style={{
-        width: '100%', // 👈 только здесь: 100% вместо 340
-        minWidth: 0,
+        width: '100%',
         height: '100%',
-        backgroundColor: 'var(--bg-list)',
+        backgroundColor: 'var(--bg-list, #161A23)',
         display: 'flex',
         flexDirection: 'column',
         userSelect: 'none',
@@ -29,13 +32,13 @@ export const SidebarGamesView: React.FC = () => {
       <SidebarHeaderUserControl title="Games" iconPath={mdiGamepadVariantOutline} />
 
       <div
-        ref={containerRef}
         className="wpf-scroll-viewer"
         style={{
           flex: 1,
           width: '100%',
           padding: '0 5px 10px 5px',
           boxSizing: 'border-box',
+          overflowY: 'auto',
         }}
       >
         <div
@@ -50,8 +53,7 @@ export const SidebarGamesView: React.FC = () => {
           {availableGames.map((game: IGameItem) => {
             const isSelected = selectedGame?.internalId === game.internalId;
             const isHovered = hoveredId === game.internalId;
-
-            const iconSvgPath = resolveMdiIcon(game.iconKind || game.internalId, mdiGamepadVariantOutline);
+            const iconSvg = ICON_MAP[game.iconKind] || mdiGamepadVariantOutline;
 
             return (
               <div
@@ -65,15 +67,15 @@ export const SidebarGamesView: React.FC = () => {
                   margin: 5,
                   borderRadius: 16,
                   border: isSelected
-                    ? '1.5px solid var(--app-accent)'
+                    ? '1.5px solid var(--app-accent, #1E9BEB)'
                     : isHovered
-                    ? '1.5px solid var(--game-tile-hover-border)'
-                    : '1.5px solid var(--game-tile-border)',
+                    ? '1.5px solid var(--game-tile-hover-border, #3B4456)'
+                    : '1.5px solid var(--game-tile-border, #2A303C)',
                   backgroundColor: isSelected
-                    ? 'var(--accounts-active-bg)'
+                    ? 'var(--accounts-active-bg, rgba(30, 155, 235, 0.1))'
                     : isHovered
-                    ? 'var(--game-tile-hover-bg)'
-                    : 'var(--game-tile-bg)',
+                    ? 'var(--game-tile-hover-bg, #1C212D)'
+                    : 'var(--game-tile-bg, #161A23)',
                   cursor: 'pointer',
                   position: 'relative',
                   display: 'flex',
@@ -85,7 +87,7 @@ export const SidebarGamesView: React.FC = () => {
                   flexShrink: 0,
                 }}
               >
-                {/* Галочка выбора */}
+                {/* Индикатор выбора (CheckBadge) */}
                 <div
                   style={{
                     position: 'absolute',
@@ -94,7 +96,7 @@ export const SidebarGamesView: React.FC = () => {
                     width: 24,
                     height: 24,
                     borderRadius: 12,
-                    backgroundColor: 'var(--app-accent)',
+                    backgroundColor: 'var(--app-accent, #1E9BEB)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -109,21 +111,21 @@ export const SidebarGamesView: React.FC = () => {
                   </svg>
                 </div>
 
-                {/* Кружок с иконкой */}
+                {/* Круглая подложка иконки */}
                 <div
                   style={{
                     width: 64,
                     height: 64,
                     borderRadius: 32,
-                    backgroundColor: 'var(--game-tile-badge-bg)',
+                    backgroundColor: 'var(--game-tile-badge-bg, rgba(30, 155, 235, 0.1))',
                     margin: '14px auto 0 auto',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <svg viewBox="0 0 24 24" width={36} height={36} fill="var(--app-accent)">
-                    <path d={iconSvgPath} />
+                  <svg viewBox="0 0 24 24" width={36} height={36} fill="var(--app-accent, #1E9BEB)">
+                    <path d={iconSvg} />
                   </svg>
                 </div>
 
@@ -152,5 +154,3 @@ export const SidebarGamesView: React.FC = () => {
     </div>
   );
 };
-
-export default SidebarGamesView;
