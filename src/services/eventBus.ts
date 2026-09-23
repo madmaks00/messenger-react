@@ -6,7 +6,7 @@ import type {
   IGroupMember,
   IAttachment,
 } from '../types/models';
-import type { AttachmentDto } from '../types/dtos';
+import type { AttachmentDto, PrivacySettingsDto } from '../types/dtos';
 import { LastMessageType, MainTab } from '../types/enums';
 
 // Реестр всех событий приложения (1-в-1 как в C# Messenger.Register)
@@ -86,6 +86,7 @@ export type AppEvents = {
     replySender?: string | null;
     attachments?: AttachmentDto[] | null;
   };
+  PrivacySettingsUpdatedMessage: { settings: PrivacySettingsDto };
 
   // Groups
   GroupCreatedMessage: { newChat: IChatListItem };
@@ -100,12 +101,15 @@ export type AppEvents = {
   GroupMuteStatusChangedMessage: { groupId: number; isMuted: boolean };
   GroupPinStatusChangedMessage: { groupId: number; isPinned: boolean };
   UserMuteStatusChangedMessage: { userId: number; isMuted: boolean };
-TaskCreated: any;
+
+  // Tasks
+  TaskCreated: any;
   TaskUpdated: any;
   TaskDeleted: { taskId: number };
   TaskListCreated: any;
   TaskListUpdated: any;
   TaskListDeleted: { listId: number };
+
   // Calls & WebRTC
   IncomingCallMessage: { callerId: number; callerName: string; callerAvatar?: string | null };
   CallResponseMessage: { receiverId: number; accepted: boolean };

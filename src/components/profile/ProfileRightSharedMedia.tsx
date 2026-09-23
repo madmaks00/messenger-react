@@ -1,6 +1,6 @@
 import React from 'react';
 import { AttachmentType } from '../../types/enums';
-import { IAttachment, IMessage } from '../../types/models';
+import { IAttachment, IMessage, MessageHelper } from '../../types/models';
 import { formatDate, formatDateTime, isGifAttachment, normalizeImageSrc } from './profileView.utils';
 import { useProfileView } from './useProfileView';
 import { Theme } from './profile.theme';
@@ -357,7 +357,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                         </span>
                       </div>
                       <div style={{ color: Theme.MainWindowText, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {msg.previewText || msg.text}
+                        {(msg as any).previewText || MessageHelper.getPreviewText(msg)}
                       </div>
                     </div>
                   </div>

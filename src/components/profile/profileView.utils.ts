@@ -1,4 +1,4 @@
-import { AttachmentType, Gender } from '../../types/enums';
+import { AttachmentType, Gender, PrivacyVisibility } from '../../types/enums';
 import {
   IAttachment,
   IMessage,
@@ -11,11 +11,6 @@ import {
 // 1. БЕЗОПАСНАЯ НОРМАЛИЗАЦИЯ ИЗОБРАЖЕНИЙ (ФИКС ОШИБКИ 431)
 // =========================================================================
 
-/**
- * Предотвращает ошибку 431 (Request Header Fields Too Large).
- * Если строка представляет собой сырой Base64 (например, iVBORw0KGgo... из C#),
- * автоматически добавляет префикс data:image/*;base64,.
- */
 export function normalizeImageSrc(src?: string | null): string {
   if (!src || typeof src !== 'string') return '';
   const trimmed = src.trim();
@@ -31,7 +26,6 @@ export function normalizeImageSrc(src?: string | null): string {
     return trimmed;
   }
 
-  // Определение сигнатур сырого Base64
   if (
     trimmed.startsWith('iVBORw0KGgo') ||
     trimmed.startsWith('/9j/') ||
@@ -322,5 +316,113 @@ export class UserValidator {
     }
 
     return errors;
+  }
+}
+
+// =========================================================================
+// 6. НАДЁЖНЫЙ ПАРСИНГ ПРИВАТНОСТИ
+// =========================================================================
+
+export function parsePrivacyVisibility(val: any): PrivacyVisibility {
+  if (val === undefined || val === null) return PrivacyVisibility.Everybody;
+
+  if (typeof val === 'number') {
+    if (isNaN(val)) return PrivacyVisibility.Everybody;
+    if (val === 1) return PrivacyVisibility.MyContacts;
+    if (val === 2) return PrivacyVisibility.Nobody;
+    return PrivacyVisibility.Everybody;
+  }
+
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    const num = parseInt(trimmed, 10);
+    if (!isNaN(num)) {
+      if (num === 1) return PrivacyVisibility.MyContacts;
+      if (num === 2) return PrivacyVisibility.Nobody;
+      return PrivacyVisibility.Everybody;
+    }
+
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('mycontact')) return PrivacyVisibility.MyContacts;
+    if (lower === 'nobody') return PrivacyVisibility.Nobody;
+    return PrivacyVisibility.Everybody;
+  }
+
+  return PrivacyVisibility.Everybody;
+}
+
+// =========================================================================
+// 7. РЕАЛЬНЫЙ ОПРОС ОБОРУДОВАНИЯ СИСТЕМЫ (WebRTC MediaDevices API)
+// =========================================================================
+
+export interface MediaDeviceList {
+  cameras: string[];
+  microphones: string[];
+  speakers: string[];
+}
+
+export async function getHardwareDevices(): Promise<MediaDeviceList> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
+    return {
+      cameras: ['Default Camera'],
+      microphones: ['Default Microphone'],
+      speakers: ['Default Speakers'],
+    };
+  }
+
+  try {
+    let devices = await navigator.mediaDevices.enumerateDevices();
+
+    // Если браузер скрыл лейблы до запроса разрешений, кратковременно запрашиваем доступ
+    const hasLabels = devices.some((d) => d.label && d.label.trim().length > 0);
+    if (!hasLabels && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        stream.getTracks().forEach((track) => track.stop());
+        devices = await navigator.mediaDevices.enumerateDevices();
+      } catch {
+        try {
+          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioStream.getTracks().forEach((track) => track.stop());
+          devices = await navigator.mediaDevices.enumerateDevices();
+        } catch {
+          // Игнорируем отказ пользователя
+        }
+      }
+    }
+
+    const cameras: string[] = [];
+    const microphones: string[] = [];
+    const speakers: string[] = [];
+
+    let camIdx = 1;
+    let micIdx = 1;
+    let spkIdx = 1;
+
+    for (const d of devices) {
+      if (d.kind === 'videoinput') {
+        const name = d.label && d.label.trim() ? d.label : `Camera ${camIdx++}`;
+        if (!cameras.includes(name)) cameras.push(name);
+      } else if (d.kind === 'audioinput') {
+        const name = d.label && d.label.trim() ? d.label : `Microphone ${micIdx++}`;
+        if (!microphones.includes(name)) microphones.push(name);
+      } else if (d.kind === 'audiooutput') {
+        const name = d.label && d.label.trim() ? d.label : `Speaker ${spkIdx++}`;
+        if (!speakers.includes(name)) speakers.push(name);
+      }
+    }
+
+    return {
+      cameras: cameras.length > 0 ? cameras : ['Default Camera'],
+      microphones: microphones.length > 0 ? microphones : ['Default Microphone'],
+      speakers: speakers.length > 0 ? speakers : ['Default Speakers', 'Headphones'],
+    };
+  } catch (err) {
+    console.warn('[Hardware] Ошибка опроса реальных устройств:', err);
+    return {
+      cameras: ['Default Camera'],
+      microphones: ['Default Microphone'],
+      speakers: ['Default Speakers'],
+    };
   }
 }

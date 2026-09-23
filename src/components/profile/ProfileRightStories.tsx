@@ -4,6 +4,7 @@ import { useProfileView } from './useProfileView';
 import { Icons } from './ProfileIcons';
 import { Theme } from './profile.theme';
 import { normalizeImageSrc } from './profileView.utils';
+import { CloseButton } from './ProfileRightSettings';
 
 interface ProfileRightStoriesProps {
   vm: ReturnType<typeof useProfileView>;
@@ -35,9 +36,8 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '15px 25px 0 25px', boxSizing: 'border-box' }}>
-      {/* ЕДИНАЯ ШАПКА В СТИЛЕ WPF (Margin="0,0,0,20") */}
+      {/* ЕДИНАЯ ШАПКА В СТИЛЕ WPF */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        {/* Слева: Кнопка Назад + Заголовок */}
         <div style={{ display: 'flex', alignItems: 'center' }}>
           {!isOwnProfile && (
             <button
@@ -53,7 +53,6 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
           </span>
         </div>
 
-        {/* Справа: Создание + Фильтры + Единый Крестик Закрытия */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           {isOwnProfile && (
             <label
@@ -72,7 +71,6 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
             </label>
           )}
 
-          {/* Кнопка фильтра историй с выпадающим меню сортировки */}
           <div style={{ position: 'relative' }}>
             <button
               onClick={(e) => {
@@ -105,14 +103,12 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
             )}
           </div>
 
-          <button onClick={onClose} style={{ ...iconBtnStyle, width: 32, height: 32 }} title="Close Profile">
-            <Icons.Close size={20} color={Theme.TextMuted} />
-          </button>
+          <CloseButton onClick={onClose} />
         </div>
       </div>
 
       {/* ОБЛАСТЬ КОНТЕНТА ИСТОРИЙ */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div className="wpf-scroll-viewer" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {activeStories.length > 0 ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginRight: -12 }}>
             {activeStories.map((story) => (
@@ -159,7 +155,6 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
           </div>
         ) : (
           !isStoriesLoading && (
-            /* 1:1 воспроизведение VerticalAlignment="Center" Margin="0,60,0,0" */
             <div
               style={{
                 flex: 1,

@@ -1,9 +1,10 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Gender } from '../../types/enums';
-import { getFirstLetter } from './profileView.utils';
+import { getFirstLetter, normalizeImageSrc } from './profileView.utils';
 import { useProfileView } from './useProfileView';
 import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
+import { CloseButton } from './ProfileRightSettings';
 
 interface ProfileRightEditProfileProps {
   vm: ReturnType<typeof useProfileView>;
@@ -18,11 +19,13 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
     editUser,
     setEditUser,
     editErrors,
+    setEditErrors,
     displayedUser,
     handleSaveEditProfile,
   } = vm;
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isAvatarHovered, setIsAvatarHovered] = useState(false);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -36,25 +39,26 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
     }
   };
 
+  const editAvatarSrc = normalizeImageSrc(editUser.avatar || editUser.avatarPath);
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* ШАПКА: Редактирование */}
+      {/* ШАПКА */}
       <div style={rightHeaderStyle}>
         <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText }}>Edit Profile</span>
-        <button onClick={onClose} style={iconBtnStyle} title="Close Profile">
-          <Icons.Close size={20} color={Theme.ProfileSectionLabel} />
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
-      {/* ФОРМА */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 25px 20px 25px' }}>
+      {/* СКРОЛЛИРУЕМАЯ ФОРМА (1:1 XAML) */}
+      <div className="wpf-scroll-viewer" style={{ flex: 1, padding: '0 25px 20px 25px' }}>
         <div style={labelStyle}>GENERAL</div>
 
-        {/* БЛОК С АВАТАРОМ И НИКОМ / ЮЗЕРНЕЙМОМ */}
+        {/* 1. БЛОК С АВАТАРОМ И НИКОМ / ЮЗЕРНЕЙМОМ */}
         <div style={avatarSectionStyle}>
-          {/* Кнопка смены аватара 120x120 */}
           <div
             onClick={() => fileInputRef.current?.click()}
+            onMouseEnter={() => setIsAvatarHovered(true)}
+            onMouseLeave={() => setIsAvatarHovered(false)}
             title="Click to change profile picture"
             style={{
               width: 120,
@@ -69,6 +73,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              boxSizing: 'border-box',
             }}
           >
             <input
@@ -78,9 +83,9 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
               style={{ display: 'none' }}
               onChange={handleAvatarChange}
             />
-            {editUser.avatar || editUser.avatarPath ? (
+            {editAvatarSrc ? (
               <img
-                src={editUser.avatar || editUser.avatarPath || ''}
+                src={editAvatarSrc}
                 alt=""
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
@@ -89,79 +94,127 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                 {getFirstLetter(editUser.nickName)}
               </span>
             )}
-            <div style={cameraOverlayStyle}>
-              <Icons.PencilOutline size={26} color="#FFFFFF" />
+
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundColor: Theme.ProfileEditAvatarCameraOverlayBg,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: isAvatarHovered ? 1 : 0,
+                transition: 'opacity 0.15s ease',
+              }}
+            >
+              <Icons.CameraPlusOutline size={30} color="#FFFFFF" />
             </div>
           </div>
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, justifyContent: 'center' }}>
             <div>
               <div style={labelStyle}>NICKNAME</div>
-              <input
-                type="text"
-                value={editUser.nickName || ''}
-                onChange={(e) => setEditUser({ ...editUser, nickName: e.target.value })}
-                style={cardInputStyle}
-              />
+              <div style={modernInputContainerStyle}>
+                <div style={inputIconWrapperStyle}>
+                  <Icons.BadgeAccountHorizontalOutline size={20} color={Theme.ProfileEditInputIcon} />
+                </div>
+                <input
+                  type="text"
+                  value={editUser.nickName || ''}
+                  onChange={(e) => setEditUser({ ...editUser, nickName: e.target.value })}
+                  style={{ ...cleanInputStyle, fontSize: 16, fontWeight: 'bold' }}
+                />
+              </div>
               {editErrors.nickName && <div style={errorStyle}>{editErrors.nickName}</div>}
             </div>
 
             <div>
               <div style={labelStyle}>USERNAME</div>
-              <input
-                type="text"
-                value={editUser.username || ''}
-                onChange={(e) => setEditUser({ ...editUser, username: e.target.value })}
-                style={cardInputStyle}
-              />
+              <div style={modernInputContainerStyle}>
+                <div style={inputIconWrapperStyle}>
+                  <Icons.At size={18} color={Theme.ProfileEditInputIcon} />
+                </div>
+                <input
+                  type="text"
+                  value={editUser.username || ''}
+                  onChange={(e) => setEditUser({ ...editUser, username: e.target.value })}
+                  style={cleanInputStyle}
+                />
+              </div>
               {editErrors.username && <div style={errorStyle}>{editErrors.username}</div>}
             </div>
           </div>
         </div>
 
-        {/* ОСТАЛЬНЫЕ ПОЛЯ РЕДАКТИРОВАНИЯ */}
+        {/* 2. ОСТАЛЬНЫЕ ПОЛЯ РЕДАКТИРОВАНИЯ */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <div style={labelStyle}>ABOUT ME</div>
-            <textarea
-              rows={3}
-              value={editUser.description || ''}
-              onChange={(e) => setEditUser({ ...editUser, description: e.target.value })}
-              style={{ ...cardInputStyle, resize: 'none' }}
-            />
+            <div style={{ ...modernInputContainerStyle, height: 'auto', minHeight: 70, alignItems: 'start' }}>
+              <div style={{ ...inputIconWrapperStyle, paddingTop: 10 }}>
+                <Icons.InformationOutline size={18} color={Theme.ProfileInfoIconAbout} />
+              </div>
+              <textarea
+                rows={3}
+                value={editUser.description || ''}
+                onChange={(e) => setEditUser({ ...editUser, description: e.target.value })}
+                style={{
+                  ...cleanInputStyle,
+                  padding: '8px 15px 10px 0',
+                  resize: 'none',
+                  minHeight: 60,
+                }}
+              />
+            </div>
             {editErrors.description && <div style={errorStyle}>{editErrors.description}</div>}
           </div>
 
           <div>
             <div style={labelStyle}>PHONE</div>
-            <input
-              type="text"
-              value={editUser.phone || ''}
-              onChange={(e) => setEditUser({ ...editUser, phone: e.target.value })}
-              style={cardInputStyle}
-            />
+            <div style={modernInputContainerStyle}>
+              <div style={inputIconWrapperStyle}>
+                <Icons.PhoneSectionOutline size={18} color={Theme.ProfileInfoIconPhone} />
+              </div>
+              <input
+                type="text"
+                value={editUser.phone || ''}
+                onChange={(e) => setEditUser({ ...editUser, phone: e.target.value })}
+                style={cleanInputStyle}
+              />
+            </div>
             {editErrors.phone && <div style={errorStyle}>{editErrors.phone}</div>}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
               <div style={labelStyle}>FIRST NAME</div>
-              <input
-                type="text"
-                value={editUser.firstName || ''}
-                onChange={(e) => setEditUser({ ...editUser, firstName: e.target.value })}
-                style={cardInputStyle}
-              />
+              <div style={modernInputContainerStyle}>
+                <div style={inputIconWrapperStyle}>
+                  <Icons.AccountOutline size={18} color={Theme.ProfileInfoIconName} />
+                </div>
+                <input
+                  type="text"
+                  value={editUser.firstName || ''}
+                  onChange={(e) => setEditUser({ ...editUser, firstName: e.target.value })}
+                  style={cleanInputStyle}
+                />
+              </div>
               {editErrors.firstName && <div style={errorStyle}>{editErrors.firstName}</div>}
             </div>
+
             <div>
               <div style={labelStyle}>LAST NAME</div>
-              <input
-                type="text"
-                value={editUser.lastName || ''}
-                onChange={(e) => setEditUser({ ...editUser, lastName: e.target.value })}
-                style={cardInputStyle}
-              />
+              <div style={modernInputContainerStyle}>
+                <div style={inputIconWrapperStyle}>
+                  <Icons.AccountDetailsOutline size={18} color={Theme.ProfileInfoIconName} />
+                </div>
+                <input
+                  type="text"
+                  value={editUser.lastName || ''}
+                  onChange={(e) => setEditUser({ ...editUser, lastName: e.target.value })}
+                  style={cleanInputStyle}
+                />
+              </div>
               {editErrors.lastName && <div style={errorStyle}>{editErrors.lastName}</div>}
             </div>
           </div>
@@ -169,23 +222,41 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
               <div style={labelStyle}>GENDER</div>
-              <select
-                value={editUser.gender ?? Gender.Male}
-                onChange={(e) => setEditUser({ ...editUser, gender: Number(e.target.value) as Gender })}
-                style={selectStyle}
-              >
-                <option value={Gender.Male}>Male</option>
-                <option value={Gender.Female}>Female</option>
-              </select>
+              <div style={modernInputContainerStyle}>
+                <div style={inputIconWrapperStyle}>
+                  <Icons.GenderMaleFemale size={18} color={Theme.ProfileInfoIconGender} />
+                </div>
+                <select
+                  value={editUser.gender ?? Gender.Male}
+                  onChange={(e) => setEditUser({ ...editUser, gender: Number(e.target.value) as Gender })}
+                  style={{
+                    ...cleanInputStyle,
+                    cursor: 'pointer',
+                    backgroundColor: 'transparent',
+                  }}
+                >
+                  <option value={Gender.Male} style={{ backgroundColor: Theme.ProfileComboBoxDropdownBg, color: Theme.ProfileComboBoxDropdownText }}>Male</option>
+                  <option value={Gender.Female} style={{ backgroundColor: Theme.ProfileComboBoxDropdownBg, color: Theme.ProfileComboBoxDropdownText }}>Female</option>
+                </select>
+              </div>
             </div>
+
             <div>
               <div style={labelStyle}>DATE OF BIRTH</div>
-              <input
-                type="date"
-                value={editUser.birthday ? editUser.birthday.substring(0, 10) : ''}
-                onChange={(e) => setEditUser({ ...editUser, birthday: e.target.value })}
-                style={cardInputStyle}
-              />
+              <div style={modernInputContainerStyle}>
+                <div style={inputIconWrapperStyle}>
+                  <Icons.CakeVariantOutline size={18} color={Theme.ProfileInfoIconBirthday} />
+                </div>
+                <input
+                  type="date"
+                  value={editUser.birthday ? editUser.birthday.substring(0, 10) : ''}
+                  onChange={(e) => setEditUser({ ...editUser, birthday: e.target.value })}
+                  style={{
+                    ...cleanInputStyle,
+                    cursor: 'pointer',
+                  }}
+                />
+              </div>
               {editErrors.birthday && <div style={errorStyle}>{editErrors.birthday}</div>}
             </div>
           </div>
@@ -221,18 +292,6 @@ const rightHeaderStyle: React.CSSProperties = {
   justifyContent: 'space-between',
 };
 
-const iconBtnStyle: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  background: 'transparent',
-  border: 'none',
-  color: Theme.ProfileSectionLabel,
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
-
 const labelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 'bold',
@@ -246,28 +305,35 @@ const errorStyle: React.CSSProperties = {
   marginTop: 4,
 };
 
-const cardInputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 14px',
-  background: Theme.ProfileInputContainerBg,
+const modernInputContainerStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '42px 1fr',
+  alignItems: 'center',
+  height: 40,
+  backgroundColor: Theme.ProfileInputContainerBg,
   border: `1px solid ${Theme.ProfileInputContainerBorder}`,
   borderRadius: 10,
-  color: Theme.ProfileInputText,
-  fontSize: 14,
-  outline: 'none',
   boxSizing: 'border-box',
 };
 
-const selectStyle: React.CSSProperties = {
+const inputIconWrapperStyle: React.CSSProperties = {
+  width: 42,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+const cleanInputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '10px 14px',
-  background: Theme.ProfileComboBoxDropdownBg,
-  border: `1px solid ${Theme.ProfileInputContainerBorder}`,
-  borderRadius: 10,
-  color: Theme.ProfileComboBoxDropdownText,
-  fontSize: 14,
+  height: '100%',
+  background: 'transparent',
+  border: 'none',
   outline: 'none',
+  color: Theme.ProfileInputText,
+  fontSize: 14,
+  padding: '0 15px 0 0',
   boxSizing: 'border-box',
+  fontFamily: 'inherit',
 };
 
 const avatarSectionStyle: React.CSSProperties = {
@@ -278,16 +344,6 @@ const avatarSectionStyle: React.CSSProperties = {
   gap: 20,
   marginBottom: 16,
   border: `1px solid ${Theme.ProfileEditGeneralBorder}`,
-};
-
-const cameraOverlayStyle: React.CSSProperties = {
-  position: 'absolute',
-  inset: 0,
-  backgroundColor: Theme.ProfileEditAvatarCameraOverlayBg,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  opacity: 0.85,
 };
 
 const primaryBtnStyle: React.CSSProperties = {

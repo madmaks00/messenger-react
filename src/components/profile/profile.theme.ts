@@ -33,13 +33,14 @@ export const Theme = {
   ProfileComboBoxDropdownSelection: '#2A303C',
   ProfileComboBoxDropdownText: '#E8E8E8',
 
-  // Цветные иконки секций левой панели (1:1 DefaultDark.xaml)
+  // Цветные иконки секций и настроек (1:1 DefaultDark.xaml)
   ProfileInfoIconName: '#5865F2',
   ProfileInfoIconAbout: '#00AFF4',
   ProfileInfoIconPhone: '#3BA55C',
   ProfileInfoIconEmail: '#3BA55C',
   ProfileInfoIconGender: '#ED4245',
   ProfileInfoIconBirthday: '#FAA61A',
+  RoomIconSpotlight: '#00D2FF', // RoomIconSpotlightBrush из DefaultDark.xaml
   OtherProfileSharedMediaIcon: '#8E9297',
 
   // Истории

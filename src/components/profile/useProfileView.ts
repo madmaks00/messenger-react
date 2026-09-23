@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { AttachmentType, PrivacyVisibility } from '../../types/enums';
+import { AttachmentType, Gender, PrivacyVisibility } from '../../types/enums';
 import {
   DeviceSessionDto,
   PrivacySettingsDto,
@@ -21,11 +21,14 @@ import {
   matchesSharedCategory,
   isGifAttachment,
   UserValidator,
+  parsePrivacyVisibility,
+  getHardwareDevices,
 } from './profileView.utils';
 import { userService } from '../../services/user.service';
 import { groupService } from '../../services/group.service';
 import { userSession } from '../../services/userSession';
 import { SecurityService } from '../../services/security.service';
+import { eventBus } from '../../services/eventBus';
 
 export interface ProfileServices {
   getUserProfile: (userId: number) => Promise<IUser | null>;
@@ -40,12 +43,12 @@ export interface ProfileServices {
   terminateDeviceSession: (deviceId: number) => Promise<boolean>;
   terminateOtherSessions: () => Promise<boolean>;
   getBlockedUsers: () => Promise<IUser[] | null>;
-  verifyPasscode: (code: string) => boolean;
-  savePasscode: (code: string | null) => void;
+  verifyPasscode: (code: string) => boolean | Promise<boolean>;
+  savePasscode: (code: string | null) => void | Promise<void>;
   isPasscodeSet: () => boolean;
-  getCameras: () => string[];
-  getMicrophones: () => string[];
-  getSpeakers: () => string[];
+  getCameras: () => Promise<string[]> | string[];
+  getMicrophones: () => Promise<string[]> | string[];
+  getSpeakers: () => Promise<string[]> | string[];
   getUserStories: (userId: number) => Promise<IStory[] | null>;
   createNewStory: (file: File) => Promise<void>;
   editStory: (storyId: number) => void;
@@ -90,7 +93,8 @@ export function useProfileView(
   onClose: () => void,
   customServices: Partial<ProfileServices> = {},
   onStartChatProp?: (userId: number) => void,
-  onCallUserProp?: (user: any) => void
+  onCallUserProp?: (user: any) => void,
+  initialTab: RightContainerType = 'stories' // 🟢 Передача начальной вкладки
 ) {
   const effectiveUserId = currentUserId || (userSession as any)?.UserId || (userSession as any)?.userId || user?.id || 0;
 
@@ -108,11 +112,11 @@ export function useProfileView(
     terminateOtherSessions: customServices.terminateOtherSessions || (() => (userService as any)?.terminateOtherSessionsAsync?.() || Promise.resolve(true)),
     getBlockedUsers: customServices.getBlockedUsers || (() => (userService as any)?.getBlacklistAsync?.() || Promise.resolve([])),
     verifyPasscode: customServices.verifyPasscode || ((code) => SecurityService.verifyPasscode(code)),
-    savePasscode: customServices.savePasscode || ((code) => SecurityService.savePasscode(code)),
+    savePasscode: customServices.savePasscode || ((code) => { void SecurityService.setPasscode(code); }),
     isPasscodeSet: customServices.isPasscodeSet || (() => SecurityService.isPasscodeSet()),
-    getCameras: customServices.getCameras || (() => ['Default Camera', 'Front HD WebCam']),
-    getMicrophones: customServices.getMicrophones || (() => ['Default Microphone', 'Headset Mic']),
-    getSpeakers: customServices.getSpeakers || (() => ['Default Speakers', 'Headphones']),
+    getCameras: customServices.getCameras || (async () => (await getHardwareDevices()).cameras),
+    getMicrophones: customServices.getMicrophones || (async () => (await getHardwareDevices()).microphones),
+    getSpeakers: customServices.getSpeakers || (async () => (await getHardwareDevices()).speakers),
     getUserStories: customServices.getUserStories || (() => Promise.resolve([])),
     createNewStory: customServices.createNewStory || (async () => {}),
     editStory: customServices.editStory || (() => {}),
@@ -145,27 +149,24 @@ export function useProfileView(
     unbanMember: customServices.unbanMember || ((gid, mid) => (groupService as any)?.unbanMemberAsync?.(gid, mid) || Promise.resolve(true)),
   };
 
-  // 1. Состояние видимости правой колонки (888px при own profile, 365px при чужом)
   const [isExpanded, setIsExpanded] = useState<boolean>(isOwnProfile);
-  const [activeRightContainer, setActiveRightContainer] = useState<RightContainerType>(isOwnProfile ? 'stories' : null);
+  const [activeRightContainer, setActiveRightContainer] = useState<RightContainerType>(
+    isOwnProfile ? (initialTab || 'stories') : null
+  );
 
-  // 2. Отображаемый пользователь
   const [displayedUser, setDisplayedUser] = useState<IUser>(user);
   const [isObservedUserBlocked, setIsObservedUserBlocked] = useState<boolean>(false);
   const [isBlockedByMe, setIsBlockedByMe] = useState<boolean>(false);
   const [isBlockedByThem, setIsBlockedByThem] = useState<boolean>(false);
   const [isObservedUserMuted, setIsObservedUserMuted] = useState<boolean>(false);
 
-  // 3. Истории
   const [activeStories, setActiveStories] = useState<IStory[]>([]);
   const [isStoriesLoading, setIsStoriesLoading] = useState<boolean>(false);
   const [storiesFilterOpen, setStoriesFilterOpen] = useState<boolean>(false);
 
-  // 4. Редактирование профиля
   const [editUser, setEditUser] = useState<IUser>({ ...user });
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
-  // 5. Настройки
   const [currentSettingsSubPanel, setCurrentSettingsSubPanel] = useState<SettingsSubPanelType>('main');
   const [privacySettings, setPrivacySettings] = useState<PrivacySettingsDto>({
     fullNameVisibility: PrivacyVisibility.Everybody,
@@ -183,18 +184,15 @@ export function useProfileView(
   const [passcode2, setPasscode2] = useState<string>('');
   const [blockedUsersList, setBlockedUsersList] = useState<IUser[]>([]);
 
-  // 6. Смена пароля
   const [isChangePasswordStep1, setIsChangePasswordStep1] = useState<boolean>(true);
   const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
   const [newPasswordInput, setNewPasswordInput] = useState<string>('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState<string>('');
   const [passwordErrorMessage, setPasswordErrorMessage] = useState<string>('');
 
-  // 7. Устройства и сессии
   const [currentDevice, setCurrentDevice] = useState<DeviceSessionDto | null>(null);
   const [otherDevices, setOtherDevices] = useState<DeviceSessionDto[]>([]);
 
-  // 8. Оборудование
   const [availableCameras, setAvailableCameras] = useState<string[]>([]);
   const [availableMicrophones, setAvailableMicrophones] = useState<string[]>([]);
   const [availableSpeakers, setAvailableSpeakers] = useState<string[]>([]);
@@ -204,7 +202,6 @@ export function useProfileView(
   const [speakerVolume, setSpeakerVolume] = useState<number>(80);
   const [micSensitivity, setMicSensitivity] = useState<number>(50);
 
-  // 9. Общие медиафайлы
   const [selectedSharedMediaType, setSelectedSharedMediaType] = useState<string>('Photos');
   const [sharedMediaTitle, setSharedMediaTitle] = useState<string>('Media');
   const [isSharedMediaLoading, setIsSharedMediaLoading] = useState<boolean>(false);
@@ -213,7 +210,6 @@ export function useProfileView(
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
   const [selectedCount, setSelectedCount] = useState<number>(0);
 
-  // 10. Группы
   const [groupDetails, setGroupDetails] = useState<any>(null);
   const [groupMembersPanelTitle, setGroupMembersPanelTitle] = useState<string>('Group Members');
   const [activeMembersList, setActiveMembersList] = useState<IGroupMember[]>([]);
@@ -230,7 +226,6 @@ export function useProfileView(
   const [groupCanSendMedia, setGroupCanSendMedia] = useState<boolean>(true);
   const [groupCanPinMessages, setGroupCanPinMessages] = useState<boolean>(true);
 
-  // Модалка прав участника
   const [isMemberPermissionsOpen, setIsMemberPermissionsOpen] = useState<boolean>(false);
   const [editingMember, setEditingMember] = useState<IGroupMember | null>(null);
   const [permIsAdmin, setPermIsAdmin] = useState<boolean>(false);
@@ -238,16 +233,17 @@ export function useProfileView(
   const [permCanSendMedia, setPermCanSendMedia] = useState<boolean>(true);
   const [permCanPinMessages, setPermCanPinMessages] = useState<boolean>(false);
 
-  // 11. Буфер обмена (строго хук #62 useState, хук #63 useRef)
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 12. Контекстное меню
   const [activeContextMenu, setActiveContextMenu] = useState<{
     x: number;
     y: number;
     item: IAttachment | IMessage;
   } | null>(null);
+
+  const prevIsOpenRef = useRef(false);
+  const prevUserIdRef = useRef<number | null>(null);
 
   const copyToClipboard = useCallback((text: string, key: string) => {
     if (!text) return;
@@ -265,7 +261,18 @@ export function useProfileView(
       const stories = await services.getUserStories(effectiveUserId);
       setActiveStories(stories || []);
       const privacy = await services.getPrivacySettings();
-      if (privacy) setPrivacySettings(privacy);
+      if (privacy) {
+        setPrivacySettings({
+          fullNameVisibility: parsePrivacyVisibility(privacy.fullNameVisibility ?? (privacy as any).FullNameVisibility),
+          genderVisibility: parsePrivacyVisibility(privacy.genderVisibility ?? (privacy as any).GenderVisibility),
+          descriptionVisibility: parsePrivacyVisibility(privacy.descriptionVisibility ?? (privacy as any).DescriptionVisibility),
+          lastSeenVisibility: parsePrivacyVisibility(privacy.lastSeenVisibility ?? (privacy as any).LastSeenVisibility),
+          avatarVisibility: parsePrivacyVisibility(privacy.avatarVisibility ?? (privacy as any).AvatarVisibility),
+          emailVisibility: parsePrivacyVisibility(privacy.emailVisibility ?? (privacy as any).EmailVisibility),
+          phoneVisibility: parsePrivacyVisibility(privacy.phoneVisibility ?? (privacy as any).PhoneVisibility),
+          birthdayVisibility: parsePrivacyVisibility(privacy.birthdayVisibility ?? (privacy as any).BirthdayVisibility),
+        });
+      }
       setPasscodeButtonText(services.isPasscodeSet() ? 'Change Code' : 'Setup Code');
     } finally {
       setIsStoriesLoading(false);
@@ -326,24 +333,89 @@ export function useProfileView(
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      prevIsOpenRef.current = false;
+      prevUserIdRef.current = null;
+      return;
+    }
+
+    const isJustOpened = !prevIsOpenRef.current;
+    const isDifferentUser = prevUserIdRef.current !== user?.id;
+
+    prevIsOpenRef.current = true;
+    prevUserIdRef.current = user?.id ?? null;
 
     setDisplayedUser(user);
-    setEditUser({ ...user });
-    setIsExpanded(isOwnProfile);
 
-    if (isOwnProfile) {
-      setActiveRightContainer('stories');
-      loadOwnProfileData();
-    } else if (isGroupProfile) {
-      setActiveRightContainer(null);
-      if (user?.id) loadGroupDetails(user.id);
-    } else {
-      setActiveRightContainer(null);
-      if (user?.id) loadOtherUserProfile(user.id);
+    if (isJustOpened || isDifferentUser) {
+      setEditUser({ ...user });
+      setIsExpanded(isOwnProfile);
+
+      if (isOwnProfile) {
+        const targetTab = initialTab || 'stories';
+        setActiveRightContainer(targetTab);
+        if (targetTab === 'stories') {
+          loadOwnProfileData();
+        } else if (targetTab === 'settings') {
+          setCurrentSettingsSubPanel('main');
+        }
+      } else if (isGroupProfile) {
+        setActiveRightContainer(null);
+        if (user?.id) loadGroupDetails(user.id);
+      } else {
+        setActiveRightContainer(null);
+        if (user?.id) loadOtherUserProfile(user.id);
+      }
     }
   }, [isOpen, user, isOwnProfile, isGroupProfile, loadOwnProfileData, loadOtherUserProfile, loadGroupDetails]);
 
+  useEffect(() => {
+    const unbindUser = eventBus.on('UserProfileUpdatedMessage', ({ user: updatedUser }) => {
+      if (displayedUser && displayedUser.id === updatedUser.id) {
+        setDisplayedUser(updatedUser);
+        if (isOwnProfile) {
+          setEditUser({ ...updatedUser });
+        }
+      }
+    });
+
+    const unbindPrivacy = eventBus.on('PrivacySettingsUpdatedMessage', ({ settings }: { settings: PrivacySettingsDto }) => {
+      if (isOwnProfile && settings) {
+        setPrivacySettings({
+          fullNameVisibility: parsePrivacyVisibility(settings.fullNameVisibility ?? (settings as any).FullNameVisibility),
+          genderVisibility: parsePrivacyVisibility(settings.genderVisibility ?? (settings as any).GenderVisibility),
+          descriptionVisibility: parsePrivacyVisibility(settings.descriptionVisibility ?? (settings as any).DescriptionVisibility),
+          lastSeenVisibility: parsePrivacyVisibility(settings.lastSeenVisibility ?? (settings as any).LastSeenVisibility),
+          avatarVisibility: parsePrivacyVisibility(settings.avatarVisibility ?? (settings as any).AvatarVisibility),
+          emailVisibility: parsePrivacyVisibility(settings.emailVisibility ?? (settings as any).EmailVisibility),
+          phoneVisibility: parsePrivacyVisibility(settings.phoneVisibility ?? (settings as any).PhoneVisibility),
+          birthdayVisibility: parsePrivacyVisibility(settings.birthdayVisibility ?? (settings as any).BirthdayVisibility),
+        });
+      }
+    });
+
+    return () => {
+      unbindUser();
+      unbindPrivacy();
+    };
+  }, [displayedUser, isOwnProfile]);
+useEffect(() => {
+    const unbindTab = eventBus.on('SelectProfileTab' as any, ({ tab }: any) => {
+      if (tab) {
+        setIsExpanded(true);
+        setActiveRightContainer(tab);
+        if (tab === 'settings') {
+          setCurrentSettingsSubPanel('main');
+        } else if (tab === 'stories') {
+          loadOwnProfileData();
+        }
+      }
+    });
+
+    return () => {
+      unbindTab();
+    };
+  }, [loadOwnProfileData]);
   const expandRightPanel = (containerName: RightContainerType) => {
     setActiveRightContainer(containerName);
     setIsExpanded(true);
@@ -504,8 +576,19 @@ export function useProfileView(
     }
   };
 
-  const handlePrivacyChange = async (key: keyof PrivacySettingsDto, val: PrivacyVisibility) => {
-    const updated = { ...privacySettings, [key]: val };
+  const handlePrivacyChange = async (key: keyof PrivacySettingsDto, val: PrivacyVisibility | number | string) => {
+    const parsedVal = parsePrivacyVisibility(val);
+    const updated: PrivacySettingsDto = {
+      fullNameVisibility: parsePrivacyVisibility(privacySettings.fullNameVisibility),
+      genderVisibility: parsePrivacyVisibility(privacySettings.genderVisibility),
+      descriptionVisibility: parsePrivacyVisibility(privacySettings.descriptionVisibility),
+      lastSeenVisibility: parsePrivacyVisibility(privacySettings.lastSeenVisibility),
+      avatarVisibility: parsePrivacyVisibility(privacySettings.avatarVisibility),
+      emailVisibility: parsePrivacyVisibility(privacySettings.emailVisibility),
+      phoneVisibility: parsePrivacyVisibility(privacySettings.phoneVisibility),
+      birthdayVisibility: parsePrivacyVisibility(privacySettings.birthdayVisibility),
+      [key]: parsedVal,
+    };
     setPrivacySettings(updated);
     await services.savePrivacySettings(updated);
   };
@@ -555,12 +638,13 @@ export function useProfileView(
   };
 
   const handleSavePasscode = () => {
-    if (passcode1.length !== 4 || passcode1 !== passcode2) return;
+    if (passcode1.length !== 4 || passcode1 !== passcode2) return false;
     services.savePasscode(passcode1);
     setPasscodeButtonText('Change Code');
     setPasscode1('');
     setPasscode2('');
     setCurrentSettingsSubPanel('main');
+    return true;
   };
 
   const handleRemovePasscode = () => {
@@ -570,24 +654,60 @@ export function useProfileView(
 
   const openDevicesSubPanel = async () => {
     const devs = await services.getDevices();
-    if (devs) {
-      setCurrentDevice(devs.find((d) => d.isCurrent) || null);
-      setOtherDevices(devs.filter((d) => !d.isCurrent));
+    if (devs && devs.length > 0) {
+      let current = devs.find((d: any) => Boolean(d.isCurrent ?? d.IsCurrent)) || null;
+
+      if (!current) {
+        current = devs.find((d: any) =>
+          d.deviceName?.toLowerCase().includes('web') ||
+          d.deviceName?.toLowerCase().includes('react')
+        ) || null;
+
+        if (current) {
+          current.isCurrent = true;
+        }
+      }
+
+      setCurrentDevice(current);
+      setOtherDevices(devs.filter((d: any) => d.id !== current?.id));
+    } else {
+      setCurrentDevice(null);
+      setOtherDevices([]);
     }
     setCurrentSettingsSubPanel('devices');
   };
 
-  const openSpeakersCameraSubPanel = () => {
-    const cams = services.getCameras();
-    const mics = services.getMicrophones();
-    const spks = services.getSpeakers();
-    setAvailableCameras(cams);
-    setAvailableMicrophones(mics);
-    setAvailableSpeakers(spks);
-    setSelectedCamera(cams[0] || 'Default Camera');
-    setSelectedMicrophone(mics[0] || 'Default Microphone');
-    setSelectedSpeaker(spks[0] || 'Default Speakers');
-    setCurrentSettingsSubPanel('speakersCamera');
+  // 🟢 1:1 С WPF: Опрос настоящего системного оборудования (камеры, микрофоны, колонки)
+  const openSpeakersCameraSubPanel = async () => {
+    try {
+      const hardware = await getHardwareDevices();
+
+      setAvailableCameras(hardware.cameras);
+      setAvailableMicrophones(hardware.microphones);
+      setAvailableSpeakers(hardware.speakers);
+
+      const savedCam = localStorage.getItem('selected_camera') || '';
+      const savedMic = localStorage.getItem('selected_microphone') || '';
+      const savedSpk = localStorage.getItem('selected_speaker') || '';
+
+      const camToSelect = hardware.cameras.includes(savedCam) ? savedCam : (hardware.cameras[0] || 'Default Camera');
+      const micToSelect = hardware.microphones.includes(savedMic) ? savedMic : (hardware.microphones[0] || 'Default Microphone');
+      const spkToSelect = hardware.speakers.includes(savedSpk) ? savedSpk : (hardware.speakers[0] || 'Default Speakers');
+
+      setSelectedCamera(camToSelect);
+      setSelectedMicrophone(micToSelect);
+      setSelectedSpeaker(spkToSelect);
+
+      const savedVol = localStorage.getItem('speaker_volume');
+      if (savedVol !== null) setSpeakerVolume(Number(savedVol));
+
+      const savedSens = localStorage.getItem('mic_sensitivity');
+      if (savedSens !== null) setMicSensitivity(Number(savedSens));
+    } catch (e) {
+      console.warn('[Hardware] Ошибка инициализации оборудования:', e);
+    } finally {
+      setCurrentSettingsSubPanel('speakersCamera');
+    }
   };
 
   const openBlockedUsersSubPanel = async () => {
@@ -705,6 +825,7 @@ export function useProfileView(
     editUser,
     setEditUser,
     editErrors,
+    setEditErrors,
     currentSettingsSubPanel,
     setCurrentSettingsSubPanel,
     privacySettings,

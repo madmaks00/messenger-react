@@ -4,20 +4,20 @@ import {
   HubConnectionState,
   LogLevel,
 } from '@microsoft/signalr';
-import { MessagePackHubProtocol } from '@microsoft/signalr-protocol-msgpack';
 import { userSession } from './userSession';
 import { eventBus } from './eventBus';
 import { UrlHelper } from '../utils/helpers';
 import { BASE_SERVER_URL } from './apiClient';
 import { getLocalDatabase } from '../db/localDb';
-import { AttachmentDto } from '../types/dtos';
+import { AttachmentDto, PrivacySettingsDto } from '../types/dtos';
 import { AttachmentType, LastMessageType } from '../types/enums';
-import { IMessage } from '../types/models';
+import { IMessage, IUser } from '../types/models';
+import { parsePrivacyVisibility } from '../components/profile/profileView.utils';
 
 function getCleanToken(): string {
   let raw =
     userSession.token ||
-    localStorage.getItem('jwt_token') ||      // 🟢 ИСПРАВЛЕНО: authStore сохраняет именно 'jwt_token'!
+    localStorage.getItem('jwt_token') ||
     localStorage.getItem('auth_token') ||
     localStorage.getItem('token') ||
     '';
@@ -26,7 +26,6 @@ function getCleanToken(): string {
       raw = JSON.parse(localStorage.getItem('user_session_data') || '{}').token || '';
     } catch {}
   }
-  // 🟢 SignalR требует чистый токен БЕЗ префикса "Bearer "
   return raw.replace(/^Bearer\s+/i, '').trim();
 }
 
@@ -93,11 +92,11 @@ export class SignalRService {
           this.hubConnection = null;
         }
 
+        // 🟢 ИСПРАВЛЕНО: Чистый нативный протокол SignalR (JSON) исключает RangeError из-за LZ4-сжатия
         const builder = new HubConnectionBuilder()
           .withUrl(`${this.serverUrl}/${this.hubPath}`, {
             accessTokenFactory: () => getCleanToken(),
           })
-          .withHubProtocol(new MessagePackHubProtocol())
           .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
           .configureLogging(LogLevel.Warning);
 
@@ -154,7 +153,7 @@ export class SignalRService {
   private registerHubHandlers(): void {
     if (!this.hubConnection) return;
 
-    // 🟢 1. ВХОДЯЩИЕ СООБЩЕНИЯ (1 в 1 с WPF: MessageReceivedDto)
+    // 🟢 1. ВХОДЯЩИЕ СООБЩЕНИЯ
     this.hubConnection.on('ReceiveMessage', async (rawDto: any) => {
       console.log('⚡ [SignalR] Входящее сообщение ReceiveMessage:', rawDto);
       if (!rawDto) return;
@@ -244,7 +243,7 @@ export class SignalRService {
       });
     });
 
-    // 🟢 2. СТАТУС ОНЛАЙНА (1 в 1 с WPF: UserStatusChangedMessage)
+    // 🟢 2. СТАТУС ОНЛАЙНА
     this.hubConnection.on('UserStatusChanged', (userId: any, isOnline: any, lastSeen: any) => {
       const uid = Number(userId);
       const online = Boolean(isOnline);
@@ -255,8 +254,6 @@ export class SignalRService {
           ? new Date(lastSeen).toISOString()
           : new Date().toISOString();
 
-      console.log(`[SIGNALR PUSH 🔔] UserStatusChanged: UserId=${uid}, isOnline=${online}, lastSeen=${seen}`);
-
       eventBus.emit('UserStatusChangedMessage', {
         userId: uid,
         isOnline: online,
@@ -264,12 +261,12 @@ export class SignalRService {
       });
     });
 
-    // 🟢 3. СЕРВЕРНЫЙ ТАЙМЕР СИНХРОНИЗАЦИИ (1 в 1 с WPF)
+    // 🟢 3. СЕРВЕРНЫЙ ТАЙМЕР
     this.hubConnection.on('SyncTimer', () => {
       eventBus.emit('SyncTimerMessage' as any, undefined);
     });
 
-    // 🟢 4. СЕКРЕТНЫЕ ЧАТЫ (E2EE Handshake)
+    // 🟢 4. СЕКРЕТНЫЕ ЧАТЫ
     this.hubConnection.on('IncomingSecretChatRequest', (initiatorId: number, initiatorName: string, initiatorAvatar: any, secretChatId: string, pubKey: string) => {
       eventBus.emit('IncomingSecretChatRequestMessage' as any, { initiatorId, initiatorName, initiatorAvatar, secretChatId, pubKey });
     });
@@ -290,7 +287,7 @@ export class SignalRService {
       eventBus.emit('SecretChatWereReadMessage' as any, { readerId, secretChatId });
     });
 
-    // 🟢 5. СООБЩЕНИЯ И ДЕЙСТВИЯ
+    // 🟢 5. ДЕЙСТВИЯ НАД СООБЩЕНИЯМИ
     this.hubConnection.on('MessagesWereRead', (readerId: number, maxReadId: number) => {
       eventBus.emit('MessagesWereReadMessage', { readerId: Number(readerId), maxReadId: Number(maxReadId) });
     });
@@ -379,37 +376,76 @@ export class SignalRService {
     this.hubConnection.on('ReceiveGroupCallWebRTCData', (groupId: number, senderId: number, data: string) => {
       eventBus.emit('GroupCallWebRTCDataMessage', { groupId: Number(groupId), senderId: Number(senderId), data });
     });
-    // (добавьте внутри registerHubHandlers() в src/services/signalr.service.ts):
 
-    // 🟢 7. ЗАДАЧИ И СПИСКИ (Multi-Device Realtime Sync)
+    // 🟢 7. ЗАДАЧИ И СПИСКИ
     this.hubConnection.on('TaskCreated', (taskDto: any) => {
-      console.log('⚡ [SignalR] Новая задача с другого устройства:', taskDto);
       eventBus.emit('TaskCreated', taskDto);
     });
 
     this.hubConnection.on('TaskUpdated', (taskDto: any) => {
-      console.log('⚡ [SignalR] Задача обновлена на другом устройстве:', taskDto);
       eventBus.emit('TaskUpdated', taskDto);
     });
 
     this.hubConnection.on('TaskDeleted', (taskId: number) => {
-      console.log('⚡ [SignalR] Задача удалена на другом устройстве:', taskId);
       eventBus.emit('TaskDeleted', { taskId: Number(taskId) });
     });
 
     this.hubConnection.on('TaskListCreated', (listDto: any) => {
-      console.log('⚡ [SignalR] Новый список с другого устройства:', listDto);
       eventBus.emit('TaskListCreated', listDto);
     });
 
     this.hubConnection.on('TaskListUpdated', (listDto: any) => {
-      console.log('⚡ [SignalR] Список обновлен на другом устройстве:', listDto);
       eventBus.emit('TaskListUpdated', listDto);
     });
 
     this.hubConnection.on('TaskListDeleted', (listId: number) => {
-      console.log('⚡ [SignalR] Список удален на другом устройстве:', listId);
       eventBus.emit('TaskListDeleted', { listId: Number(listId) });
+    });
+
+    // 🟢 8. СИНХРОНИЗАЦИЯ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ В РЕАЛЬНОМ ВРЕМЕНИ
+    this.hubConnection.on('UserProfileUpdated', (rawUser: any) => {
+      console.log('⚡ [SignalR] Профиль пользователя обновлен на другом клиенте:', rawUser);
+      if (!rawUser) return;
+
+      const updatedUser: IUser = {
+        id: Number(rawUser.id ?? rawUser.Id),
+        username: String(rawUser.username ?? rawUser.Username ?? ''),
+        nickName: String(rawUser.nickName ?? rawUser.NickName ?? ''),
+        firstName: rawUser.firstName ?? rawUser.FirstName ?? null,
+        lastName: rawUser.lastName ?? rawUser.LastName ?? null,
+        email: String(rawUser.email ?? rawUser.Email ?? ''),
+        phone: rawUser.phone ?? rawUser.Phone ?? null,
+        description: rawUser.description ?? rawUser.Description ?? null,
+        gender: rawUser.gender ?? rawUser.Gender ?? null,
+        birthday: rawUser.birthday ?? rawUser.Birthday ?? null,
+        avatar: rawUser.avatar ?? rawUser.Avatar ?? null,
+        avatarPath: rawUser.avatarPath ?? rawUser.AvatarPath ?? null,
+        registrationDate: rawUser.registrationDate ?? rawUser.RegistrationDate ?? new Date().toISOString(),
+        isOnline: Boolean(rawUser.isOnline ?? rawUser.IsOnline),
+        lastSeen: rawUser.lastSeen ?? rawUser.LastSeen ?? new Date().toISOString(),
+      };
+
+      eventBus.emit('UserProfileUpdatedMessage', { user: updatedUser });
+    });
+
+    // 🟢 9. СИНХРОНИЗАЦИЯ НАСТРОЕК ПРИВАТНОСТИ (ЧИСТЫЙ JSON БЕЗ LZ4 СБОЕВ)
+    this.hubConnection.on('PrivacySettingsUpdated', (rawSettings: any) => {
+      console.log('⚡ [SignalR] Настройки приватности получены от сервера:', rawSettings);
+      if (!rawSettings) return;
+
+      const dto: PrivacySettingsDto = {
+        fullNameVisibility: parsePrivacyVisibility(rawSettings.fullNameVisibility ?? rawSettings.FullNameVisibility),
+        genderVisibility: parsePrivacyVisibility(rawSettings.genderVisibility ?? rawSettings.GenderVisibility),
+        descriptionVisibility: parsePrivacyVisibility(rawSettings.descriptionVisibility ?? rawSettings.DescriptionVisibility),
+        lastSeenVisibility: parsePrivacyVisibility(rawSettings.lastSeenVisibility ?? rawSettings.LastSeenVisibility),
+        avatarVisibility: parsePrivacyVisibility(rawSettings.avatarVisibility ?? rawSettings.AvatarVisibility),
+        emailVisibility: parsePrivacyVisibility(rawSettings.emailVisibility ?? rawSettings.EmailVisibility),
+        phoneVisibility: parsePrivacyVisibility(rawSettings.phoneVisibility ?? rawSettings.PhoneVisibility),
+        birthdayVisibility: parsePrivacyVisibility(rawSettings.birthdayVisibility ?? rawSettings.BirthdayVisibility),
+      };
+
+      console.log('✅ [SignalR] Успешно применены настройки приватности:', dto);
+      eventBus.emit('PrivacySettingsUpdatedMessage', { settings: dto });
     });
   }
 
@@ -428,7 +464,6 @@ export class SignalRService {
     }
   }
 
-  // 🟢 RPC Запрос списка онлайнов
   public async getOnlineStatusesAsync(userIds: number[]): Promise<Record<number, boolean> | null> {
     if (!userIds || userIds.length === 0) return null;
     return await this.safeInvoke<Record<number, boolean>>('GetOnlineStatuses', userIds);

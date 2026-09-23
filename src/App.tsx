@@ -84,7 +84,7 @@ export const App: React.FC = () => {
   const [imageEditor, setImageEditor] = useState<{ isOpen: boolean; src: string; onDone?: (res: string) => void }>({ isOpen: false, src: '' });
   const [storyEditor, setStoryEditor] = useState<{ isOpen: boolean; image: string }>({ isOpen: false, image: '' });
 
-  // 🟢 1 В 1 С WPF: Инициализация сокета и данных сразу же при старте авторизации
+  // Инициализация сокета и данных сразу при старте авторизации
   useEffect(() => {
     checkAuth(authService, userService).then(async (isAuth) => {
       if (isAuth && !isAppLocked) {
@@ -122,6 +122,16 @@ export const App: React.FC = () => {
       await loadChats(true);
       initTodo();
       initNotes();
+    });
+
+    // 🟢 ИСПРАВЛЕНО: безопасное обновление currentUser через useAuthStore.setState
+    const unbindProfileUpdated = eventBus.on('UserProfileUpdatedMessage', ({ user: updatedUser }) => {
+      useAuthStore.setState((state) => {
+        if (state.currentUser && state.currentUser.id === updatedUser.id) {
+          return { currentUser: { ...state.currentUser, ...updatedUser } };
+        }
+        return state;
+      });
     });
 
     const unbindConfirm = eventBus.on('OpenConfirmDialogMessage' as any, (data: any) => {
@@ -163,6 +173,7 @@ export const App: React.FC = () => {
 
     return () => {
       unbindAccountSwitched();
+      unbindProfileUpdated();
       unbindConfirm();
       unbindPhoto();
       unbindVideo();
@@ -324,6 +335,7 @@ export const App: React.FC = () => {
           isOpen={isProfileOpen}
           user={currentUser}
           isOwnProfile={true}
+          initialTab={((useNavigationStore.getState() as any).profileTab as any) || 'stories'}
           onClose={closeProfile}
         />
       )}

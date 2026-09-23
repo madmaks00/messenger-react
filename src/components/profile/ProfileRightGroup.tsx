@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { getAvatarColor, getFirstLetter } from './profileView.utils';
+import { getAvatarColor, getFirstLetter, normalizeImageSrc } from './profileView.utils';
 import { useProfileView } from './useProfileView';
 import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
@@ -20,6 +20,7 @@ export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({
   onUnbanMember,
 }) => {
   const {
+    displayedUser,
     activeRightContainer,
     groupMembersPanelTitle,
     activeMembersList,
@@ -59,9 +60,11 @@ export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({
     }
   };
 
+  const targetGroupId = displayedUser?.id || groupDetails?.id || 0;
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 1. СПИСОК УЧАСТНИКОВ / ЧЕРНЫЙ СПИСОК (GroupMembersContainer) */}
+      {/* 1. СПИСОК УЧАСТНИКОВ / ЧЕРНЫЙ СПИСОК */}
       {activeRightContainer === 'members' && (
         <>
           <div style={rightHeaderStyle}>
@@ -165,7 +168,7 @@ export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({
         </>
       )}
 
-      {/* 2. УПРАВЛЕНИЕ ГРУППОЙ (EditGroupContainer) */}
+      {/* 2. УПРАВЛЕНИЕ ГРУППОЙ */}
       {activeRightContainer === 'editGroup' && (
         <>
           <div style={rightHeaderStyle}>
@@ -212,7 +215,7 @@ export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({
                     onChange={handleGroupAvatarChange}
                   />
                   {editGroupAvatar ? (
-                    <img src={editGroupAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={normalizeImageSrc(editGroupAvatar)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
                     <span style={{ fontSize: 28, color: '#FFF', fontWeight: 'bold' }}>
                       {getFirstLetter(editGroupName)}
@@ -276,7 +279,7 @@ export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span style={{ color: Theme.AppAccent, fontSize: 13, fontWeight: 600 }}>{groupDetails.groupLink}</span>
                         <button
-                          onClick={() => vm.services.revokeInviteLink(displayedUser.id)}
+                          onClick={() => vm.services.revokeInviteLink(targetGroupId)}
                           style={{ background: 'none', border: 'none', color: Theme.ProfileDestructiveAction, fontSize: 12, cursor: 'pointer', fontWeight: 'bold' }}
                         >
                           Revoke
@@ -284,7 +287,7 @@ export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({
                       </div>
                     ) : (
                       <button
-                        onClick={() => vm.services.generateInviteLink(displayedUser.id)}
+                        onClick={() => vm.services.generateInviteLink(targetGroupId)}
                         style={{ background: 'none', border: 'none', color: Theme.AppAccent, fontSize: 12.5, cursor: 'pointer', fontWeight: 'bold', padding: 0 }}
                       >
                         Generate Invite Link

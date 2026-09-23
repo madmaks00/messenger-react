@@ -1,13 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { IAttachment, IMessage } from '../../types/models';
-import { useProfileView, ProfileServices } from './useProfileView';
+import { useProfileView, ProfileServices, RightContainerType } from './useProfileView';
 import { ProfileLeftColumn } from './ProfileLeftColumn';
 import { ProfileRightStories } from './ProfileRightStories';
 import { ProfileRightSharedMedia } from './ProfileRightSharedMedia';
 import { ProfileRightEditProfile } from './ProfileRightEditProfile';
 import { ProfileRightSettings } from './ProfileRightSettings';
 import { ProfileRightGroup } from './ProfileRightGroup';
-import { getAvatarColor, getFirstLetter } from './profileView.utils';
+import { getAvatarColor, getFirstLetter, normalizeImageSrc } from './profileView.utils';
 import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
 
@@ -17,6 +17,7 @@ export interface ProfileViewProps {
   isOwnProfile: boolean;
   isGroupProfile?: boolean;
   currentUserId?: number;
+  initialTab?: RightContainerType;
   onClose: () => void;
   onStartChat?: (userId: number) => void;
   onCallUser?: (user: any) => void;
@@ -29,21 +30,66 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   isOwnProfile,
   isGroupProfile = false,
   currentUserId = 0,
+  initialTab = 'stories',
   onClose,
   onStartChat,
   onCallUser,
   services = {},
 }) => {
+  // 🟢 1:1 С WPF: Состояние плавного появления и затухания (AnimateFadeIn / AnimateClose)
+  const [isRendered, setIsRendered] = useState<boolean>(false);
+  const [isClosing, setIsClosing] = useState<boolean>(false);
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Плавное закрытие карточки с задержкой 200мс (1:1 с WPF fadeOut.Completed)
+  const handleAnimateClose = useCallback(() => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setIsRendered(false);
+
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
+      onClose();
+      setIsClosing(false);
+    }, 200); // 200ms - точное время DoubleAnimation из WPF
+  }, [isClosing, onClose]);
+
+  // Запуск плавного проявления (1:1 AnimateFadeIn)
+  useEffect(() => {
+    if (isOpen) {
+      setIsClosing(false);
+      const raf = requestAnimationFrame(() => {
+        setIsRendered(true);
+      });
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setIsRendered(false);
+      setIsClosing(false);
+    }
+  }, [isOpen]);
+
+  // Закрытие по клавише Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleAnimateClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleAnimateClose]);
+
   const vm = useProfileView(
     isOpen,
     user,
     isOwnProfile,
     isGroupProfile,
     currentUserId,
-    onClose,
+    handleAnimateClose,
     services,
     onStartChat,
-    onCallUser
+    onCallUser,
+    initialTab
   );
 
   const {
@@ -85,9 +131,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleRevokeInviteSafe = services.revokeInviteLink || (async () => false);
   const handleGenerateInviteSafe = services.generateInviteLink || (async () => null);
 
+  const isVisible = isRendered && !isClosing;
+
   return (
     <div
-      onClick={onClose}
+      onClick={handleAnimateClose}
       style={{
         position: 'fixed',
         inset: 0,
@@ -98,9 +146,50 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         justifyContent: 'center',
         backdropFilter: 'blur(4px)',
         userSelect: 'none',
+        opacity: isVisible ? 1 : 0,
+        transition: 'opacity 0.2s cubic-bezier(0.25, 1, 0.5, 1)', // QuarticEase Out
       }}
     >
-      {/* КАРТОЧКА ПРОФИЛЯ (365px -> 888px при QuarticEase 250ms) */}
+      <style>{`
+        .wpf-scroll-viewer {
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          scrollbar-width: thin;
+          scrollbar-color: transparent transparent;
+          transition: scrollbar-color 0.3s ease;
+        }
+        .wpf-scroll-viewer:hover {
+          scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+        }
+        .wpf-scroll-viewer::-webkit-scrollbar {
+          width: 4px !important;
+          height: 4px !important;
+        }
+        .wpf-scroll-viewer::-webkit-scrollbar-track {
+          background: transparent !important;
+        }
+        .wpf-scroll-viewer::-webkit-scrollbar-thumb {
+          background: transparent !important;
+          border-radius: 3px !important;
+          transition: background 0.25s ease !important;
+        }
+        .wpf-scroll-viewer:hover::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3) !important;
+        }
+        .wpf-scroll-viewer::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.4) !important;
+        }
+        .wpf-scroll-viewer::-webkit-scrollbar-thumb:active {
+          background: rgba(255, 255, 255, 0.6) !important;
+        }
+        .wpf-scroll-viewer::-webkit-scrollbar-button {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+      `}</style>
+
+      {/* КАРТОЧКА ПРОФИЛЯ С ПЛАВНЫМ МАСШТАБИРОВАНИЕМ И ШИРИНОЙ (1:1 QuarticEase 200ms/250ms) */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -112,7 +201,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           display: 'grid',
           gridTemplateColumns: isExpanded ? '365px 1fr' : '365px',
           overflow: 'hidden',
-          transition: 'width 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          opacity: isVisible ? 1 : 0,
+          transform: isVisible ? 'scale(1)' : 'scale(0.96)',
+          transition:
+            'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
         }}
       >
         {/* ЛЕВАЯ КОЛОНКА */}
@@ -120,7 +212,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           vm={vm}
           isOwnProfile={isOwnProfile}
           isGroupProfile={isGroupProfile}
-          onClose={onClose}
+          onClose={handleAnimateClose}
           onStartChat={handleStartChatSafe}
           onCallUser={handleCallUserSafe}
           onToggleMute={handleToggleMuteSafe}
@@ -145,7 +237,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <ProfileRightStories
                 vm={vm}
                 isOwnProfile={isOwnProfile}
-                onClose={onClose}
+                onClose={handleAnimateClose}
                 onCreateNewStory={services.createNewStory || (async () => {})}
                 onOpenStoryViewer={services.openStoryViewer || (() => {})}
                 onEditStory={services.editStory || (() => {})}
@@ -156,7 +248,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {activeRightContainer === 'sharedMedia' && (
               <ProfileRightSharedMedia
                 vm={vm}
-                onClose={onClose}
+                onClose={handleAnimateClose}
                 onForwardMessages={services.onForwardMessages || (() => {})}
                 onDeleteMessage={services.onDeleteMessage || (() => {})}
                 onOpenFile={services.onOpenFile || (() => {})}
@@ -166,14 +258,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {activeRightContainer === 'editProfile' && (
               <ProfileRightEditProfile
                 vm={vm}
-                onClose={onClose}
+                onClose={handleAnimateClose}
               />
             )}
 
             {activeRightContainer === 'settings' && (
               <ProfileRightSettings
                 vm={vm}
-                onClose={onClose}
+                onClose={handleAnimateClose}
                 onTerminateSession={services.terminateDeviceSession || (async () => false)}
                 onTerminateOtherSessions={services.terminateOtherSessions || (async () => false)}
                 onUnblockUser={services.toggleBlockUser || (async () => null)}
@@ -183,7 +275,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {(activeRightContainer === 'members' || activeRightContainer === 'editGroup') && (
               <ProfileRightGroup
                 vm={vm}
-                onClose={onClose}
+                onClose={handleAnimateClose}
                 onLeaveGroup={() => services.leaveGroup?.(user.id)}
                 onKickMember={(memberId) => services.kickMember?.(user.id, memberId)}
                 onUnbanMember={(memberId) => services.unbanMember?.(user.id, memberId)}
@@ -317,7 +409,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             onClick={() => {
               if (activeContextMenu.item) {
                 const id = 'message' in activeContextMenu.item
-                  ? (activeContextMenu.item as IAttachment).message?.id
+                  ? ((activeContextMenu.item as any).message?.id ?? (activeContextMenu.item as IAttachment).messageId)
                   : (activeContextMenu.item as IMessage).id;
                 if (id) services.onJumpToMessage?.(id, user.id);
               }
@@ -331,7 +423,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             onClick={() => {
               if (activeContextMenu.item) {
                 const msg = 'message' in activeContextMenu.item
-                  ? (activeContextMenu.item as IAttachment).message
+                  ? (activeContextMenu.item as any).message
                   : (activeContextMenu.item as IMessage);
                 if (msg) services.onForwardMessages?.([msg]);
               }
@@ -355,7 +447,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             onClick={() => {
               if (activeContextMenu.item) {
                 const msg = 'message' in activeContextMenu.item
-                  ? (activeContextMenu.item as IAttachment).message
+                  ? (activeContextMenu.item as any).message
                   : (activeContextMenu.item as IMessage);
                 if (msg) services.onDeleteMessage?.(msg);
               }

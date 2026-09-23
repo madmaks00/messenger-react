@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PrivacyVisibility } from '../../types/enums';
 import { PrivacySettingsDto } from '../../types/dtos';
-import { getAvatarColor, getFirstLetter, formatDateTime } from './profileView.utils';
+import { getAvatarColor, getFirstLetter, formatDateTime, parsePrivacyVisibility } from './profileView.utils';
 import { useProfileView } from './useProfileView';
 import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
@@ -30,7 +30,6 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
     setPasscode1,
     passcode2,
     setPasscode2,
-    passcodeErrorMessage,
     blockedUsersList,
     setBlockedUsersList,
     isChangePasswordStep1,
@@ -67,9 +66,121 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
     openBlockedUsersSubPanel,
   } = vm;
 
+  const [passcodeError, setPasscodeError] = useState<string>('');
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  
+  // 🟢 Динамические пропорции камеры (по умолчанию 16:9)
+  const [cameraAspectRatio, setCameraAspectRatio] = useState<number>(16 / 9);
+
+  // Живое превью выбранной веб-камеры с привязкой реального потока
+  useEffect(() => {
+    let activeStream: MediaStream | null = null;
+    let isMounted = true;
+
+    if (currentSettingsSubPanel === 'speakersCamera' && selectedCamera) {
+      (async () => {
+        try {
+          let constraints: MediaStreamConstraints = { video: true };
+
+          if (navigator?.mediaDevices?.enumerateDevices) {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const matched = devices.find(
+              (d) => d.kind === 'videoinput' && d.label.trim() === selectedCamera.trim()
+            );
+            if (matched && matched.deviceId) {
+              constraints = {
+                video: { deviceId: { exact: matched.deviceId } },
+              };
+            }
+          }
+
+          let stream: MediaStream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+          } catch {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          }
+
+          if (!isMounted) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+
+          activeStream = stream;
+          setCameraStream(stream);
+
+          if (cameraVideoRef.current) {
+            cameraVideoRef.current.srcObject = stream;
+            cameraVideoRef.current.play().catch(() => {});
+          }
+        } catch (err) {
+          console.warn('[Camera Preview] Ошибка запуска видеопотока:', err);
+          if (isMounted) {
+            setCameraStream(null);
+          }
+        }
+      })();
+    } else {
+      setCameraStream(null);
+    }
+
+    return () => {
+      isMounted = false;
+      if (activeStream) {
+        activeStream.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, [currentSettingsSubPanel, selectedCamera]);
+
+  useEffect(() => {
+    if (cameraVideoRef.current && cameraStream) {
+      cameraVideoRef.current.srcObject = cameraStream;
+      cameraVideoRef.current.play().catch(() => {});
+    }
+  }, [cameraStream]);
+
+  const onSavePasscodeClick = () => {
+    if (passcode1.length !== 4) {
+      setPasscodeError('Passcode must be exactly 4 digits.');
+      return;
+    }
+    if (passcode1 !== passcode2) {
+      setPasscodeError('Passcodes do not match.');
+      return;
+    }
+    setPasscodeError('');
+    handleSavePasscode();
+  };
+
+  const handleCameraChange = (cam: string) => {
+    setSelectedCamera(cam);
+    localStorage.setItem('selected_camera', cam);
+  };
+
+  const handleMicChange = (mic: string) => {
+    setSelectedMicrophone(mic);
+    localStorage.setItem('selected_microphone', mic);
+  };
+
+  const handleSpeakerChange = (spk: string) => {
+    setSelectedSpeaker(spk);
+    localStorage.setItem('selected_speaker', spk);
+  };
+
+  const handleVolumeChange = (vol: number) => {
+    setSpeakerVolume(vol);
+    localStorage.setItem('speaker_volume', vol.toString());
+  };
+
+  const handleSensitivityChange = (sens: number) => {
+    setMicSensitivity(sens);
+    localStorage.setItem('mic_sensitivity', sens.toString());
+  };
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Шапка настроек */}
+      {/* ДИНАМИЧЕСКАЯ ШАПКА НАСТРОЕК */}
       <div style={rightHeaderStyle}>
         {currentSettingsSubPanel === 'main' ? (
           <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText }}>Settings</span>
@@ -79,95 +190,77 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
             style={{
               background: 'none',
               border: 'none',
-              color: Theme.AppAccent,
+              color: Theme.ProfileSectionLabel,
               fontSize: 16,
               fontWeight: 600,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
+              gap: 8,
               padding: 0,
             }}
           >
-            <Icons.ArrowLeft size={18} color={Theme.AppAccent} />
+            <Icons.ArrowLeft size={20} color={Theme.ProfileSectionLabel} />
             <span>Back to Settings</span>
           </button>
         )}
-        <button onClick={onClose} style={iconBtnStyle} title="Close Profile">
-          <Icons.Close size={20} color={Theme.ProfileSectionLabel} />
-        </button>
+        <CloseButton onClick={onClose} />
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 25px 24px 25px' }}>
-        {/* Главное меню настроек */}
+      <div className="wpf-scroll-viewer" style={{ flex: 1, padding: '0 25px 24px 25px' }}>
+        {/* ================= 1. ГЛАВНЫЙ СПИСОК НАСТРОЕК ================= */}
         {currentSettingsSubPanel === 'main' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div>
-              <div style={labelStyle}>ACCOUNT SETTINGS</div>
-              <div style={subPanelCardStyle}>
-                <div onClick={() => setCurrentSettingsSubPanel('privacy')} style={settingsRowItemStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={iconBoxStyle}>🛡</div>
-                    <div>
-                      <div style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>Privacy &amp; Security</div>
-                      <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12 }}>Manage visibility, blocking, and security alerts</div>
-                    </div>
-                  </div>
-                  <Icons.ChevronRight size={20} color={Theme.ProfileSectionLabel} />
-                </div>
-                <div
-                  onClick={() => {
-                    setIsChangePasswordStep1(true);
-                    setCurrentSettingsSubPanel('changePassword');
-                  }}
-                  style={settingsRowItemStyle}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={iconBoxStyle}>🔑</div>
-                    <div>
-                      <div style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>Change Password</div>
-                      <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12 }}>Update your account password</div>
-                    </div>
-                  </div>
-                  <Icons.ChevronRight size={20} color={Theme.ProfileSectionLabel} />
-                </div>
-                <div onClick={openDevicesSubPanel} style={settingsRowItemStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={iconBoxStyle}>💻</div>
-                    <div>
-                      <div style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>Devices</div>
-                      <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12 }}>Manage your active sessions and devices</div>
-                    </div>
-                  </div>
-                  <Icons.ChevronRight size={20} color={Theme.ProfileSectionLabel} />
-                </div>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={labelStyle}>ACCOUNT SETTINGS</div>
+            <div style={settingsCardStyle}>
+              <SettingsRowItem
+                icon={<Icons.ShieldAccountOutline size={20} color={Theme.ProfileInfoIconBirthday} />}
+                title="Privacy & Security"
+                subtitle="Manage visibility, blocking, and security alerts"
+                onClick={() => setCurrentSettingsSubPanel('privacy')}
+              />
+
+              <SettingsRowItem
+                icon={<Icons.KeyOutline size={20} color={Theme.ProfileInfoIconName} />}
+                title="Change Password"
+                subtitle="Update your account password"
+                onClick={() => {
+                  setIsChangePasswordStep1(true);
+                  setCurrentSettingsSubPanel('changePassword');
+                }}
+              />
+
+              <SettingsRowItem
+                icon={<Icons.MonitorCellphone size={20} color={Theme.RoomIconSpotlight} />}
+                title="Devices"
+                subtitle="Manage your active sessions and devices"
+                onClick={openDevicesSubPanel}
+                isLast
+              />
             </div>
 
-            <div>
-              <div style={labelStyle}>APP SETTINGS</div>
-              <div style={subPanelCardStyle}>
-                <div onClick={openSpeakersCameraSubPanel} style={settingsRowItemStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={iconBoxStyle}>🔊</div>
-                    <div>
-                      <div style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>Speakers &amp; Camera</div>
-                      <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12 }}>Configure speakers, microphone, and camera settings</div>
-                    </div>
-                  </div>
-                  <Icons.ChevronRight size={20} color={Theme.ProfileSectionLabel} />
-                </div>
-                <div onClick={() => setCurrentSettingsSubPanel('language')} style={settingsRowItemStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={iconBoxStyle}>🌐</div>
-                    <div>
-                      <div style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>Language</div>
-                      <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12 }}>Application display language</div>
-                    </div>
-                  </div>
-                  <Icons.ChevronRight size={20} color={Theme.ProfileSectionLabel} />
-                </div>
-              </div>
+            <div style={labelStyle}>APP SETTINGS</div>
+            <div style={settingsCardStyle}>
+              <SettingsRowItem
+                icon={<Icons.VolumeHigh size={20} color={Theme.ProfileInfoIconName} />}
+                title="Speakers & Camera"
+                subtitle="Configure speakers, microphone, and camera settings"
+                onClick={openSpeakersCameraSubPanel}
+              />
+
+              <SettingsRowItem
+                icon={<Icons.PaletteOutline size={20} color={Theme.AppAccent} />}
+                title="App Theme"
+                subtitle="Select light or dark mode"
+              />
+
+              <SettingsRowItem
+                icon={<Icons.Web size={20} color={Theme.RoomIconSpotlight} />}
+                title="Language"
+                subtitle="Application display language"
+                onClick={() => setCurrentSettingsSubPanel('language')}
+                isLast
+              />
             </div>
           </div>
         )}
@@ -189,7 +282,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
               <div key={item.key} style={settingRowStyle}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: Theme.MainWindowText }}>{item.label}</span>
                 <select
-                  value={(privacySettings as any)[item.key]}
+                  value={parsePrivacyVisibility((privacySettings as any)[item.key])}
                   onChange={(e) =>
                     handlePrivacyChange(item.key as keyof PrivacySettingsDto, Number(e.target.value) as PrivacyVisibility)
                   }
@@ -283,7 +376,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
               <p style={{ color: Theme.ProfileSectionLabel, fontSize: 12, margin: '0 0 16px 0' }}>
                 Set a 4-digit numeric code to protect application access when locked.
               </p>
-              {passcodeErrorMessage && <div style={{ ...errorStyle, marginBottom: 12 }}>{passcodeErrorMessage}</div>}
+              {passcodeError && <div style={{ ...errorStyle, marginBottom: 12 }}>{passcodeError}</div>}
 
               <div style={{ marginBottom: 14 }}>
                 <div style={labelStyle}>ENTER 4 DIGITS</div>
@@ -309,7 +402,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                 <button onClick={() => setCurrentSettingsSubPanel('privacy')} style={secondaryBtnStyle}>
                   Cancel
                 </button>
-                <button onClick={handleSavePasscode} style={primaryBtnStyle}>
+                <button onClick={onSavePasscodeClick} style={primaryBtnStyle}>
                   Save Passcode
                 </button>
               </div>
@@ -386,7 +479,9 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
             <div style={labelStyle}>THIS DEVICE</div>
             {currentDevice && (
               <div style={{ ...mediaRowCardStyle, marginBottom: 16 }}>
-                <div style={{ fontSize: 24 }}>💻</div>
+                <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: Theme.ProfileDeviceItemBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icons.MonitorCellphone size={22} color={Theme.AppAccent} />
+                </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ color: Theme.MainWindowText, fontWeight: 600, fontSize: 14.5 }}>{currentDevice.deviceName}</div>
                   <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12, marginTop: 2 }}>
@@ -420,7 +515,9 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {otherDevices.map((dev) => (
                 <div key={dev.id} style={mediaRowCardStyle}>
-                  <div style={{ fontSize: 24 }}>{dev.deviceType === 'Mobile' ? '📱' : '💻'}</div>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: Theme.ProfileDeviceItemBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icons.MonitorCellphone size={22} color={Theme.ProfileSectionLabel} />
+                  </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ color: Theme.MainWindowText, fontWeight: 600, fontSize: 14 }}>{dev.deviceName}</div>
                     <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12, marginTop: 2 }}>
@@ -441,12 +538,17 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
           </div>
         )}
 
-        {/* Подраздел: Speakers & Camera */}
+        {/* ================= 2. SPEAKERS & CAMERA ================= */}
         {currentSettingsSubPanel === 'speakersCamera' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* ДИНАМИКИ / НАУШНИКИ */}
             <div style={settingCardStyle}>
               <div style={labelStyle}>SPEAKERS (OUTPUT)</div>
-              <select value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)} style={selectStyleFull}>
+              <select
+                value={selectedSpeaker}
+                onChange={(e) => handleSpeakerChange(e.target.value)}
+                style={selectStyleFull}
+              >
                 {availableSpeakers.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
@@ -458,16 +560,21 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   min={0}
                   max={100}
                   value={speakerVolume}
-                  onChange={(e) => setSpeakerVolume(Number(e.target.value))}
+                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
                   style={{ flex: 1, accentColor: Theme.AppAccent }}
                 />
                 <span style={{ fontSize: 12, color: Theme.ProfileSectionLabel, minWidth: 32 }}>{speakerVolume}%</span>
               </div>
             </div>
 
+            {/* МИКРОФОН */}
             <div style={settingCardStyle}>
               <div style={labelStyle}>MICROPHONE (INPUT)</div>
-              <select value={selectedMicrophone} onChange={(e) => setSelectedMicrophone(e.target.value)} style={selectStyleFull}>
+              <select
+                value={selectedMicrophone}
+                onChange={(e) => handleMicChange(e.target.value)}
+                style={selectStyleFull}
+              >
                 {availableMicrophones.map((m) => (
                   <option key={m} value={m}>{m}</option>
                 ))}
@@ -479,23 +586,31 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   min={0}
                   max={100}
                   value={micSensitivity}
-                  onChange={(e) => setMicSensitivity(Number(e.target.value))}
+                  onChange={(e) => handleSensitivityChange(Number(e.target.value))}
                   style={{ flex: 1, accentColor: Theme.AppAccent }}
                 />
                 <span style={{ fontSize: 12, color: Theme.ProfileSectionLabel, minWidth: 32 }}>{micSensitivity}%</span>
               </div>
             </div>
 
+            {/* КАМЕРА: увеличенный размер по пропорциям видеопотока (16:9 / 4:3) */}
             <div style={settingCardStyle}>
               <div style={labelStyle}>CAMERA</div>
-              <select value={selectedCamera} onChange={(e) => setSelectedCamera(e.target.value)} style={selectStyleFull}>
+              <select
+                value={selectedCamera}
+                onChange={(e) => handleCameraChange(e.target.value)}
+                style={selectStyleFull}
+              >
                 {availableCameras.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+
               <div
                 style={{
-                  height: 120,
+                  width: '100%',
+                  aspectRatio: `${cameraAspectRatio}`,
+                  maxHeight: 270,
                   backgroundColor: Theme.ProfileEditContainerBg,
                   borderRadius: 8,
                   border: `1px solid ${Theme.ProfileInputContainerBorder}`,
@@ -503,11 +618,40 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: Theme.ProfileSectionLabel,
-                  fontSize: 12,
+                  overflow: 'hidden',
+                  position: 'relative',
+                  boxSizing: 'border-box',
                 }}
               >
-                Camera Preview is Active
+                {/* Видео подстраивает реальные пропорции через onLoadedMetadata */}
+                <video
+                  ref={cameraVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  onLoadedMetadata={(e) => {
+                    const v = e.currentTarget;
+                    if (v.videoWidth && v.videoHeight) {
+                      setCameraAspectRatio(v.videoWidth / v.videoHeight);
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    display: cameraStream ? 'block' : 'none',
+                    transform: 'scaleX(-1)',
+                  }}
+                />
+
+                {!cameraStream && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                    <Icons.VideoOutline size={36} color={Theme.ProfileSectionLabel} />
+                    <span style={{ color: Theme.ProfileSectionLabel, fontSize: 12 }}>
+                      Camera Preview is Active
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -531,12 +675,107 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
   );
 };
 
+export const CloseButton: React.FC<{ onClick: () => void; title?: string }> = ({
+  onClick,
+  title = 'Close Profile',
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      title={title}
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: isHovered ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+        transition: 'all 0.15s ease-out',
+      }}
+    >
+      <Icons.Close size={20} color={isHovered ? '#FFFFFF' : Theme.ProfileSectionLabel} />
+    </button>
+  );
+};
+
+interface SettingsRowItemProps {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  onClick?: () => void;
+  isLast?: boolean;
+}
+
+const SettingsRowItem: React.FC<SettingsRowItemProps> = ({
+  icon,
+  title,
+  subtitle,
+  onClick,
+  isLast = false,
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '36px 1fr 24px',
+        alignItems: 'center',
+        gap: 15,
+        marginBottom: isLast ? 0 : 15,
+        cursor: 'pointer',
+        background: 'transparent',
+      }}
+    >
+      <div
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          backgroundColor: Theme.ProfileDeviceItemBg,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {icon}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <span style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>
+          {title}
+        </span>
+        <span style={{ color: Theme.ProfileSectionLabel, fontSize: 12 }}>
+          {subtitle}
+        </span>
+      </div>
+
+      <Icons.ChevronRight
+        size={24}
+        color={isHovered ? '#FFFFFF' : Theme.ProfileSectionLabel}
+      />
+    </div>
+  );
+};
+
 const rightHeaderStyle: React.CSSProperties = {
   height: 64,
   padding: '0 25px',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
+  marginBottom: 17,
 };
 
 const iconBtnStyle: React.CSSProperties = {
@@ -551,22 +790,11 @@ const iconBtnStyle: React.CSSProperties = {
   justifyContent: 'center',
 };
 
-const iconBoxStyle: React.CSSProperties = {
-  width: 36,
-  height: 36,
-  borderRadius: 8,
-  backgroundColor: Theme.ProfileDeviceItemBg,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontSize: 18,
-};
-
 const labelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 'bold',
   color: Theme.ProfileSectionLabel,
-  marginBottom: 6,
+  marginBottom: 10,
 };
 
 const errorStyle: React.CSSProperties = {
@@ -608,6 +836,14 @@ const selectStyleFull: React.CSSProperties = {
   outline: 'none',
 };
 
+const settingsCardStyle: React.CSSProperties = {
+  backgroundColor: Theme.ProfileInputContainerBg,
+  border: `1px solid ${Theme.ProfileInputContainerBorder}`,
+  borderRadius: 12,
+  padding: 15,
+  marginBottom: 25,
+};
+
 const subPanelCardStyle: React.CSSProperties = {
   background: Theme.ProfileInputContainerBg,
   borderRadius: 12,
@@ -620,15 +856,6 @@ const settingCardStyle: React.CSSProperties = {
   borderRadius: 12,
   border: `1px solid ${Theme.ProfileInputContainerBorder}`,
   padding: 16,
-};
-
-const settingsRowItemStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: '14px 16px',
-  cursor: 'pointer',
-  borderBottom: `1px solid ${Theme.ProfileLeftPanelBorder}`,
 };
 
 const settingRowStyle: React.CSSProperties = {

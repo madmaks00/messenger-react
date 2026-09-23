@@ -27,6 +27,7 @@ import { useNotesStore } from '../../stores/notesStore';
 import { useTodoStore } from '../../stores/todoStore';
 import { MainTab } from '../../types/enums';
 import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
+import { eventBus } from '../../services/eventBus';
 
 interface MdiIconProps {
   path: string;
@@ -65,6 +66,20 @@ export const NavigationRail: React.FC = () => {
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
 
   const avatarSrc = normalizeAvatarUrl(currentUser?.avatarPath || (currentUser as any)?.avatar);
+
+  // 🟢 Открытие профиля со вкладки историй (клик по аватарке)
+  const handleOpenStories = () => {
+    useNavigationStore.setState({ isProfileOpen: true, profileTab: 'stories' } as any);
+    openProfile();
+    eventBus.emit('SelectProfileTab' as any, { tab: 'stories' });
+  };
+
+  // 🟢 Открытие профиля сразу со вкладки настроек (клик по шестерёнке, 1:1 WPF SelectSettingsTab)
+  const handleOpenSettings = () => {
+    useNavigationStore.setState({ isProfileOpen: true, profileTab: 'settings' } as any);
+    openProfile();
+    eventBus.emit('SelectProfileTab' as any, { tab: 'settings' });
+  };
 
   return (
     <div
@@ -109,10 +124,10 @@ export const NavigationRail: React.FC = () => {
           <Icon path={mdiSendVariant} size="38px" />
         </div>
 
-        {/* 2. Аватарка */}
+        {/* 2. Аватарка (открывает профиль со вкладки Stories) */}
         <div style={{ position: 'relative', width: 54, height: 54, marginBottom: 22 }}>
           <div
-            onClick={openProfile}
+            onClick={handleOpenStories}
             title="Open Profile"
             style={{
               width: 54,
@@ -282,7 +297,7 @@ export const NavigationRail: React.FC = () => {
         </div>
       </div>
 
-      {/* ================= НИЗ: ДЕЙСТВИЯ С АНИМАЦИЕЙ ПОДСВЕТКИ ================= */}
+      {/* ================= НИЗ: ДЕЙСТВИЯ ================= */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 16, marginTop: 'auto', flexShrink: 0 }}>
         {currentTab === MainTab.Chats && (
           <>
@@ -307,7 +322,6 @@ export const NavigationRail: React.FC = () => {
           </>
         )}
 
-        {/* 🟢 Вызов createNewNote() строго напрямую (без дублирования) */}
         {currentTab === MainTab.Notes && (
           <button
             onClick={() => useNotesStore.getState().createNewNote()}
@@ -353,9 +367,9 @@ export const NavigationRail: React.FC = () => {
           </div>
         </button>
 
-        {/* Настройки профиля */}
+        {/* 🟢 Шестерёнка: открывает профиль сразу со вкладки НАСТРОЕК */}
         <button
-          onClick={openProfile}
+          onClick={handleOpenSettings}
           onMouseEnter={() => setHoveredBtn('settings')}
           onMouseLeave={() => setHoveredBtn(null)}
           title="Settings"
@@ -405,7 +419,6 @@ const railDividerStyle: React.CSSProperties = {
   margin: '15px 25px',
 };
 
-// 🟢 Стиль нижней кнопки с подсветкой и эффектом ховера
 const getActionButtonStyle = (isHovered: boolean): React.CSSProperties => ({
   width: 44,
   height: 44,
