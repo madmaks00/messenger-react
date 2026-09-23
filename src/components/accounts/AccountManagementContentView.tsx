@@ -12,7 +12,7 @@ export const AccountManagementContentView: React.FC = () => {
       style={{
         flex: 1,
         height: '100%',
-        backgroundColor: '#0B141B',
+        backgroundColor: '#11141B', // 🟢 Заменен на WPF #FF11141B
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

@@ -4,6 +4,7 @@ import { userSession } from '../services/userSession';
 import { eventBus } from '../services/eventBus';
 import { closeLocalDatabase, getLocalDatabase } from '../db/localDb';
 import { signalRService } from '../services/signalr.service';
+
 interface AuthState {
   loginUser: Partial<IUser>;
   registerUser: Partial<IUser>;
@@ -14,11 +15,13 @@ interface AuthState {
   isVerificationStep: boolean;
   loginErrorMessage: string;
   registerErrorMessage: string;
+  registerFieldErrors: Record<string, string>;
   switchAccountErrorMessage: string;
 
   // Actions
   setLoginField: (field: keyof IUser, value: any) => void;
   setRegisterField: (field: keyof IUser, value: any) => void;
+  setRegisterUserBatch: (fields: Partial<IUser>) => void;
   setConfirmPassword: (val: string) => void;
   openRegistration: () => void;
   closeAccountManagement: () => void;
@@ -39,8 +42,12 @@ function extractUserIdFromJwt(jwtToken: string): number {
 
     let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     switch (payload.length % 4) {
-      case 2: payload += '=='; break;
-      case 3: payload += '='; break;
+      case 2:
+        payload += '==';
+        break;
+      case 3:
+        payload += '=';
+        break;
     }
 
     const decoded = JSON.parse(atob(payload));
@@ -86,6 +93,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     username: '',
     email: '',
     password: '',
+    firstName: '',
+    lastName: '',
+    phone: '',
+    description: '',
+    birthday: '',
+    gender: null,
   },
   currentUser: null,
   confirmPassword: '',
@@ -94,6 +107,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isVerificationStep: false,
   loginErrorMessage: '',
   registerErrorMessage: '',
+  registerFieldErrors: {},
   switchAccountErrorMessage: '',
 
   setLoginField: (field, value) => {
@@ -104,21 +118,62 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setRegisterField: (field, value) => {
+    set((state) => {
+      const updatedErrors = { ...state.registerFieldErrors };
+      delete updatedErrors[field as string];
+      return {
+        registerUser: { ...state.registerUser, [field]: value },
+        registerFieldErrors: updatedErrors,
+        registerErrorMessage: '',
+      };
+    });
+  },
+
+  setRegisterUserBatch: (fields) => {
     set((state) => ({
-      registerUser: { ...state.registerUser, [field]: value },
+      registerUser: { ...state.registerUser, ...fields },
       registerErrorMessage: '',
     }));
   },
 
-  setConfirmPassword: (val) => set({ confirmPassword: val, registerErrorMessage: '' }),
-  openRegistration: () => set({ isAddingNewAccount: true, loginErrorMessage: '', registerErrorMessage: '' }),
+  setConfirmPassword: (val) =>
+    set((state) => {
+      const updatedErrors = { ...state.registerFieldErrors };
+      delete updatedErrors.confirmPassword;
+      return {
+        confirmPassword: val,
+        registerFieldErrors: updatedErrors,
+        registerErrorMessage: '',
+      };
+    }),
+
+  openRegistration: () =>
+    set({
+      isAddingNewAccount: true,
+      loginErrorMessage: '',
+      registerErrorMessage: '',
+      registerFieldErrors: {},
+    }),
+
   closeAccountManagement: () => set({ isAddingNewAccount: false }),
 
   clearRegisterFields: () => {
     set({
-      registerUser: { nickName: '', username: '', email: '', password: '' },
+      registerUser: {
+        nickName: '',
+        username: '',
+        email: '',
+        password: '',
+        firstName: '',
+        lastName: '',
+        phone: '',
+        description: '',
+        birthday: '',
+        gender: null,
+      },
       confirmPassword: '',
       registerErrorMessage: '',
+      registerFieldErrors: {},
       isVerificationStep: false,
     });
   },
@@ -145,31 +200,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   requestCodeAndGoToVerification: async (authService) => {
     const { registerUser, confirmPassword } = get();
-    set({ registerErrorMessage: '' });
+    set({ registerErrorMessage: '', registerFieldErrors: {} });
 
+    // Валидация полей через UserValidator (1 в 1 с RegisterUser.Validate() в C#)
     const errors = UserValidator.validate(registerUser);
-    if (Object.keys(errors).length > 0) {
-      set({ registerErrorMessage: 'Please fill in all required fields correctly.' });
-      return false;
-    }
 
     if (!registerUser.password || registerUser.password !== confirmPassword) {
-      set({ registerErrorMessage: 'Passwords do not match!' });
+      errors.confirmPassword = 'Passwords do not match!';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      const firstErrorMessage = Object.values(errors)[0];
+      console.warn('[AUTH_VALIDATION_FAILED]', errors);
+      set({
+        registerFieldErrors: errors,
+        registerErrorMessage: firstErrorMessage,
+      });
       return false;
     }
 
     try {
-      const { success, errorMsg } = await authService.requestVerificationCodeAsync(
+      const { isSuccess, message } = await authService.requestVerificationCodeAsync(
         registerUser.email!,
         registerUser.username!
       );
 
-      if (success) {
+      if (isSuccess) {
         set({ isVerificationStep: true });
         eventBus.emit('StartEmailVerificationMessage', { user: registerUser });
         return true;
       } else {
-        set({ registerErrorMessage: errorMsg || 'Failed to send verification code.' });
+        set({ registerErrorMessage: message || 'Failed to send verification code.' });
         return false;
       }
     } catch {
@@ -178,7 +239,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  // 🟢 Автологин 1 в 1 как в AuthViewModel.cs CheckAuth()
   checkAuth: async (authService, userService) => {
     let token = localStorage.getItem('jwt_token');
 
@@ -204,7 +264,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return false;
     }
 
-    // 🟢 1. Немедленно инициализируем сессию в памяти ДО сетевых запросов
     userSession.setSession(userId, token);
 
     try {
@@ -232,7 +291,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ savedAccounts: updatedAccounts });
         saveAccountsToStorage(updatedAccounts);
 
-        // 🟢 2. 1 в 1 С WPF App.xaml.cs: сразу подключаем SignalR хаб!
         signalRService.initAsync(token).catch((err: any) => {
           console.warn('[AuthStore] Фоновый старт SignalR:', err);
         });
@@ -250,7 +308,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  // 🟢 Переключение аккаунта 1 в 1 как в AuthViewModel.cs SwitchAccount()
   switchAccount: async (targetAccount, authService) => {
     const current = get().currentUser;
     if (!targetAccount || targetAccount.id === current?.id) return;
@@ -279,7 +336,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       getLocalDatabase(targetAccount.id);
 
       eventBus.emit('UserProfileUpdatedMessage', { user: targetAccount });
-      // 🟢 Сигнал смены аккаунта (строго nickName)
       eventBus.emit('AccountSwitchedMessage', { nickName: targetAccount.nickName });
     } catch {
       set({ switchAccountErrorMessage: 'Error switching account.' });
@@ -296,7 +352,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const accounts = get().savedAccounts;
     const exists = accounts.find((a) => a.id === user.id);
-    const updated = exists ? accounts.map((a) => (a.id === user.id ? { ...user, token } : a)) : [...accounts, { ...user, token }];
+    const updated = exists
+      ? accounts.map((a) => (a.id === user.id ? { ...user, token } : a))
+      : [...accounts, { ...user, token }];
 
     set({ currentUser: user, savedAccounts: updated });
     saveAccountsToStorage(updated);

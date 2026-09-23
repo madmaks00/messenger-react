@@ -139,3 +139,29 @@ html, body, #root {
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
   font-size: 14px !important;
 }
+/* 🟢 СТИЛЬ ССЫЛОК AuthLinkButtonStyle ИЗ WPF */
+.wpf-link-button {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.wpf-link-button::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 1.5px;
+  background-color: var(--app-accent, #1E9BEB);
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform 0.2s cubic-bezier(0.33, 1, 0.68, 1), opacity 0.15s ease;
+  transform-origin: center;
+}
+
+.wpf-link-button:hover::after {
+  transform: scaleX(1);
+  opacity: 1;
+}
