@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   mdiBookmarkOutline,
   mdiFileDocumentPlusOutline,
@@ -12,9 +12,10 @@ import { SearchInputUserControl } from '../common/SearchInputUserControl';
 import { useNotesStore } from '../../stores/notesStore';
 import { useSmoothScroll } from '../../hooks/useSmoothScroll';
 import { resolveMdiIcon } from '../../utils/iconResolver';
+import { eventBus } from '../../services/eventBus';
 import { INote } from '../../types/models';
 
-const ITEM_HEIGHT = 50; // panels:SidebarListVirtualizingPanel ItemHeight="50"
+const ITEM_HEIGHT = 50;
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
@@ -27,7 +28,7 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
     width={size}
     height={size}
     fill={color}
-    style={{ display: 'inline-block', flexShrink: 0, ...style }}
+    style={{ display: 'inline-block', flexShrink: 0, verticalAlign: 'middle', ...style }}
   >
     <path d={path} />
   </svg>
@@ -45,7 +46,6 @@ export const SidebarNotesView: React.FC = () => {
     beginEditNote,
     cancelEditNote,
     commitEditNote,
-    createNewNote,
   } = useNotesStore();
 
   const [hoveredId, setHoveredId] = useState<number | null>(null);
@@ -53,12 +53,6 @@ export const SidebarNotesView: React.FC = () => {
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
-
-  useEffect(() => {
-    const handleCreate = () => createNewNote();
-    window.addEventListener('CreateNewNote', handleCreate);
-    return () => window.removeEventListener('CreateNewNote', handleCreate);
-  }, [createNewNote]);
 
   const filteredNotes = myNotes.filter((n) =>
     n.title.toLowerCase().includes(noteSearchText.toLowerCase())
@@ -70,7 +64,7 @@ export const SidebarNotesView: React.FC = () => {
         width: '100%',
         minWidth: 0,
         height: '100%',
-        backgroundColor: '#161A23', // BgList
+        backgroundColor: '#161A23',
         display: 'flex',
         flexDirection: 'column',
         userSelect: 'none',
@@ -78,10 +72,10 @@ export const SidebarNotesView: React.FC = () => {
         boxSizing: 'border-box',
       }}
     >
-      {/* 0. ШАПКА: SidebarHeaderUserControl Title="Notes" IconKind="BookmarkOutline" */}
+      {/* 0. ШАПКА */}
       <SidebarHeaderUserControl title="Notes" iconPath={mdiBookmarkOutline} />
 
-      {/* 1. ПОИСК: SearchInputUserControl Margin="6,0,6,10" */}
+      {/* 1. ПОИСК */}
       <SearchInputUserControl
         text={noteSearchText}
         hintText="Search notes..."
@@ -90,7 +84,7 @@ export const SidebarNotesView: React.FC = () => {
         margin="0 6px 10px 6px"
       />
 
-      {/* 2. СПИСОК ЗАМЕТОК: ItemHeight="50" */}
+      {/* 2. СПИСОК ЗАМЕТОК */}
       <div
         ref={containerRef}
         className="wpf-scroll-viewer"
@@ -104,14 +98,13 @@ export const SidebarNotesView: React.FC = () => {
         }}
       >
         {myNotes.length === 0 ? (
-          /* ЗАГЛУШКА: Margin="20,130,20,0" Border Width="80" Height="80" CornerRadius="40" */
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '130px 20px 0 20px' }}>
             <div
               style={{
                 width: 80,
                 height: 80,
                 borderRadius: 40,
-                backgroundColor: '#1C212D', // NotesSidebarEmptyStateBgBrush
+                backgroundColor: '#1C212D',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -142,17 +135,17 @@ export const SidebarNotesView: React.FC = () => {
                 onMouseEnter={() => setHoveredId(note.id || null)}
                 onMouseLeave={() => setHoveredId(null)}
                 style={{
-                  height: ITEM_HEIGHT, // 50px
-                  margin: '2px 6px', // Margin="6,2"
-                  padding: '0 10px', // SidebarListItemStyle Padding="10,0"
+                  height: ITEM_HEIGHT,
+                  margin: '2px 6px',
+                  padding: '0 10px',
                   borderRadius: 10,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   backgroundColor: isSelected
-                    ? '#232836' // IsChecked = #232836
+                    ? '#232836'
                     : isHovered
-                    ? '#1C212D' // IsMouseOver = #1C212D
+                    ? '#1C212D'
                     : 'transparent',
                   boxSizing: 'border-box',
                   transition: 'background-color 0.12s ease',
@@ -160,8 +153,22 @@ export const SidebarNotesView: React.FC = () => {
                   width: 'auto',
                 }}
               >
-                {/* ИКОНКА С НАВИСАЮЩИМ БЕЙДЖИКОМ (Button 28x28 Margin="0,0,10,0") */}
+                {/* 🟢 ИКОНКА С НАВИСАЮЩИМ БЕЙДЖИКОМ: теперь вызывает диалог смены иконки и цвета */}
                 <div
+                  onMouseDown={(e) => {
+                    if (isEditing) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      eventBus.emit('OpenEditNoteDialogMessage' as any, { note });
+                    }
+                  }}
+                  onClick={(e) => {
+                    if (isEditing) {
+                      e.stopPropagation();
+                      eventBus.emit('OpenEditNoteDialogMessage' as any, { note });
+                    }
+                  }}
+                  title={isEditing ? 'Change Icon & Color' : undefined}
                   style={{
                     width: 28,
                     height: 28,
@@ -178,7 +185,7 @@ export const SidebarNotesView: React.FC = () => {
                     style={{ position: 'absolute', left: 0, top: 0 }}
                   />
 
-                  {/* Бейджик карандаша (14x14) при IsEditing */}
+                  {/* Бейджик карандаша при IsEditing */}
                   {isEditing && (
                     <div
                       style={{
@@ -188,7 +195,7 @@ export const SidebarNotesView: React.FC = () => {
                         width: 14,
                         height: 14,
                         borderRadius: 7,
-                        backgroundColor: '#1E9BEB', // AppAccentBrush
+                        backgroundColor: '#1E9BEB',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -220,7 +227,7 @@ export const SidebarNotesView: React.FC = () => {
                         width: '100%',
                         background: 'transparent',
                         border: 'none',
-                        borderBottom: '1px solid #3B82F6', // NoteCardTitleInputFocusedBorderBrush
+                        borderBottom: '1px solid #3B82F6',
                         color: '#FFFFFF',
                         fontSize: 14.5,
                         fontWeight: 600,
@@ -233,7 +240,7 @@ export const SidebarNotesView: React.FC = () => {
                   ) : (
                     <span
                       style={{
-                        color: '#FFFFFF', // NoteCardTitleTextBrush
+                        color: '#FFFFFF',
                         fontSize: 14.5,
                         fontWeight: 600,
                         overflow: 'hidden',

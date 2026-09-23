@@ -32,6 +32,7 @@ import {
 import { useTodoStore } from '../../stores/todoStore';
 import { useNavigationStore } from '../../stores/navigationStore';
 import { SearchInputUserControl } from '../common/SearchInputUserControl';
+import { resolveMdiIcon } from '../../utils/iconResolver';
 import { ITodoTask, ISelectableItem } from '../../types/models';
 import { TaskCategory, TaskPriority, TaskStatus, MainTab } from '../../types/enums';
 
@@ -67,6 +68,22 @@ const NEON_FILTERS = [
   { key: 'Someday', label: 'Someday', icon: mdiLightbulbOutline, glow: '#64748B', activeBg: '#1E232E' },
   { key: 'None', label: 'No Category', icon: mdiTagOffOutline, glow: '#9CA3AF', activeBg: '#242A38' },
 ];
+
+// 🟢 ТОЧНЫЙ МАППИНГ ИКОНОК КАТЕГОРИЙ (1 в 1 с WPF MaterialDesign Icons)
+const CATEGORY_ICONS: Record<string, string> = {
+  Work: mdiBriefcaseOutline,
+  Personal: mdiAccountOutline,
+  Calls: mdiPhoneOutline,
+  Shopping: mdiCartOutline,
+  Health: mdiHeartPulse,
+  Learning: mdiSchoolOutline,
+  Family: mdiHomeHeart,
+  Finance: mdiWalletOutline,
+  Quick: mdiLightningBoltOutline,
+  DeepWork: mdiBrain,
+  Someday: mdiLightbulbOutline,
+  None: mdiTagOutline,
+};
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string }> = {
   Work: { bg: '#172554', text: '#60A5FA' },
@@ -185,6 +202,9 @@ export const TasksWorkspaceView: React.FC = () => {
     );
   });
 
+  // 🟢 Иконка заголовка списка резолвится динамически (геймпад, список и т.д.)
+  const headerListIcon = resolveMdiIcon(selectedTaskList.iconKind, mdiFormatListBulleted);
+
   return (
     <div
       style={{
@@ -203,7 +223,7 @@ export const TasksWorkspaceView: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <MdiIcon
-              path={mdiFormatListBulleted}
+              path={headerListIcon}
               size={26}
               color={selectedTaskList.iconColor || '#7D8494'}
               style={{ marginRight: 12 }}
@@ -391,7 +411,12 @@ export const TasksWorkspaceView: React.FC = () => {
                 }}
                 style={parameterBadgeStyle}
               >
-                <MdiIcon path={mdiTagOutline} size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+                <MdiIcon
+                  path={CATEGORY_ICONS[newTaskCategoryString] || mdiTagOutline}
+                  size={16}
+                  color="#94A3B8"
+                  style={{ marginRight: 8 }}
+                />
                 <span style={{ color: newTaskCategoryString !== 'Auto' ? '#FFFFFF' : '#94A3B8', fontSize: 13, fontWeight: 500 }}>
                   {newTaskCategoryString}
                 </span>
@@ -406,9 +431,15 @@ export const TasksWorkspaceView: React.FC = () => {
                             setNewTaskCategoryString(cat);
                             setActivePopup(null);
                           }}
-                          style={popoverItemStyle}
+                          style={{ ...popoverItemStyle, display: 'flex', alignItems: 'center' }}
                         >
-                          {cat}
+                          <MdiIcon
+                            path={CATEGORY_ICONS[cat] || mdiTagOutline}
+                            size={15}
+                            color="#94A3B8"
+                            style={{ marginRight: 8 }}
+                          />
+                          <span>{cat}</span>
                         </div>
                       )
                     )}
@@ -580,7 +611,6 @@ const TaskCardItem: React.FC<{
   const [editTitle, setEditTitle] = useState(task.title);
   const isCommittingRef = useRef(false);
 
-  // Синхронизация editTitle со свойством task.title при начале редактирования
   useEffect(() => {
     setEditTitle(task.title);
   }, [task.title, task.isEditing]);
@@ -602,6 +632,9 @@ const TaskCardItem: React.FC<{
   const catStyle = CATEGORY_STYLES[categoryName] || null;
   const priStyle = PRIORITY_STYLES[priorityName] || PRIORITY_STYLES.None;
   const statusStyle = STATUS_STYLES[statusName] || STATUS_STYLES.Todo;
+
+  // 🟢 Реальная иконка категории вместо дефолтной бирки
+  const categoryIcon = CATEGORY_ICONS[categoryName] || mdiTagOutline;
 
   return (
     <div
@@ -723,6 +756,7 @@ const TaskCardItem: React.FC<{
                 </div>
               )}
 
+              {/* 🟢 Отображение специализированной иконки категории (корзина, трубка, юзер и т.д.) */}
               {categoryName !== 'None' && catStyle && (
                 <div
                   style={{
@@ -733,7 +767,7 @@ const TaskCardItem: React.FC<{
                     alignItems: 'center',
                   }}
                 >
-                  <MdiIcon path={mdiTagOutline} size={12} color={catStyle.text} style={{ marginRight: 4 }} />
+                  <MdiIcon path={categoryIcon} size={12} color={catStyle.text} style={{ marginRight: 4 }} />
                   <span style={{ fontSize: 11, fontWeight: 'bold', color: catStyle.text }}>
                     {categoryName}
                   </span>
@@ -903,7 +937,7 @@ const TaskCardItem: React.FC<{
                 title="Set Category"
                 style={actionBtnItemStyle}
               >
-                <MdiIcon path={mdiTagOutline} size={18} color="#94A3B8" />
+                <MdiIcon path={categoryIcon} size={18} color="#94A3B8" />
               </button>
 
               {activePopup === `cat_${task.localId}` && (
@@ -916,9 +950,15 @@ const TaskCardItem: React.FC<{
                           updateTask({ ...task, category: TaskCategory[cat as keyof typeof TaskCategory] });
                           setActivePopup(null);
                         }}
-                        style={popoverItemStyle}
+                        style={{ ...popoverItemStyle, display: 'flex', alignItems: 'center' }}
                       >
-                        {cat}
+                        <MdiIcon
+                          path={CATEGORY_ICONS[cat] || mdiTagOutline}
+                          size={15}
+                          color="#94A3B8"
+                          style={{ marginRight: 8 }}
+                        />
+                        <span>{cat}</span>
                       </div>
                     )
                   )}

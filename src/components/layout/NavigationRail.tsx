@@ -23,6 +23,8 @@ import {
 
 import { useNavigationStore } from '../../stores/navigationStore';
 import { useAuthStore } from '../../stores/authStore';
+import { useNotesStore } from '../../stores/notesStore';
+import { useTodoStore } from '../../stores/todoStore';
 import { MainTab } from '../../types/enums';
 import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 
@@ -79,13 +81,13 @@ export const NavigationRail: React.FC = () => {
         boxSizing: 'border-box',
       }}
     >
-      {/* ================= ВЕРХ (Сверху 20px как было!) ================= */}
+      {/* ================= ВЕРХ ================= */}
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          paddingTop: 20, // 🟢 Сверху вернули 20px
+          paddingTop: 20,
           flexShrink: 0,
         }}
       >
@@ -107,8 +109,8 @@ export const NavigationRail: React.FC = () => {
           <Icon path={mdiSendVariant} size="38px" />
         </div>
 
-        {/* 2. Аватарка (54x54 внешнее кольцо, 46x46 фото) */}
-        <div style={{ position: 'relative', width: 54, height: 54, marginBottom: 22 /* 🟢 УВЕЛИЧЕН ОТСТУП ПОД АВАТАРКОЙ */ }}>
+        {/* 2. Аватарка */}
+        <div style={{ position: 'relative', width: 54, height: 54, marginBottom: 22 }}>
           <div
             onClick={openProfile}
             title="Open Profile"
@@ -209,7 +211,7 @@ export const NavigationRail: React.FC = () => {
         >
           {currentTab === MainTab.Chats && <div style={activeBarIndicatorStyle} />}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: currentTab === MainTab.Chats ? '#1E9BEB' : hoveredBtn === 'chats' ? '#FFFFFF' : '#7D8494' }}>
+            <span style={{ color: currentTab === MainTab.Chats ? '#1E9BEB' : hoveredBtn === 'chats' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
               <Icon path={currentTab === MainTab.Chats ? mdiChat : mdiChatOutline} size="24px" />
             </span>
             {hasUnreadChats && <div style={unreadDotBadgeStyle} />}
@@ -227,7 +229,7 @@ export const NavigationRail: React.FC = () => {
           title="Notes"
         >
           {currentTab === MainTab.Notes && <div style={activeBarIndicatorStyle} />}
-          <span style={{ color: currentTab === MainTab.Notes ? '#1E9BEB' : hoveredBtn === 'notes' ? '#FFFFFF' : '#7D8494' }}>
+          <span style={{ color: currentTab === MainTab.Notes ? '#1E9BEB' : hoveredBtn === 'notes' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
             <Icon path={currentTab === MainTab.Notes ? mdiBookmark : mdiBookmarkOutline} size="24px" />
           </span>
         </div>
@@ -242,7 +244,7 @@ export const NavigationRail: React.FC = () => {
         >
           {currentTab === MainTab.Tasks && <div style={activeBarIndicatorStyle} />}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: currentTab === MainTab.Tasks ? '#1E9BEB' : hoveredBtn === 'tasks' ? '#FFFFFF' : '#7D8494' }}>
+            <span style={{ color: currentTab === MainTab.Tasks ? '#1E9BEB' : hoveredBtn === 'tasks' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
               <Icon path={currentTab === MainTab.Tasks ? mdiClipboardList : mdiClipboardListOutline} size="24px" />
             </span>
             {hasDueTasks && <div style={unreadDotBadgeStyle} />}
@@ -258,7 +260,7 @@ export const NavigationRail: React.FC = () => {
           title="Games"
         >
           {currentTab === MainTab.Games && <div style={activeBarIndicatorStyle} />}
-          <span style={{ color: currentTab === MainTab.Games ? '#1E9BEB' : hoveredBtn === 'games' ? '#FFFFFF' : '#7D8494' }}>
+          <span style={{ color: currentTab === MainTab.Games ? '#1E9BEB' : hoveredBtn === 'games' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
             <Icon path={currentTab === MainTab.Games ? mdiGamepadVariant : mdiGamepadVariantOutline} size="24px" />
           </span>
         </div>
@@ -274,57 +276,69 @@ export const NavigationRail: React.FC = () => {
           title="Switch Account"
         >
           {currentTab === MainTab.AccountSwitch && <div style={activeBarIndicatorStyle} />}
-          <span style={{ color: currentTab === MainTab.AccountSwitch ? '#1E9BEB' : hoveredBtn === 'acc' ? '#FFFFFF' : '#7D8494' }}>
+          <span style={{ color: currentTab === MainTab.AccountSwitch ? '#1E9BEB' : hoveredBtn === 'acc' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
             <Icon path={currentTab === MainTab.AccountSwitch ? mdiAccountSwitch : mdiAccountSwitchOutline} size="24px" />
           </span>
         </div>
       </div>
 
-      {/* ================= НИЗ ================= */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingBottom: 20, marginTop: 'auto', flexShrink: 0 }}>
+      {/* ================= НИЗ: ДЕЙСТВИЯ С АНИМАЦИЕЙ ПОДСВЕТКИ ================= */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 16, marginTop: 'auto', flexShrink: 0 }}>
         {currentTab === MainTab.Chats && (
           <>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('OpenCreateGroupModal'))}
+              onMouseEnter={() => setHoveredBtn('create_group')}
+              onMouseLeave={() => setHoveredBtn(null)}
               title="Create Group"
-              style={navActionBtnStyle}
+              style={getActionButtonStyle(hoveredBtn === 'create_group')}
             >
-              <Icon path={mdiPencilPlusOutline} size="24px" />
+              <Icon path={mdiPencilPlusOutline} size="22px" />
             </button>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('OpenCreateFolderDialog'))}
+              onMouseEnter={() => setHoveredBtn('create_folder')}
+              onMouseLeave={() => setHoveredBtn(null)}
               title="Create Folder"
-              style={navActionBtnStyle}
+              style={getActionButtonStyle(hoveredBtn === 'create_folder')}
             >
-              <Icon path={mdiFolderPlusOutline} size="24px" />
+              <Icon path={mdiFolderPlusOutline} size="22px" />
             </button>
           </>
         )}
 
+        {/* 🟢 Вызов createNewNote() строго напрямую (без дублирования) */}
         {currentTab === MainTab.Notes && (
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent('CreateNewNote'))}
+            onClick={() => useNotesStore.getState().createNewNote()}
+            onMouseEnter={() => setHoveredBtn('create_note')}
+            onMouseLeave={() => setHoveredBtn(null)}
             title="Create Note"
-            style={navActionBtnStyle}
+            style={getActionButtonStyle(hoveredBtn === 'create_note')}
           >
-            <Icon path={mdiFileDocumentPlusOutline} size="24px" />
+            <Icon path={mdiFileDocumentPlusOutline} size="22px" />
           </button>
         )}
 
         {currentTab === MainTab.Tasks && (
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent('CreateNewTaskList'))}
+            onClick={() => useTodoStore.getState().createNewTaskList()}
+            onMouseEnter={() => setHoveredBtn('create_task')}
+            onMouseLeave={() => setHoveredBtn(null)}
             title="Create Task List"
-            style={navActionBtnStyle}
+            style={getActionButtonStyle(hoveredBtn === 'create_task')}
           >
-            <Icon path={mdiClipboardPlusOutline} size="24px" />
+            <Icon path={mdiClipboardPlusOutline} size="22px" />
           </button>
         )}
 
+        {/* Переключатель темы */}
         <button
           onClick={toggleTheme}
+          onMouseEnter={() => setHoveredBtn('theme')}
+          onMouseLeave={() => setHoveredBtn(null)}
           title={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          style={navActionBtnStyle}
+          style={getActionButtonStyle(hoveredBtn === 'theme')}
         >
           <div
             style={{
@@ -335,16 +349,19 @@ export const NavigationRail: React.FC = () => {
               justifyContent: 'center',
             }}
           >
-            <Icon path={isDarkTheme ? mdiWeatherNight : mdiWhiteBalanceSunny} size="24px" />
+            <Icon path={isDarkTheme ? mdiWeatherNight : mdiWhiteBalanceSunny} size="22px" />
           </div>
         </button>
 
+        {/* Настройки профиля */}
         <button
           onClick={openProfile}
+          onMouseEnter={() => setHoveredBtn('settings')}
+          onMouseLeave={() => setHoveredBtn(null)}
           title="Settings"
-          style={navActionBtnStyle}
+          style={getActionButtonStyle(hoveredBtn === 'settings')}
         >
-          <Icon path={mdiCogOutline} size="24px" />
+          <Icon path={mdiCogOutline} size="22px" />
         </button>
       </div>
     </div>
@@ -388,18 +405,22 @@ const railDividerStyle: React.CSSProperties = {
   margin: '15px 25px',
 };
 
-const navActionBtnStyle: React.CSSProperties = {
-  width: '100%',
-  height: 50,
-  background: 'transparent',
+// 🟢 Стиль нижней кнопки с подсветкой и эффектом ховера
+const getActionButtonStyle = (isHovered: boolean): React.CSSProperties => ({
+  width: 44,
+  height: 44,
+  borderRadius: 12,
+  background: isHovered ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
   border: 'none',
-  color: '#7D8494',
+  color: isHovered ? '#FFFFFF' : '#7D8494',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   padding: 0,
-  transition: 'color 0.15s ease',
-};
+  transition: 'background-color 0.15s ease, color 0.15s ease, transform 0.1s ease',
+  transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+  outline: 'none',
+});
 
 export default NavigationRail;
