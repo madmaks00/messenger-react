@@ -27,6 +27,7 @@ import {
   mdiChevronRight,
 } from '@mdi/js';
 
+import { SidebarHeaderUserControl } from '../common/SidebarHeaderUserControl';
 import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
 import { useChatFolderStore, IChatFolder } from '../../stores/chatFolderStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -59,7 +60,6 @@ const getChatKey = (item: any) => {
 };
 
 export const SidebarChatsView: React.FC = () => {
-  // 🟢 Достаём методы управления сайдбаром корректно ВНУТРИ компонента
   const {
     allChats,
     openChat,
@@ -106,7 +106,6 @@ export const SidebarChatsView: React.FC = () => {
   const isSearchActive = isSearchInputFocused || searchText.length > 0;
   const hasFolders = chatFolders && chatFolders.length > 1;
 
-  // 🟢 ЗАПУСК СРАЗУ ПРИ СТАРТЕ ПРИЛОЖЕНИЯ: Загружает чаты и синхронизирует онлайны
   useEffect(() => {
     loadChats();
   }, [loadChats]);
@@ -227,28 +226,19 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* РЯД 0: ШАПКА "Chats" */}
-      <div
+      {/* РЯД 0: ШАПКА "Chats" (1:1 идентична Notes и Tasks через SidebarHeaderUserControl) */}
+      <SidebarHeaderUserControl
+        title="Chats"
+        iconPath={mdiChatOutline}
         style={{
-          height: 42,
-          margin: '12px 6px 8px 15px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
           transform: isSearchActive ? 'translateY(-20px)' : 'translateY(0)',
           opacity: isSearchActive ? 0 : 1,
           transition: isSearchActive
             ? `transform 200ms ${CUBIC_EASE_OUT}, opacity 150ms ease-out`
             : `transform 220ms ${CUBIC_EASE_OUT}, opacity 180ms ease-out`,
           pointerEvents: isSearchActive ? 'none' : 'auto',
-          flexShrink: 0,
         }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-          <MdiIcon path={mdiChatOutline} size={26} color="#FFFFFF" style={{ marginRight: 9 }} />
-          <span style={{ fontSize: 24, fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.2px', lineHeight: 1 }}>Chats</span>
-        </div>
-      </div>
+      />
 
       {/* РЯД 1: СТРОКА ПОИСКА */}
       <div
@@ -263,7 +253,7 @@ export const SidebarChatsView: React.FC = () => {
       >
         <div
           style={{
-            height: 34,
+            height: 37,
             backgroundColor: isSearchInputFocused ? 'var(--sidebar-search-focus-bg)' : 'var(--sidebar-search-bg)',
             borderRadius: 9,
             display: 'flex',
@@ -526,7 +516,7 @@ export const SidebarChatsView: React.FC = () => {
                         )}
                       </div>
 
-                      {/* 🟢 ЗЕЛЕНЫЙ ИНДИКАТОР ОНЛАЙНА */}
+                      {/* Зеленый индикатор онлайна */}
                       {Boolean(chat.isOnline) && !chat.isGroup && (
                         <div
                           style={{
@@ -638,7 +628,7 @@ export const SidebarChatsView: React.FC = () => {
           )}
         </div>
 
-        {/* ПЛАВАЮЩИЙ СКРОЛЛБАР */}
+        {/* Плавающий скроллбар */}
         {isScrollable && (
           <div
             style={{

@@ -4,12 +4,14 @@ interface SidebarHeaderProps {
   title: string;
   iconPath?: string;
   rightContent?: React.ReactNode;
+  style?: React.CSSProperties;
 }
 
 export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
   title,
   iconPath,
   rightContent,
+  style,
 }) => {
   return (
     <div
@@ -22,6 +24,7 @@ export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
         userSelect: 'none',
         boxSizing: 'border-box',
         flexShrink: 0,
+        ...style,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>

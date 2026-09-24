@@ -69,7 +69,6 @@ const NEON_FILTERS = [
   { key: 'None', label: 'No Category', icon: mdiTagOffOutline, glow: '#9CA3AF', activeBg: '#242A38' },
 ];
 
-// 🟢 ТОЧНЫЙ МАППИНГ ИКОНОК КАТЕГОРИЙ (1 в 1 с WPF MaterialDesign Icons)
 const CATEGORY_ICONS: Record<string, string> = {
   Work: mdiBriefcaseOutline,
   Personal: mdiAccountOutline,
@@ -202,22 +201,69 @@ export const TasksWorkspaceView: React.FC = () => {
     );
   });
 
-  // 🟢 Иконка заголовка списка резолвится динамически (геймпад, список и т.д.)
   const headerListIcon = resolveMdiIcon(selectedTaskList.iconKind, mdiFormatListBulleted);
 
   return (
     <div
+      className="wpf-scroll-viewer"
       style={{
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
         backgroundColor: '#11141B',
-        overflowY: 'auto',
         userSelect: 'none',
         boxSizing: 'border-box',
       }}
     >
+      {/* 🟢 СТИЛИ ТОНКОГО 4PX СКРОЛЛБАРА ИЗ App.xaml */}
+      <style>{`
+        .wpf-scroll-viewer {
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          scrollbar-width: thin !important;
+          scrollbar-color: transparent transparent !important;
+          transition: scrollbar-color 0.3s ease;
+        }
+
+        .wpf-scroll-viewer:hover {
+          scrollbar-color: rgba(255, 255, 255, 0.3) transparent !important;
+        }
+
+        .wpf-scroll-viewer::-webkit-scrollbar {
+          width: 4px !important;
+          height: 4px !important;
+        }
+
+        .wpf-scroll-viewer::-webkit-scrollbar-track {
+          background: transparent !important;
+        }
+
+        .wpf-scroll-viewer::-webkit-scrollbar-thumb {
+          background: transparent !important;
+          border-radius: 3px !important;
+          transition: background 0.25s ease;
+        }
+
+        .wpf-scroll-viewer:hover::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.3) !important; /* #4DFFFFFF */
+        }
+
+        .wpf-scroll-viewer::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.45) !important; /* #66FFFFFF */
+        }
+
+        .wpf-scroll-viewer::-webkit-scrollbar-thumb:active {
+          background: rgba(255, 255, 255, 0.6) !important; /* #99FFFFFF */
+        }
+
+        .wpf-scroll-viewer::-webkit-scrollbar-button {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+      `}</style>
+
       {/* ================= РЯД 0: ШАПКА, ПОИСК И ФИЛЬТРЫ ================= */}
       <div style={{ margin: '15px 30px', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -563,7 +609,7 @@ export const TasksWorkspaceView: React.FC = () => {
       </div>
 
       {/* ================= РЯД 2: СПИСОК ЗАДАЧ ================= */}
-      <div style={{ margin: '0 30px', flex: 1 }}>
+      <div style={{ margin: '0 30px', flex: 1, paddingBottom: 30 }}>
         {displayedTasks.map((task) => (
           <TaskCardItem
             key={task.localId || task.serverId}
@@ -632,8 +678,6 @@ const TaskCardItem: React.FC<{
   const catStyle = CATEGORY_STYLES[categoryName] || null;
   const priStyle = PRIORITY_STYLES[priorityName] || PRIORITY_STYLES.None;
   const statusStyle = STATUS_STYLES[statusName] || STATUS_STYLES.Todo;
-
-  // 🟢 Реальная иконка категории вместо дефолтной бирки
   const categoryIcon = CATEGORY_ICONS[categoryName] || mdiTagOutline;
 
   return (
@@ -756,7 +800,6 @@ const TaskCardItem: React.FC<{
                 </div>
               )}
 
-              {/* 🟢 Отображение специализированной иконки категории (корзина, трубка, юзер и т.д.) */}
               {categoryName !== 'None' && catStyle && (
                 <div
                   style={{

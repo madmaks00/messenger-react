@@ -13,7 +13,6 @@ import { SearchInputUserControl } from '../common/SearchInputUserControl';
 import { useTodoStore } from '../../stores/todoStore';
 import { useSmoothScroll } from '../../hooks/useSmoothScroll';
 import { resolveMdiIcon } from '../../utils/iconResolver';
-import { ITodoList } from '../../types/models';
 
 const ITEM_HEIGHT = 50;
 
@@ -76,13 +75,13 @@ export const SidebarTasksView: React.FC = () => {
       {/* 0: ШАПКА */}
       <SidebarHeaderUserControl title="Tasks" iconPath={mdiClipboardListOutline} />
 
-      {/* 1: ПОИСК */}
+      {/* 1: ПОИСК (1:1 со стилями SidebarChatsView) */}
       <SearchInputUserControl
         text={listSearchText}
         hintText="Search lists..."
         onChange={setListSearchText}
         onClear={() => setListSearchText('')}
-        margin="0 6px 10px 6px"
+        margin="0 6px 8px 6px"
       />
 
       {/* 2: СПИСОК СПИСКОВ ЗАДАЧ */}
@@ -153,7 +152,7 @@ export const SidebarTasksView: React.FC = () => {
                   position: 'relative',
                 }}
               >
-                {/* 🟢 ИКОНКА С НАВИСАЮЩИМ БЕЙДЖИКОМ: перехват onMouseDown предотвращает сброс режима редактирования инпутом */}
+                {/* ИКОНКА С НАВИСАЮЩИМ БЕЙДЖИКОМ */}
                 <div
                   onMouseDown={(e) => {
                     if (isEditing) {
@@ -185,7 +184,6 @@ export const SidebarTasksView: React.FC = () => {
                     style={{ position: 'absolute', left: 0, top: 0 }}
                   />
 
-                  {/* Бейджик карандаша при IsEditing */}
                   {isEditing && (
                     <div
                       style={{
