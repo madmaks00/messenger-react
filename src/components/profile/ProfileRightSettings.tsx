@@ -41,6 +41,10 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
     confirmPasswordInput,
     setConfirmPasswordInput,
     passwordErrorMessage,
+    setPasswordErrorMessage,
+    isPasswordSubmitting,
+    resetChangePasswordState,
+    openChangePasswordSubPanel,
     currentDevice,
     otherDevices,
     availableCameras,
@@ -69,11 +73,9 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
   const [passcodeError, setPasscodeError] = useState<string>('');
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  
-  // 🟢 Динамические пропорции камеры (по умолчанию 16:9)
   const [cameraAspectRatio, setCameraAspectRatio] = useState<number>(16 / 9);
 
-  // Живое превью выбранной веб-камеры с привязкой реального потока
+  // Превью видеопотока веб-камеры
   useEffect(() => {
     let activeStream: MediaStream | null = null;
     let isMounted = true;
@@ -186,7 +188,12 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
           <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText }}>Settings</span>
         ) : (
           <button
-            onClick={() => setCurrentSettingsSubPanel('main')}
+            onClick={() => {
+              if (currentSettingsSubPanel === 'changePassword') {
+                resetChangePasswordState();
+              }
+              setCurrentSettingsSubPanel('main');
+            }}
             style={{
               background: 'none',
               border: 'none',
@@ -224,10 +231,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                 icon={<Icons.KeyOutline size={20} color={Theme.ProfileInfoIconName} />}
                 title="Change Password"
                 subtitle="Update your account password"
-                onClick={() => {
-                  setIsChangePasswordStep1(true);
-                  setCurrentSettingsSubPanel('changePassword');
-                }}
+                onClick={openChangePasswordSubPanel}
               />
 
               <SettingsRowItem
@@ -410,7 +414,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
           </div>
         )}
 
-        {/* Подраздел: Change Password */}
+        {/* ================= 2. CHANGE PASSWORD ================= */}
         {currentSettingsSubPanel === 'changePassword' && (
           <div style={subPanelCardStyle}>
             <div style={{ padding: 20 }}>
@@ -429,13 +433,44 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   <div style={labelStyle}>CURRENT PASSWORD</div>
                   <input
                     type="password"
+                    autoFocus
+                    disabled={isPasswordSubmitting}
                     value={currentPasswordInput}
-                    onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                    onChange={(e) => {
+                      setCurrentPasswordInput(e.target.value);
+                      if (passwordErrorMessage) setPasswordErrorMessage('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !isPasswordSubmitting) {
+                        handleVerifyCurrentPassword();
+                      }
+                    }}
+                    placeholder="Enter current password"
                     style={{ ...cardInputStyle, marginBottom: 16 }}
                   />
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <button onClick={handleVerifyCurrentPassword} style={primaryBtnStyle}>
-                      Verify Password
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button
+                      type="button"
+                      disabled={isPasswordSubmitting}
+                      onClick={() => {
+                        resetChangePasswordState();
+                        setCurrentSettingsSubPanel('main');
+                      }}
+                      style={secondaryBtnStyle}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleVerifyCurrentPassword}
+                      disabled={isPasswordSubmitting}
+                      style={{
+                        ...primaryBtnStyle,
+                        opacity: isPasswordSubmitting ? 0.7 : 1,
+                        cursor: isPasswordSubmitting ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {isPasswordSubmitting ? 'Verifying...' : 'Verify Password'}
                     </button>
                   </div>
                 </div>
@@ -445,8 +480,19 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                     <div style={labelStyle}>NEW PASSWORD</div>
                     <input
                       type="password"
+                      autoFocus
+                      disabled={isPasswordSubmitting}
                       value={newPasswordInput}
-                      onChange={(e) => setNewPasswordInput(e.target.value)}
+                      onChange={(e) => {
+                        setNewPasswordInput(e.target.value);
+                        if (passwordErrorMessage) setPasswordErrorMessage('');
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isPasswordSubmitting) {
+                          handleSaveNewPassword();
+                        }
+                      }}
+                      placeholder="At least 8 characters"
                       style={cardInputStyle}
                     />
                   </div>
@@ -454,17 +500,44 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                     <div style={labelStyle}>CONFIRM NEW PASSWORD</div>
                     <input
                       type="password"
+                      disabled={isPasswordSubmitting}
                       value={confirmPasswordInput}
-                      onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                      onChange={(e) => {
+                        setConfirmPasswordInput(e.target.value);
+                        if (passwordErrorMessage) setPasswordErrorMessage('');
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isPasswordSubmitting) {
+                          handleSaveNewPassword();
+                        }
+                      }}
+                      placeholder="Repeat new password"
                       style={cardInputStyle}
                     />
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-                    <button onClick={() => setIsChangePasswordStep1(true)} style={secondaryBtnStyle}>
+                    <button
+                      type="button"
+                      disabled={isPasswordSubmitting}
+                      onClick={() => {
+                        setPasswordErrorMessage('');
+                        setIsChangePasswordStep1(true);
+                      }}
+                      style={secondaryBtnStyle}
+                    >
                       Back
                     </button>
-                    <button onClick={handleSaveNewPassword} style={primaryBtnStyle}>
-                      Update Password
+                    <button
+                      type="button"
+                      onClick={handleSaveNewPassword}
+                      disabled={isPasswordSubmitting}
+                      style={{
+                        ...primaryBtnStyle,
+                        opacity: isPasswordSubmitting ? 0.7 : 1,
+                        cursor: isPasswordSubmitting ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {isPasswordSubmitting ? 'Updating...' : 'Update Password'}
                     </button>
                   </div>
                 </div>
@@ -538,7 +611,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
           </div>
         )}
 
-        {/* ================= 2. SPEAKERS & CAMERA ================= */}
+        {/* ================= 3. SPEAKERS & CAMERA ================= */}
         {currentSettingsSubPanel === 'speakersCamera' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {/* ДИНАМИКИ / НАУШНИКИ */}
@@ -553,8 +626,8 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-                <span style={{ fontSize: 16 }}>🔊</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                <Icons.VolumeHigh size={20} color={Theme.ProfileSectionLabel} style={{ flexShrink: 0 }} />
                 <input
                   type="range"
                   min={0}
@@ -563,7 +636,9 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   onChange={(e) => handleVolumeChange(Number(e.target.value))}
                   style={{ flex: 1, accentColor: Theme.AppAccent }}
                 />
-                <span style={{ fontSize: 12, color: Theme.ProfileSectionLabel, minWidth: 32 }}>{speakerVolume}%</span>
+                <span style={{ fontSize: 12, color: Theme.ProfileSectionLabel, minWidth: 32, textAlign: 'right' }}>
+                  {speakerVolume}%
+                </span>
               </div>
             </div>
 
@@ -579,8 +654,8 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   <option key={m} value={m}>{m}</option>
                 ))}
               </select>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-                <span style={{ fontSize: 16 }}>🎤</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                <Icons.Microphone size={20} color={Theme.ProfileSectionLabel} style={{ flexShrink: 0 }} />
                 <input
                   type="range"
                   min={0}
@@ -589,11 +664,13 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   onChange={(e) => handleSensitivityChange(Number(e.target.value))}
                   style={{ flex: 1, accentColor: Theme.AppAccent }}
                 />
-                <span style={{ fontSize: 12, color: Theme.ProfileSectionLabel, minWidth: 32 }}>{micSensitivity}%</span>
+                <span style={{ fontSize: 12, color: Theme.ProfileSectionLabel, minWidth: 32, textAlign: 'right' }}>
+                  {micSensitivity}%
+                </span>
               </div>
             </div>
 
-            {/* КАМЕРА: увеличенный размер по пропорциям видеопотока (16:9 / 4:3) */}
+            {/* КАМЕРА */}
             <div style={settingCardStyle}>
               <div style={labelStyle}>CAMERA</div>
               <select
@@ -623,7 +700,6 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                   boxSizing: 'border-box',
                 }}
               >
-                {/* Видео подстраивает реальные пропорции через onLoadedMetadata */}
                 <video
                   ref={cameraVideoRef}
                   autoPlay

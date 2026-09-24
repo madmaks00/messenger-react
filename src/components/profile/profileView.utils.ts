@@ -1,4 +1,4 @@
-import { AttachmentType, Gender, PrivacyVisibility } from '../../types/enums';
+import { AttachmentType, PrivacyVisibility } from '../../types/enums';
 import {
   IAttachment,
   IMessage,
@@ -6,32 +6,35 @@ import {
   ISharedMessageGroup,
   IUser,
 } from '../../types/models';
+import { BASE_SERVER_URL } from '../../services/apiClient';
 
 // =========================================================================
-// 1. БЕЗОПАСНАЯ НОРМАЛИЗАЦИЯ ИЗОБРАЖЕНИЙ (ФИКС ОШИБКИ 431)
+// 1. БЕЗОПАСНАЯ НОРМАЛИЗАЦИЯ ИЗОБРАЖЕНИЙ (1:1 C# ImageHelper.NormalizeMediaUrl)
 // =========================================================================
 
 export function normalizeImageSrc(src?: string | null): string {
   if (!src || typeof src !== 'string') return '';
-  const trimmed = src.trim();
-  if (!trimmed) return '';
+  let trimmed = src.trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return '';
 
-  if (
-    trimmed.startsWith('data:') ||
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('/') ||
-    trimmed.startsWith('blob:')
-  ) {
+  // Заменяем Windows-слэши на стандартные URL-слэши
+  trimmed = trimmed.replace(/\\/g, '/');
+
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed;
   }
 
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+
+  // Определение чистых base64 строк
   if (
     trimmed.startsWith('iVBORw0KGgo') ||
     trimmed.startsWith('/9j/') ||
     trimmed.startsWith('R0lGOD') ||
     trimmed.startsWith('UklGR') ||
-    trimmed.length > 100
+    trimmed.length > 200
   ) {
     let mime = 'image/png';
     if (trimmed.startsWith('/9j/')) mime = 'image/jpeg';
@@ -40,7 +43,10 @@ export function normalizeImageSrc(src?: string | null): string {
     return `data:${mime};base64,${trimmed}`;
   }
 
-  return trimmed;
+  // Относительный путь сервера (например "uploads/stories/xyz.jpg" или "/uploads/stories/xyz.jpg")
+  const baseServer = (BASE_SERVER_URL || 'https://localhost:7214').replace(/\/+$/, '');
+  const cleanPath = trimmed.replace(/^\/+/, '');
+  return `${baseServer}/${cleanPath}`;
 }
 
 // =========================================================================
@@ -352,7 +358,7 @@ export function parsePrivacyVisibility(val: any): PrivacyVisibility {
 }
 
 // =========================================================================
-// 7. РЕАЛЬНЫЙ ОПРОС ОБОРУДОВАНИЯ СИСТЕМЫ (WebRTC MediaDevices API)
+// 7. ОПРОС ОБОРУДОВАНИЯ СИСТЕМЫ (WebRTC MediaDevices API)
 // =========================================================================
 
 export interface MediaDeviceList {
@@ -373,7 +379,6 @@ export async function getHardwareDevices(): Promise<MediaDeviceList> {
   try {
     let devices = await navigator.mediaDevices.enumerateDevices();
 
-    // Если браузер скрыл лейблы до запроса разрешений, кратковременно запрашиваем доступ
     const hasLabels = devices.some((d) => d.label && d.label.trim().length > 0);
     if (!hasLabels && navigator.mediaDevices.getUserMedia) {
       try {
@@ -385,9 +390,7 @@ export async function getHardwareDevices(): Promise<MediaDeviceList> {
           const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           audioStream.getTracks().forEach((track) => track.stop());
           devices = await navigator.mediaDevices.enumerateDevices();
-        } catch {
-          // Игнорируем отказ пользователя
-        }
+        } catch {}
       }
     }
 

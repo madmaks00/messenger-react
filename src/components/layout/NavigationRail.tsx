@@ -25,6 +25,7 @@ import { useNavigationStore } from '../../stores/navigationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useTodoStore } from '../../stores/todoStore';
+import { useStoriesStore } from '../../stores/storiesStore';
 import { MainTab } from '../../types/enums';
 import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 import { eventBus } from '../../services/eventBus';
@@ -185,12 +186,8 @@ export const NavigationRail: React.FC = () => {
             </div>
           </div>
 
-          {/* Плюсик на аватарке */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              window.dispatchEvent(new CustomEvent('OpenCreateStoryMessage'));
-            }}
+          {/* 🟢 КНОПКА ДОБАВЛЕНИЯ ИСТОРИИ (+) С НАДЕЖНЫМ FILE INPUT (1 в 1 StoriesVM.CreateNewStoryCommand) */}
+          <label
             title="Create Story"
             style={{
               position: 'absolute',
@@ -210,7 +207,19 @@ export const NavigationRail: React.FC = () => {
             }}
           >
             <Icon path={mdiPlus} size="14px" />
-          </button>
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  void useStoriesStore.getState().createNewStory(file);
+                  e.target.value = '';
+                }
+              }}
+            />
+          </label>
         </div>
       </div>
 

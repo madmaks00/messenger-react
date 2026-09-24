@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { AttachmentType, Gender, PrivacyVisibility } from '../../types/enums';
+import { AttachmentType, PrivacyVisibility } from '../../types/enums';
 import {
   DeviceSessionDto,
   PrivacySettingsDto,
@@ -26,9 +26,11 @@ import {
 } from './profileView.utils';
 import { userService } from '../../services/user.service';
 import { groupService } from '../../services/group.service';
+import { storiesService } from '../../services/stories.service';
 import { userSession } from '../../services/userSession';
 import { SecurityService } from '../../services/security.service';
 import { eventBus } from '../../services/eventBus';
+import { useStoriesStore } from '../../stores/storiesStore';
 
 export interface ProfileServices {
   getUserProfile: (userId: number) => Promise<IUser | null>;
@@ -94,7 +96,7 @@ export function useProfileView(
   customServices: Partial<ProfileServices> = {},
   onStartChatProp?: (userId: number) => void,
   onCallUserProp?: (user: any) => void,
-  initialTab: RightContainerType = 'stories' // 🟢 Передача начальной вкладки
+  initialTab: RightContainerType = 'stories'
 ) {
   const effectiveUserId = currentUserId || (userSession as any)?.UserId || (userSession as any)?.userId || user?.id || 0;
 
@@ -117,11 +119,31 @@ export function useProfileView(
     getCameras: customServices.getCameras || (async () => (await getHardwareDevices()).cameras),
     getMicrophones: customServices.getMicrophones || (async () => (await getHardwareDevices()).microphones),
     getSpeakers: customServices.getSpeakers || (async () => (await getHardwareDevices()).speakers),
-    getUserStories: customServices.getUserStories || (() => Promise.resolve([])),
-    createNewStory: customServices.createNewStory || (async () => {}),
-    editStory: customServices.editStory || (() => {}),
-    deleteStory: customServices.deleteStory || (async () => true),
-    openStoryViewer: customServices.openStoryViewer || (() => {}),
+    getUserStories: customServices.getUserStories || (async (userId: number) => {
+      if (userId === effectiveUserId) {
+        await useStoriesStore.getState().loadMyStories();
+        return useStoriesStore.getState().myStories;
+      }
+      return await storiesService.getUserStoriesAsync(userId);
+    }),
+    createNewStory: customServices.createNewStory || (async (file: File) => {
+      await useStoriesStore.getState().createNewStory(file);
+    }),
+    editStory: customServices.editStory || ((storyId: number) => {
+      const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
+      if (story) void useStoriesStore.getState().editStory(story);
+    }),
+    deleteStory: customServices.deleteStory || (async (storyId: number) => {
+      const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
+      if (story) {
+        await useStoriesStore.getState().deleteStory(story);
+        return true;
+      }
+      return false;
+    }),
+    openStoryViewer: customServices.openStoryViewer || ((story: IStory) => {
+      void useStoriesStore.getState().openStoryViewer(story);
+    }),
     getSharedMediaMessages: customServices.getSharedMediaMessages || (() => Promise.resolve([])),
     getSharedPinnedMessages: customServices.getSharedPinnedMessages || (() => Promise.resolve([])),
     getSharedLinkMessages: customServices.getSharedLinkMessages || (() => Promise.resolve([])),
@@ -189,6 +211,7 @@ export function useProfileView(
   const [newPasswordInput, setNewPasswordInput] = useState<string>('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState<string>('');
   const [passwordErrorMessage, setPasswordErrorMessage] = useState<string>('');
+  const [isPasswordSubmitting, setIsPasswordSubmitting] = useState<boolean>(false);
 
   const [currentDevice, setCurrentDevice] = useState<DeviceSessionDto | null>(null);
   const [otherDevices, setOtherDevices] = useState<DeviceSessionDto[]>([]);
@@ -247,7 +270,7 @@ export function useProfileView(
 
   const copyToClipboard = useCallback((text: string, key: string) => {
     if (!text) return;
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     setCopiedKey(key);
     if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
     copyTimeoutRef.current = setTimeout(() => {
@@ -258,8 +281,8 @@ export function useProfileView(
   const loadOwnProfileData = useCallback(async () => {
     setIsStoriesLoading(true);
     try {
-      const stories = await services.getUserStories(effectiveUserId);
-      setActiveStories(stories || []);
+      await useStoriesStore.getState().loadMyStories();
+      setActiveStories(useStoriesStore.getState().myStories);
       const privacy = await services.getPrivacySettings();
       if (privacy) {
         setPrivacySettings({
@@ -332,6 +355,17 @@ export function useProfileView(
     }
   }, []);
 
+  // 🟢 1:1 WPF: Активные истории своего профиля подписываются на myStories из useStoriesStore
+  useEffect(() => {
+    if (isOwnProfile) {
+      setActiveStories(useStoriesStore.getState().myStories);
+      const unsubscribe = useStoriesStore.subscribe((state) => {
+        setActiveStories(state.myStories);
+      });
+      return unsubscribe;
+    }
+  }, [isOwnProfile]);
+
   useEffect(() => {
     if (!isOpen) {
       prevIsOpenRef.current = false;
@@ -355,16 +389,16 @@ export function useProfileView(
         const targetTab = initialTab || 'stories';
         setActiveRightContainer(targetTab);
         if (targetTab === 'stories') {
-          loadOwnProfileData();
+          void loadOwnProfileData();
         } else if (targetTab === 'settings') {
           setCurrentSettingsSubPanel('main');
         }
       } else if (isGroupProfile) {
         setActiveRightContainer(null);
-        if (user?.id) loadGroupDetails(user.id);
+        if (user?.id) void loadGroupDetails(user.id);
       } else {
         setActiveRightContainer(null);
-        if (user?.id) loadOtherUserProfile(user.id);
+        if (user?.id) void loadOtherUserProfile(user.id);
       }
     }
   }, [isOpen, user, isOwnProfile, isGroupProfile, loadOwnProfileData, loadOtherUserProfile, loadGroupDetails]);
@@ -399,7 +433,8 @@ export function useProfileView(
       unbindPrivacy();
     };
   }, [displayedUser, isOwnProfile]);
-useEffect(() => {
+
+  useEffect(() => {
     const unbindTab = eventBus.on('SelectProfileTab' as any, ({ tab }: any) => {
       if (tab) {
         setIsExpanded(true);
@@ -407,7 +442,7 @@ useEffect(() => {
         if (tab === 'settings') {
           setCurrentSettingsSubPanel('main');
         } else if (tab === 'stories') {
-          loadOwnProfileData();
+          void loadOwnProfileData();
         }
       }
     });
@@ -416,6 +451,7 @@ useEffect(() => {
       unbindTab();
     };
   }, [loadOwnProfileData]);
+
   const expandRightPanel = (containerName: RightContainerType) => {
     setActiveRightContainer(containerName);
     setIsExpanded(true);
@@ -593,17 +629,40 @@ useEffect(() => {
     await services.savePrivacySettings(updated);
   };
 
+  const resetChangePasswordState = useCallback(() => {
+    setIsChangePasswordStep1(true);
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setPasswordErrorMessage('');
+    setIsPasswordSubmitting(false);
+  }, []);
+
+  const openChangePasswordSubPanel = useCallback(() => {
+    resetChangePasswordState();
+    setCurrentSettingsSubPanel('changePassword');
+  }, [resetChangePasswordState]);
+
   const handleVerifyCurrentPassword = async () => {
     setPasswordErrorMessage('');
     if (!currentPasswordInput) {
       setPasswordErrorMessage('Please enter your current password.');
       return;
     }
-    const ok = await services.verifyPassword(currentPasswordInput);
-    if (ok) {
-      setIsChangePasswordStep1(false);
-    } else {
-      setPasswordErrorMessage('Invalid password. Please try again.');
+
+    setIsPasswordSubmitting(true);
+    try {
+      const ok = await services.verifyPassword(currentPasswordInput);
+      if (ok) {
+        setPasswordErrorMessage('');
+        setIsChangePasswordStep1(false);
+      } else {
+        setPasswordErrorMessage('Invalid password. Please try again.');
+      }
+    } catch {
+      setPasswordErrorMessage('Error verifying password. Please try again.');
+    } finally {
+      setIsPasswordSubmitting(false);
     }
   };
 
@@ -625,15 +684,20 @@ useEffect(() => {
       setPasswordErrorMessage('Passwords do not match.');
       return;
     }
-    const success = await services.changePassword(newPasswordInput);
-    if (success) {
-      setIsChangePasswordStep1(true);
-      setCurrentPasswordInput('');
-      setNewPasswordInput('');
-      setConfirmPasswordInput('');
-      setCurrentSettingsSubPanel('main');
-    } else {
-      setPasswordErrorMessage('Failed to update password. Please try again.');
+
+    setIsPasswordSubmitting(true);
+    try {
+      const success = await services.changePassword(newPasswordInput);
+      if (success) {
+        resetChangePasswordState();
+        setCurrentSettingsSubPanel('main');
+      } else {
+        setPasswordErrorMessage('Failed to update password. Please try again.');
+      }
+    } catch {
+      setPasswordErrorMessage('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsPasswordSubmitting(false);
     }
   };
 
@@ -677,7 +741,6 @@ useEffect(() => {
     setCurrentSettingsSubPanel('devices');
   };
 
-  // 🟢 1:1 С WPF: Опрос настоящего системного оборудования (камеры, микрофоны, колонки)
   const openSpeakersCameraSubPanel = async () => {
     try {
       const hardware = await getHardwareDevices();
@@ -704,7 +767,7 @@ useEffect(() => {
       const savedSens = localStorage.getItem('mic_sensitivity');
       if (savedSens !== null) setMicSensitivity(Number(savedSens));
     } catch (e) {
-      console.warn('[Hardware] Ошибка инициализации оборудования:', e);
+      console.warn('[Hardware] Ошибка опроса медиа-устройств:', e);
     } finally {
       setCurrentSettingsSubPanel('speakersCamera');
     }
@@ -787,7 +850,7 @@ useEffect(() => {
     if (ok) {
       setIsMemberPermissionsOpen(false);
       setEditingMember(null);
-      handleShowMembers('members');
+      void handleShowMembers('members');
     }
   };
 
@@ -845,6 +908,10 @@ useEffect(() => {
     confirmPasswordInput,
     setConfirmPasswordInput,
     passwordErrorMessage,
+    setPasswordErrorMessage,
+    isPasswordSubmitting,
+    resetChangePasswordState,
+    openChangePasswordSubPanel,
     currentDevice,
     otherDevices,
     setOtherDevices,

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SecurityService } from '../../services/security.service';
+import { Theme } from '../profile/profile.theme';
 
 interface PasscodeSetupModalViewProps {
   isOpen: boolean;
@@ -14,167 +15,250 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
 }) => {
   const [passcode, setPasscode] = useState('');
   const [repeatPasscode, setRepeatPasscode] = useState('');
-  const [error, setError] = useState('');
 
   const firstInputRef = useRef<HTMLInputElement>(null);
 
+  // 1:1 UserControl_IsVisibleChanged: очистка и фокус первого поля при открытии
   useEffect(() => {
     if (isOpen) {
       setPasscode('');
       setRepeatPasscode('');
-      setError('');
-      setTimeout(() => firstInputRef.current?.focus(), 50);
+      const timer = setTimeout(() => {
+        firstInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
+  // 1:1 CancelPasscodeSetup_Click
+  const handleCancel = () => {
+    setPasscode('');
+    setRepeatPasscode('');
+    onClose();
+  };
+
+  // 1:1 SavePasscodeSetup_Click
   const handleSave = async () => {
-    if (passcode.length !== 4 || repeatPasscode.length !== 4) {
-      setError('Passcode must be exactly 4 digits');
+    const p1 = passcode;
+    const p2 = repeatPasscode;
+
+    // В WPF: if (p1.Length != 4 || !int.TryParse(p1, out _) || p1 != p2) return;
+    if (p1.length !== 4 || isNaN(Number(p1)) || p1 !== p2) {
       return;
     }
 
-    if (passcode !== repeatPasscode) {
-      setError('Passcodes do not match');
-      return;
-    }
-
-    await SecurityService.setPasscode(passcode);
+    await SecurityService.setPasscode(p1);
+    setPasscode('');
+    setRepeatPasscode('');
     onSuccess?.();
     onClose();
   };
 
   return (
     <div
-      onClick={onClose}
+      onClick={handleCancel}
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        backgroundColor: '#99000000', // DynamicResource ModalDimOverlayBrush
         zIndex: 9900,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backdropFilter: 'blur(4px)',
+        userSelect: 'none',
+        fontFamily: "'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
       }}
     >
+      {/* КАРТОЧКА МОДАЛЬНОГО ОКНА (Width="340" Background="#12161D" CornerRadius="16" Padding="24") */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 340,
-          backgroundColor: '#1E2330',
+          backgroundColor: Theme.ProfileCardBackground,
           borderRadius: 16,
           padding: 24,
-          boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
-          border: '1px solid #334155',
-          textAlign: 'center',
+          boxShadow: '0 40px 80px rgba(0, 0, 0, 0.6)',
+          border: `1px solid ${Theme.ProfileInputContainerBorder}`,
           boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
         }}
       >
-        {/* Иконка в шапке */}
+        {/* ИКОНКА В ШАПКЕ (Border 48x48 CornerRadius="24" Background="#1F2533") */}
         <div
           style={{
             width: 48,
             height: 48,
             borderRadius: 24,
-            backgroundColor: '#161B26',
+            backgroundColor: Theme.ProfileDeviceItemBg,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 22,
-            margin: '0 auto 12px auto',
-            color: 'var(--app-accent, #3B82F6)',
+            marginBottom: 12,
           }}
         >
-          🔒
+          <svg width={22} height={22} viewBox="0 0 24 24" fill={Theme.AppAccent}>
+            <path d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.89,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z" />
+          </svg>
         </div>
 
-        <h3 style={{ margin: '0 0 4px 0', color: '#FFF', fontSize: 18, fontWeight: 'bold' }}>
+        {/* ЗАГОЛОВОК */}
+        <div
+          style={{
+            color: '#FFFFFF',
+            fontSize: 18,
+            fontWeight: 'bold',
+            marginBottom: 4,
+            textAlign: 'center',
+          }}
+        >
           Setup Passcode
-        </h3>
-        <p style={{ margin: '0 0 20px 0', color: '#94A3B8', fontSize: 12 }}>
-          Enter a 4-digit code to lock the application
-        </p>
+        </div>
 
-        {/* ВВОД 4 ЦИФР */}
-        <div style={{ textAlign: 'left', marginBottom: 14 }}>
-          <label style={{ fontSize: 11, fontWeight: 'bold', color: '#64748B', display: 'block', marginBottom: 6 }}>
+        {/* ПОДЗАГОЛОВОК */}
+        <div
+          style={{
+            color: Theme.ProfileSectionLabel,
+            fontSize: 12,
+            marginBottom: 20,
+            textAlign: 'center',
+          }}
+        >
+          Enter a 4-digit code to lock the application
+        </div>
+
+        {/* СЕКЦИЯ: ВВОД 4 ЦИФР */}
+        <div style={{ width: '100%', marginBottom: 14 }}>
+          <div
+            style={{
+              color: Theme.ProfileSectionLabel,
+              fontSize: 11,
+              fontWeight: 'bold',
+              margin: '0 0 6px 4px',
+            }}
+          >
             ENTER 4 DIGITS
-          </label>
-          <div style={inputBoxWrapperStyle}>
+          </div>
+          <div
+            style={{
+              backgroundColor: Theme.ProfileInputContainerBg,
+              border: `1px solid ${Theme.ProfileInputContainerBorder}`,
+              borderRadius: 10,
+              height: 42,
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 15px',
+              boxSizing: 'border-box',
+            }}
+          >
             <input
               ref={firstInputRef}
               type="password"
               maxLength={4}
               value={passcode}
-              onChange={(e) => {
-                setPasscode(e.target.value.replace(/\D/g, '').slice(0, 4));
-                setError('');
+              onChange={(e) => setPasscode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#FFFFFF',
+                fontSize: 18,
+                fontWeight: 'bold',
+                fontFamily: "'Segoe UI', sans-serif",
+                textAlign: 'left',
               }}
-              style={passcodeFieldStyle}
             />
           </div>
         </div>
 
-        {/* ПОВТОР 4 ЦИФР */}
-        <div style={{ textAlign: 'left', marginBottom: 20 }}>
-          <label style={{ fontSize: 11, fontWeight: 'bold', color: '#64748B', display: 'block', marginBottom: 6 }}>
+        {/* СЕКЦИЯ: ПОВТОР 4 ЦИФР */}
+        <div style={{ width: '100%', marginBottom: 24 }}>
+          <div
+            style={{
+              color: Theme.ProfileSectionLabel,
+              fontSize: 11,
+              fontWeight: 'bold',
+              margin: '0 0 6px 4px',
+            }}
+          >
             REPEAT 4 DIGITS
-          </label>
-          <div style={inputBoxWrapperStyle}>
+          </div>
+          <div
+            style={{
+              backgroundColor: Theme.ProfileInputContainerBg,
+              border: `1px solid ${Theme.ProfileInputContainerBorder}`,
+              borderRadius: 10,
+              height: 42,
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 15px',
+              boxSizing: 'border-box',
+            }}
+          >
             <input
               type="password"
               maxLength={4}
               value={repeatPasscode}
-              onChange={(e) => {
-                setRepeatPasscode(e.target.value.replace(/\D/g, '').slice(0, 4));
-                setError('');
+              onChange={(e) => setRepeatPasscode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              onKeyDown={(e) => e.key === 'Enter' && void handleSave()}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#FFFFFF',
+                fontSize: 18,
+                fontWeight: 'bold',
+                fontFamily: "'Segoe UI', sans-serif",
+                textAlign: 'left',
               }}
-              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-              style={passcodeFieldStyle}
             />
           </div>
         </div>
 
-        {error && (
-          <div style={{ color: '#FF5252', fontSize: 12.5, fontWeight: 600, marginBottom: 16 }}>
-            {error}
-          </div>
-        )}
-
-        {/* КНОПКИ ДЕЙСТВИЯ */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        {/* КНОПКИ ДЕЙСТВИЯ (Grid Columns: * 10 *) */}
+        <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCancel}
             style={{
               height: 38,
               borderRadius: 8,
               background: 'transparent',
               border: 'none',
-              color: '#94A3B8',
+              color: Theme.ProfileSectionLabel,
               fontSize: 13.5,
               fontWeight: 600,
               cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
             Cancel
           </button>
+
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             style={{
               height: 38,
               borderRadius: 8,
-              backgroundColor: 'var(--app-accent, #3B82F6)',
-              color: '#FFF',
+              backgroundColor: Theme.AppAccent,
+              color: '#FFFFFF',
               border: 'none',
               fontSize: 13.5,
               fontWeight: 'bold',
               cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+              boxShadow: '0 0 12px rgba(30, 155, 235, 0.3)',
+              transition: 'filter 0.15s ease',
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.1)')}
+            onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
           >
             Save
           </button>
@@ -184,24 +268,4 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
   );
 };
 
-const inputBoxWrapperStyle: React.CSSProperties = {
-  backgroundColor: '#161B26',
-  border: '1px solid #334155',
-  borderRadius: 10,
-  height: 42,
-  display: 'flex',
-  alignItems: 'center',
-  padding: '0 15px',
-};
-
-const passcodeFieldStyle: React.CSSProperties = {
-  width: '100%',
-  background: 'transparent',
-  border: 'none',
-  outline: 'none',
-  color: '#FFFFFF',
-  fontSize: 18,
-  fontWeight: 'bold',
-  letterSpacing: 4,
-  textAlign: 'center',
-};
+export default PasscodeSetupModalView;

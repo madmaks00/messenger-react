@@ -152,7 +152,16 @@ export class SignalRService {
 
   private registerHubHandlers(): void {
     if (!this.hubConnection) return;
-
+// 🟢 В registerHubHandlers() внутри signalr.service.ts:
+this.hubConnection.on('StoryPosted', (userId: number, userName: string, userAvatar: any) => {
+  eventBus.emit('StoryPostedMessage', { userId, userName, userAvatar });
+});
+this.hubConnection.on('StoryDeleted', (storyId: number, userId: number) => {
+  eventBus.emit('StoryDeletedMessage', { storyId, userId });
+});
+this.hubConnection.on('StoryCommentAdded', (storyId: number, commentsCount: number) => {
+  eventBus.emit('StoryCommentAddedMessage', { storyId, commentsCount });
+});
     // 🟢 1. ВХОДЯЩИЕ СООБЩЕНИЯ
     this.hubConnection.on('ReceiveMessage', async (rawDto: any) => {
       console.log('⚡ [SignalR] Входящее сообщение ReceiveMessage:', rawDto);

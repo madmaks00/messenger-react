@@ -7,9 +7,10 @@ import { ProfileRightSharedMedia } from './ProfileRightSharedMedia';
 import { ProfileRightEditProfile } from './ProfileRightEditProfile';
 import { ProfileRightSettings } from './ProfileRightSettings';
 import { ProfileRightGroup } from './ProfileRightGroup';
-import { getAvatarColor, getFirstLetter, normalizeImageSrc } from './profileView.utils';
+import { getAvatarColor, getFirstLetter } from './profileView.utils';
 import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
+import { useStoriesStore } from '../../stores/storiesStore';
 
 export interface ProfileViewProps {
   isOpen: boolean;
@@ -36,12 +37,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onCallUser,
   services = {},
 }) => {
-  // 🟢 1:1 С WPF: Состояние плавного появления и затухания (AnimateFadeIn / AnimateClose)
   const [isRendered, setIsRendered] = useState<boolean>(false);
   const [isClosing, setIsClosing] = useState<boolean>(false);
   const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Плавное закрытие карточки с задержкой 200мс (1:1 с WPF fadeOut.Completed)
   const handleAnimateClose = useCallback(() => {
     if (isClosing) return;
     setIsClosing(true);
@@ -51,10 +50,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     closeTimeoutRef.current = setTimeout(() => {
       onClose();
       setIsClosing(false);
-    }, 200); // 200ms - точное время DoubleAnimation из WPF
+    }, 200);
   }, [isClosing, onClose]);
 
-  // Запуск плавного проявления (1:1 AnimateFadeIn)
   useEffect(() => {
     if (isOpen) {
       setIsClosing(false);
@@ -68,7 +66,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   }, [isOpen]);
 
-  // Закрытие по клавише Escape
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -147,7 +144,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         backdropFilter: 'blur(4px)',
         userSelect: 'none',
         opacity: isVisible ? 1 : 0,
-        transition: 'opacity 0.2s cubic-bezier(0.25, 1, 0.5, 1)', // QuarticEase Out
+        transition: 'opacity 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
       }}
     >
       <style>{`
@@ -189,7 +186,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         }
       `}</style>
 
-      {/* КАРТОЧКА ПРОФИЛЯ С ПЛАВНЫМ МАСШТАБИРОВАНИЕМ И ШИРИНОЙ (1:1 QuarticEase 200ms/250ms) */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -207,7 +203,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
         }}
       >
-        {/* ЛЕВАЯ КОЛОНКА */}
         <ProfileLeftColumn
           vm={vm}
           isOwnProfile={isOwnProfile}
@@ -221,7 +216,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           onCreateInviteLink={handleGenerateInviteSafe}
         />
 
-        {/* ПРАВАЯ КОЛОНКА */}
         {isExpanded && (
           <div
             style={{
@@ -238,10 +232,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 vm={vm}
                 isOwnProfile={isOwnProfile}
                 onClose={handleAnimateClose}
-                onCreateNewStory={services.createNewStory || (async () => {})}
-                onOpenStoryViewer={services.openStoryViewer || (() => {})}
-                onEditStory={services.editStory || (() => {})}
-                onDeleteStory={services.deleteStory || (async () => false)}
+                onCreateNewStory={services.createNewStory || ((file) => { void useStoriesStore.getState().createNewStory(file); })}
+                onOpenStoryViewer={services.openStoryViewer || ((story) => { void useStoriesStore.getState().openStoryViewer(story); })}
+                onEditStory={services.editStory || ((storyId) => {
+                  const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
+                  if (story) void useStoriesStore.getState().editStory(story);
+                })}
+                onDeleteStory={services.deleteStory || (async (storyId) => {
+                  const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
+                  if (story) {
+                    await useStoriesStore.getState().deleteStory(story);
+                    return true;
+                  }
+                  return false;
+                })}
               />
             )}
 
@@ -285,7 +289,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         )}
       </div>
 
-      {/* ДИАЛОГ НАСТРОЙКИ ПРАВ УЧАСТНИКА (MemberPermissionsOverlay) */}
       {isMemberPermissionsOpen && editingMember && (
         <div
           onClick={() => setIsMemberPermissionsOpen(false)}
@@ -393,7 +396,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       )}
 
-      {/* КОНТЕКСТНОЕ МЕНЮ МЕДИАФАЙЛОВ */}
       {activeContextMenu && (
         <div
           onClick={(e) => e.stopPropagation()}

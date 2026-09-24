@@ -40,6 +40,7 @@ import { useAuthStore } from './stores/authStore';
 import { useSidebarChatsStore } from './stores/sidebarChatsStore';
 import { useTodoStore } from './stores/todoStore';
 import { useNotesStore } from './stores/notesStore';
+import { useStoriesStore } from './stores/storiesStore';
 import { useSidebarResize } from './hooks/useSidebarResize';
 import { SecurityService } from './services/security.service';
 import { authService } from './services/auth.service';
@@ -82,9 +83,16 @@ export const App: React.FC = () => {
   const [photoViewer, setPhotoViewer] = useState<{ isOpen: boolean; list: IAttachment[]; index: number }>({ isOpen: false, list: [], index: 0 });
   const [videoViewer, setVideoViewer] = useState<{ isOpen: boolean; url: string; fileHeader?: string; senderMeta?: string }>({ isOpen: false, url: '' });
   const [imageEditor, setImageEditor] = useState<{ isOpen: boolean; src: string; onDone?: (res: string) => void }>({ isOpen: false, src: '' });
-  const [storyEditor, setStoryEditor] = useState<{ isOpen: boolean; image: string }>({ isOpen: false, image: '' });
 
-  // Инициализация сокета и данных сразу при старте авторизации
+  // 🟢 1:1 WPF: Состояние редактора историй StoryEditorOverlay
+  const [storyEditor, setStoryEditor] = useState<{
+    isOpen: boolean;
+    image: string;
+    storyId?: number | null;
+    description?: string;
+    isPrivate?: boolean;
+  }>({ isOpen: false, image: '', storyId: null, description: '', isPrivate: false });
+
   useEffect(() => {
     checkAuth(authService, userService).then(async (isAuth) => {
       if (isAuth && !isAppLocked) {
@@ -104,12 +112,14 @@ export const App: React.FC = () => {
         await loadChats(true);
         initTodo();
         initNotes();
+        void useStoriesStore.getState().loadStoriesFeed();
+        void useStoriesStore.getState().loadMyStories();
 
         const currentUserId = useAuthStore.getState().currentUser?.id ?? userSession.userId ?? 0;
         if (currentUserId > 0) {
           chatService.syncDeltaAsync(currentUserId).then((count) => {
             if (count > 0) {
-              loadChats(false);
+              void loadChats(false);
             }
           });
         }
@@ -122,9 +132,10 @@ export const App: React.FC = () => {
       await loadChats(true);
       initTodo();
       initNotes();
+      void useStoriesStore.getState().loadStoriesFeed();
+      void useStoriesStore.getState().loadMyStories();
     });
 
-    // 🟢 ИСПРАВЛЕНО: безопасное обновление currentUser через useAuthStore.setState
     const unbindProfileUpdated = eventBus.on('UserProfileUpdatedMessage', ({ user: updatedUser }) => {
       useAuthStore.setState((state) => {
         if (state.currentUser && state.currentUser.id === updatedUser.id) {
@@ -167,8 +178,15 @@ export const App: React.FC = () => {
       setVideoViewer({ isOpen: true, url: d.videoUrl, fileHeader: d.fileName, senderMeta: d.senderName })
     );
 
-    const unbindStoryEditor = eventBus.on('OpenStoryEditorMessage' as any, (d: any) =>
-      setStoryEditor({ isOpen: true, image: d.imageBytes || d.image })
+    // 🟢 1:1 WPF WeakReferenceMessenger.Default.Register<OpenStoryEditorMessage>
+    const unbindStoryEditor = eventBus.on('OpenStoryEditorMessage', (d) =>
+      setStoryEditor({
+        isOpen: true,
+        image: d.image,
+        storyId: d.storyId ?? null,
+        description: d.description ?? '',
+        isPrivate: d.isPrivate ?? false,
+      })
     );
 
     return () => {
@@ -215,9 +233,11 @@ export const App: React.FC = () => {
         isLocked={isAppLocked}
         onUnlock={() => {
           setIsAppLocked(false);
-          loadChats(true);
+          void loadChats(true);
           initTodo();
           initNotes();
+          void useStoriesStore.getState().loadStoriesFeed();
+          void useStoriesStore.getState().loadMyStories();
         }}
       />
 
@@ -359,11 +379,17 @@ export const App: React.FC = () => {
         onClose={() => setImageEditor((p) => ({ ...p, isOpen: false }))}
         onDone={(res) => imageEditor.onDone?.(res)}
       />
+
+      {/* 🟢 РЕДАКТОР ИСТОРИЙ (StoryEditorOverlay) */}
       <StoryEditorView
         isOpen={storyEditor.isOpen}
         imageSource={storyEditor.image}
+        storyId={storyEditor.storyId}
+        initialDescription={storyEditor.description}
+        initialIsPrivate={storyEditor.isPrivate}
         onClose={() => setStoryEditor((p) => ({ ...p, isOpen: false }))}
       />
+
       <StoryViewerView />
       <CallModal />
 

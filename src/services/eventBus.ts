@@ -4,12 +4,11 @@ import type {
   IUserSearchResult,
   IUser,
   IGroupMember,
-  IAttachment,
+  IStory,
 } from '../types/models';
 import type { AttachmentDto, PrivacySettingsDto } from '../types/dtos';
 import { LastMessageType, MainTab } from '../types/enums';
 
-// Реестр всех событий приложения (1-в-1 как в C# Messenger.Register)
 export type AppEvents = {
   // Auth & Session
   RegistrationSuccessMessage: void;
@@ -20,7 +19,7 @@ export type AppEvents = {
   EmailVerificationSuccessMessage: { authResult: any };
   CancelEmailVerificationMessage: void;
   UserProfileUpdatedMessage: { user: IUser };
-
+  StoryDeletedMessage: { storyId: number; userId: number };
   // Chat Navigation & Selection
   SelectChatUserMessage: { target: IUserSearchResult | null };
   SwitchTabMessage: { tab: MainTab };
@@ -45,6 +44,7 @@ export type AppEvents = {
     serverId: number;
     newText: string;
   };
+  StoryCommentAddedMessage: { storyId: number; commentsCount: number };
   ActiveChatUnreadResetMessage: {
     userId?: number | null;
     groupId?: number | null;
@@ -125,6 +125,29 @@ export type AppEvents = {
   // Notes & Stories
   NoteUpdatedMessage: { noteId: number };
   StoryPostedMessage: { userId: number; userName: string; userAvatar?: string | null };
+  OpenStoryEditorMessage: {
+    image: string;
+    storyId?: number | null;
+    description?: string | null;
+    isPrivate?: boolean;
+  };
+  PostStoryMessage: {
+    image: string;
+    description: string;
+    isPrivate: boolean;
+  };
+  UpdateStoryMessage: {
+    storyId: number;
+    image?: string | null;
+    description: string;
+    isPrivate: boolean;
+  };
+  RequestEditStoryMessage: { story: IStory };
+  RequestDeleteStoryMessage: { story: IStory };
+  StoryReactMessage: { storyId: number; type: number };
+  StoryViewedMessage: { storyId: number; userId: number };
+  OpenStoryViewerMessage: { stories: IStory[]; startIndex?: number };
+  SelectProfileTab: { tab: string };
 
   // Dialogs
   OpenConfirmDialogMessage: {
@@ -148,7 +171,6 @@ class EventBus {
     }
     this.handlers.get(event)!.add(handler);
 
-    // Возвращает функцию для мгновенной отписки
     return () => {
       this.off(event, handler);
     };
