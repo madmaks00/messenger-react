@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { mdiMagnify, mdiCloseCircle } from '@mdi/js';
 
 interface SearchInputProps {
@@ -17,11 +17,9 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
   onChange,
   onClear,
   searchBackground,
-  margin = '0 6px 8px 6px', // 🟢 1:1 как в SidebarChatsView
-  height = 37,              // 🟢 1:1 как в SidebarChatsView (было 40)
+  margin = '0 6px 8px 6px',
+  height = 37,
 }) => {
-  const [isFocused, setIsFocused] = useState(false);
-
   const handleClear = () => {
     onChange('');
     onClear?.();
@@ -29,19 +27,33 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
 
   return (
     <div style={{ margin, boxSizing: 'border-box', flexShrink: 0 }}>
+      {/* 🟢 Отключаем системный крестик Chrome/Safari/Edge прямо в компоненте */}
+      <style>{`
+        .wpf-search-input::-webkit-search-cancel-button,
+        .wpf-search-input::-webkit-search-decoration,
+        .wpf-search-input::-webkit-search-results-button,
+        .wpf-search-input::-webkit-search-results-decoration {
+          -webkit-appearance: none !important;
+          display: none !important;
+        }
+        .wpf-search-input::-ms-clear,
+        .wpf-search-input::-ms-reveal {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+      `}</style>
+
       <div
         style={{
           height,
-          backgroundColor:
-            searchBackground ||
-            (isFocused ? 'var(--sidebar-search-focus-bg, #232836)' : 'var(--sidebar-search-bg, #1C212D)'),
-          borderRadius: 9, // 🟢 1:1 как в SidebarChatsView (было 12)
+          backgroundColor: searchBackground || 'var(--sidebar-search-bg, #1C212D)',
+          borderRadius: 9,
           padding: '0 12px',
           border: '1.2px solid transparent',
           display: 'flex',
           alignItems: 'center',
           boxSizing: 'border-box',
-          transition: 'background-color 0.15s ease',
         }}
       >
         {/* Иконка Лупы 18x18 с цветом #8E95A5 */}
@@ -49,7 +61,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
           viewBox="0 0 24 24"
           width={18}
           height={18}
-          fill="#8E95A5" // 🟢 1:1 как в SidebarChatsView
+          fill="#8E95A5"
           style={{ marginRight: 10, flexShrink: 0 }}
         >
           <path d={mdiMagnify} />
@@ -57,11 +69,15 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
 
         {/* Текстовое поле ввода */}
         <input
-          type="text"
+          type="search"
+          name="notes_tasks_search_query"
+          autoComplete="one-time-code"
+          autoCorrect="off"
+          spellCheck={false}
+          data-lpignore="true"
+          data-form-type="other"
           value={text}
           placeholder={hintText}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
           onChange={(e) => onChange(e.target.value)}
           className="wpf-search-input"
           style={{

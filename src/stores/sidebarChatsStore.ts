@@ -11,6 +11,7 @@ import { useChatStore } from './chatStore';
 
 interface SidebarChatsState {
   allChats: IChatListItem[];
+  filteredChats: IChatListItem[]; // 🟢 1-в-1 аналог FilteredChatsView из SidebarChatsViewModel.cs
   selectedChatUser: IUserSearchResult | null;
   currentSidebarChat: IChatListItem | null;
   selectedFolderId: number | null;
@@ -20,6 +21,7 @@ interface SidebarChatsState {
   loadChats: (forceReload?: boolean) => Promise<void>;
   openChat: (target: IUserSearchResult | IChatListItem, userService?: any) => void;
   selectFolder: (folderId: number | null, isSystem: boolean) => void;
+  updateChatFolderIds: (chatId: number, isGroup: boolean, folderId: number, isAdded: boolean) => void;
   updateSidebar: (
     userId?: number | null,
     groupId?: number | null,
@@ -57,6 +59,20 @@ function sortChats(chats: IChatListItem[]): IChatListItem[] {
     const timeB = new Date(b.lastMessageTime).getTime();
     return timeB - timeA;
   });
+}
+
+// 🟢 Логика фильтрации строго 1-в-1 с C# SidebarChatsViewModel.FilterChats:
+function applyFolderFilter(
+  chats: IChatListItem[],
+  selectedFolderId: number | null,
+  isSystemFolder: boolean
+): IChatListItem[] {
+  if (isSystemFolder || selectedFolderId === null || selectedFolderId === undefined) {
+    return chats;
+  }
+  return chats.filter(
+    (c) => Array.isArray(c.folderIds) && c.folderIds.includes(selectedFolderId)
+  );
 }
 
 function extractOnline(statuses: any, userId: number): boolean | undefined {
@@ -99,6 +115,7 @@ function extractOnline(statuses: any, userId: number): boolean | undefined {
 
 export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
   allChats: [],
+  filteredChats: [],
   selectedChatUser: null,
   currentSidebarChat: null,
   selectedFolderId: null,
@@ -106,12 +123,44 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
   typingTimers: new Map(),
 
   selectFolder: (folderId, isSystem) => {
-    set({ selectedFolderId: isSystem ? null : folderId, isSystemFolder: isSystem });
+    const targetFolderId = isSystem ? null : folderId;
+    const allChats = get().allChats;
+    const filtered = applyFolderFilter(allChats, targetFolderId, isSystem);
+
+    set({
+      selectedFolderId: targetFolderId,
+      isSystemFolder: isSystem,
+      filteredChats: filtered,
+    });
+  },
+
+  // 🟢 Обновление принадлежности чата к папкам при ToggleChatInFolder
+  updateChatFolderIds: (chatId: number, isGroup: boolean, folderId: number, isAdded: boolean) => {
+    const { allChats, selectedFolderId, isSystemFolder } = get();
+
+    const updated = allChats.map((c) => {
+      const isMatch = isGroup ? c.groupId === chatId : Number(c.userId || c.id) === chatId;
+      if (!isMatch) return c;
+
+      const currentIds = new Set(c.folderIds || []);
+      if (isAdded) {
+        currentIds.add(folderId);
+      } else {
+        currentIds.delete(folderId);
+      }
+
+      return {
+        ...c,
+        folderIds: Array.from(currentIds),
+      };
+    });
+
+    const filtered = applyFolderFilter(updated, selectedFolderId, isSystemFolder);
+    set({ allChats: updated, filteredChats: filtered });
   },
 
   startGlobalStatusPolling: () => {
     if (globalStatusTimer) return;
-    // 🟢 Глобальный легкий опрос через сокет раз в 7 секунд, даже когда чат не открыт
     globalStatusTimer = setInterval(() => {
       get().syncOnlineStatuses();
     }, 7000);
@@ -151,6 +200,10 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
             const uid = isGroup ? null : Number(c.userId ?? c.UserId ?? c.id ?? c.Id ?? 0);
             const gid = isGroup ? Number(c.groupId ?? c.GroupId ?? c.id ?? c.Id ?? 0) : null;
 
+            // 🟢 Парсим FolderIds как с camelCase, так и с PascalCase
+            const rawFolderIds = c.folderIds ?? c.FolderIds;
+            const parsedFolderIds = Array.isArray(rawFolderIds) ? rawFolderIds.map(Number) : [];
+
             return {
               ...c,
               id: Number(c.id ?? c.Id ?? uid ?? gid ?? 0),
@@ -165,6 +218,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
               unreadCount: Number(c.unreadCount ?? c.UnreadCount ?? 0),
               isPinned: Boolean(c.isPinned ?? c.IsPinned),
               isMuted: Boolean(c.isMuted ?? c.IsMuted),
+              folderIds: parsedFolderIds,
             };
           });
 
@@ -216,7 +270,13 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       }
 
       const sorted = sortChats(merged);
-      set({ allChats: sorted });
+      const { selectedFolderId, isSystemFolder } = get();
+      const filteredResult = applyFolderFilter(sorted, selectedFolderId, isSystemFolder);
+
+      set({
+        allChats: sorted,
+        filteredChats: filteredResult,
+      });
 
       get().startGlobalStatusPolling();
       await get().syncOnlineStatuses();
@@ -294,7 +354,13 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
         chat.unreadCount = (chat.unreadCount || 0) + 1;
       }
       chats[index] = chat;
-      set({ allChats: sortChats(chats) });
+      const sorted = sortChats(chats);
+      const { selectedFolderId, isSystemFolder } = get();
+
+      set({
+        allChats: sorted,
+        filteredChats: applyFolderFilter(sorted, selectedFolderId, isSystemFolder),
+      });
     }
   },
 
@@ -330,7 +396,13 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
           return c;
         });
 
-        set({ allChats: sortChats(updated) });
+        const sorted = sortChats(updated);
+        const { selectedFolderId, isSystemFolder } = get();
+
+        set({
+          allChats: sorted,
+          filteredChats: applyFolderFilter(sorted, selectedFolderId, isSystemFolder),
+        });
       }
     } catch (ex) {
       console.error('[SidebarChatsStore ERROR] Ошибка обновления сайдбара после удаления:', ex);
@@ -355,7 +427,11 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
             ? { ...c, lastMessage: newText, lastMessageType: LastMessageType.Text }
             : c
         );
-        set({ allChats: updated });
+        const { selectedFolderId, isSystemFolder } = get();
+        set({
+          allChats: updated,
+          filteredChats: applyFolderFilter(updated, selectedFolderId, isSystemFolder),
+        });
       }
     } catch (ex) {
       console.error('[SidebarChatsStore ERROR] Ошибка обновления сайдбара при редактировании:', ex);
@@ -366,7 +442,13 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     const isNowPinned = await chatService.togglePinChatAsync(chat.userId, chat.groupId);
     if (isNowPinned !== null) {
       const chats = get().allChats.map((c) => (c.id === chat.id ? { ...c, isPinned: isNowPinned } : c));
-      set({ allChats: sortChats(chats) });
+      const sorted = sortChats(chats);
+      const { selectedFolderId, isSystemFolder } = get();
+
+      set({
+        allChats: sorted,
+        filteredChats: applyFolderFilter(sorted, selectedFolderId, isSystemFolder),
+      });
     }
   },
 
@@ -374,7 +456,12 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     const isNowMuted = await chatService.toggleMuteChatAsync(chat.userId, chat.groupId);
     if (isNowMuted !== null) {
       const chats = get().allChats.map((c) => (c.id === chat.id ? { ...c, isMuted: isNowMuted } : c));
-      set({ allChats: chats });
+      const { selectedFolderId, isSystemFolder } = get();
+
+      set({
+        allChats: chats,
+        filteredChats: applyFolderFilter(chats, selectedFolderId, isSystemFolder),
+      });
     }
   },
 
@@ -384,9 +471,13 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       const res = await apiClient.post<any>(`api/Users/block/${chat.userId}`);
       if (res && res.data) {
         const isBlocked = Boolean(res.data.isBlocked ?? res.data);
-        set((state) => ({
-          allChats: state.allChats.map((c) => (c.id === chat.id ? { ...c, isBlocked } : c)),
-        }));
+        const updated = get().allChats.map((c) => (c.id === chat.id ? { ...c, isBlocked } : c));
+        const { selectedFolderId, isSystemFolder } = get();
+
+        set({
+          allChats: updated,
+          filteredChats: applyFolderFilter(updated, selectedFolderId, isSystemFolder),
+        });
         eventBus.emit('BlockStatusChangedMessage' as any, { blockerId: chat.userId, isBlocked });
       }
     } catch (ex) {
@@ -406,7 +497,12 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       }
 
       const updated = get().allChats.filter((c) => c.secretChatId !== chat.secretChatId);
-      set({ allChats: updated });
+      const { selectedFolderId, isSystemFolder } = get();
+
+      set({
+        allChats: updated,
+        filteredChats: applyFolderFilter(updated, selectedFolderId, isSystemFolder),
+      });
 
       if (get().selectedChatUser?.secretChatId === chat.secretChatId) {
         set({ selectedChatUser: null, currentSidebarChat: null });
@@ -424,7 +520,12 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     }
 
     const updated = get().allChats.filter((c) => c.id !== chat.id);
-    set({ allChats: updated });
+    const { selectedFolderId, isSystemFolder } = get();
+
+    set({
+      allChats: updated,
+      filteredChats: applyFolderFilter(updated, selectedFolderId, isSystemFolder),
+    });
 
     if (get().selectedChatUser?.id === (chat.isGroup ? chat.groupId : chat.userId)) {
       set({ selectedChatUser: null, currentSidebarChat: null });
@@ -441,8 +542,6 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     }
   },
 
-  // 🟢 1 В 1 С WPF SidebarChatsViewModel.SyncOnlineStatusesAsync:
-  // БЕЗ лишних HTTP-запросов! Опрашивает только SignalR RPC GetOnlineStatuses.
   syncOnlineStatuses: async () => {
     const currentChats = get().allChats;
     const userIds = Array.from(
@@ -468,24 +567,28 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       const statuses = await signalRService.getOnlineStatusesAsync(userIds);
       if (!statuses) return;
 
-      set((state) => ({
-        allChats: state.allChats.map((c) => {
-          const uid = Number(c.userId ?? (c as any).UserId ?? c.id ?? (c as any).Id ?? 0);
-          if (!c.isGroup && uid > 0) {
-            const isOnline = extractOnline(statuses, uid);
-            if (isOnline !== undefined) {
-              return {
-                ...c,
-                isOnline,
-                lastSeen: isOnline ? new Date().toISOString() : c.lastSeen,
-              };
-            }
+      const updated = get().allChats.map((c) => {
+        const uid = Number(c.userId ?? (c as any).UserId ?? c.id ?? (c as any).Id ?? 0);
+        if (!c.isGroup && uid > 0) {
+          const isOnline = extractOnline(statuses, uid);
+          if (isOnline !== undefined) {
+            return {
+              ...c,
+              isOnline,
+              lastSeen: isOnline ? new Date().toISOString() : c.lastSeen,
+            };
           }
-          return c;
-        }),
-      }));
+        }
+        return c;
+      });
 
-      // Обновляем шапку активного чата
+      const { selectedFolderId, isSystemFolder } = get();
+
+      set({
+        allChats: updated,
+        filteredChats: applyFolderFilter(updated, selectedFolderId, isSystemFolder),
+      });
+
       const currentActive = useChatStore.getState().selectedChatUser;
       if (currentActive && !currentActive.isGroup) {
         const activeId = Number(currentActive.id ?? (currentActive as any).userId ?? 0);
@@ -513,15 +616,10 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
 eventBus.on('UserStatusChangedMessage' as any, ({ userId, isOnline, lastSeen }: { userId: number; isOnline: boolean; lastSeen: string }) => {
   const numId = Number(userId);
 
-  console.log(`%c[STATUS-LOG 🔔] Пришёл статус от сервера: UserId=${numId}, isOnline=${isOnline}, LastSeen=${lastSeen}`, 'color: #00bcd4; font-weight: bold;');
-
   useSidebarChatsStore.setState((state) => {
-    let found = false;
     const updatedChats = state.allChats.map((c) => {
       const uid = Number(c.userId ?? (c as any).UserId ?? c.id ?? (c as any).Id ?? 0);
       if (!c.isGroup && uid === numId) {
-        found = true;
-        console.log(`%c[STATUS-LOG ✅] Сменили статус в сайдбаре для чата "${c.nickName}" на: ${isOnline ? 'ONLINE' : 'OFFLINE'}`, 'color: #4caf50; font-weight: bold;');
         return {
           ...c,
           isOnline: Boolean(isOnline),
@@ -531,14 +629,12 @@ eventBus.on('UserStatusChangedMessage' as any, ({ userId, isOnline, lastSeen }: 
       return c;
     });
 
-    if (!found) {
-      console.warn(`[STATUS-LOG ⚠️] Пользователь с Id=${numId} не найден в списке allChats:`, state.allChats.map(c => ({ nick: c.nickName, id: c.id, userId: c.userId })));
-    }
-
-    return { allChats: updatedChats };
+    return {
+      allChats: updatedChats,
+      filteredChats: applyFolderFilter(updatedChats, state.selectedFolderId, state.isSystemFolder),
+    };
   });
 
-  // Обновляем шапку активного диалога
   const activeChat = useChatStore.getState().selectedChatUser;
   if (activeChat && !activeChat.isGroup && Number(activeChat.id ?? (activeChat as any).userId) === numId) {
     useChatStore.setState({
@@ -580,27 +676,37 @@ eventBus.on('SecretChatCreatedMessage' as any, ({ secretChat }: any) => {
   if (!secretChat) return;
   const store = useSidebarChatsStore.getState();
   const existing = store.allChats.filter((c) => c.secretChatId !== secretChat.secretChatId);
+  const sorted = sortChats([secretChat, ...existing]);
+
   useSidebarChatsStore.setState({
-    allChats: sortChats([secretChat, ...existing]),
+    allChats: sorted,
+    filteredChats: applyFolderFilter(sorted, store.selectedFolderId, store.isSystemFolder),
   });
 });
 
 // 🟢 6. Секретный чат подтверждён собеседником (SecretChatEstablishedMessage)
 eventBus.on('SecretChatEstablishedMessage' as any, ({ secretChatId, keyFingerprint }: any) => {
-  useSidebarChatsStore.setState((state) => ({
-    allChats: state.allChats.map((c) =>
+  useSidebarChatsStore.setState((state) => {
+    const updated = state.allChats.map((c) =>
       c.secretChatId === secretChatId
         ? { ...c, keyFingerprint, lastMessage: '🔒 Секретный чат создан.', lastMessageTime: new Date().toISOString() }
         : c
-    ),
-  }));
+    );
+    return {
+      allChats: updated,
+      filteredChats: applyFolderFilter(updated, state.selectedFolderId, state.isSystemFolder),
+    };
+  });
 });
 
 // 🟢 7. Секретный чат сброшен/удалён (SecretChatDiscardedMessage)
 eventBus.on('SecretChatDiscardedMessage' as any, ({ secretChatId }: any) => {
   const store = useSidebarChatsStore.getState();
   const updated = store.allChats.filter((c) => c.secretChatId !== secretChatId);
-  useSidebarChatsStore.setState({ allChats: updated });
+  useSidebarChatsStore.setState({
+    allChats: updated,
+    filteredChats: applyFolderFilter(updated, store.selectedFolderId, store.isSystemFolder),
+  });
 
   if (store.selectedChatUser?.secretChatId === secretChatId) {
     useSidebarChatsStore.setState({ selectedChatUser: null, currentSidebarChat: null });
@@ -642,7 +748,11 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
     }
     return c;
   });
-  useSidebarChatsStore.setState({ allChats: chats });
+
+  useSidebarChatsStore.setState({
+    allChats: chats,
+    filteredChats: applyFolderFilter(chats, store.selectedFolderId, store.isSystemFolder),
+  });
 
   if (store.typingTimers.has(key)) {
     clearTimeout(store.typingTimers.get(key)!);
@@ -656,8 +766,12 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
       }
       return c;
     });
-    useSidebarChatsStore.setState({ allChats: currentChats });
-    store.typingTimers.delete(key);
+    const currentStore = useSidebarChatsStore.getState();
+    useSidebarChatsStore.setState({
+      allChats: currentChats,
+      filteredChats: applyFolderFilter(currentChats, currentStore.selectedFolderId, currentStore.isSystemFolder),
+    });
+    currentStore.typingTimers.delete(key);
   }, 4000);
 
   store.typingTimers.set(key, timer);
@@ -665,8 +779,8 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
 
 // 🟢 12. Сброс счётчика непрочитанных (ActiveChatUnreadResetMessage)
 eventBus.on('ActiveChatUnreadResetMessage' as any, (data: any) => {
-  useSidebarChatsStore.setState((state) => ({
-    allChats: state.allChats.map((chat) => {
+  useSidebarChatsStore.setState((state) => {
+    const updated = state.allChats.map((chat) => {
       const match = data.secretChatId
         ? chat.secretChatId === data.secretChatId
         : data.targetGroupId
@@ -674,14 +788,19 @@ eventBus.on('ActiveChatUnreadResetMessage' as any, (data: any) => {
         : Number(chat.userId || chat.id) === Number(data.targetUserId);
 
       return match ? { ...chat, unreadCount: 0 } : chat;
-    }),
-  }));
+    });
+
+    return {
+      allChats: updated,
+      filteredChats: applyFolderFilter(updated, state.selectedFolderId, state.isSystemFolder),
+    };
+  });
 });
 
 // 🟢 13. Обновление информации о группе (GroupUpdatedMessage)
 eventBus.on('GroupUpdatedMessage' as any, ({ groupId, newName, newAvatar, newDescription }: any) => {
-  useSidebarChatsStore.setState((state) => ({
-    allChats: state.allChats.map((c) =>
+  useSidebarChatsStore.setState((state) => {
+    const updated = state.allChats.map((c) =>
       c.isGroup && c.groupId === groupId
         ? {
             ...c,
@@ -691,8 +810,13 @@ eventBus.on('GroupUpdatedMessage' as any, ({ groupId, newName, newAvatar, newDes
             groupDescription: newDescription || c.groupDescription,
           }
         : c
-    ),
-  }));
+    );
+
+    return {
+      allChats: updated,
+      filteredChats: applyFolderFilter(updated, state.selectedFolderId, state.isSystemFolder),
+    };
+  });
 });
 
 // 🟢 14. Очистка диалога собеседником для обоих (ChatClearedForBothMessage)
@@ -703,9 +827,21 @@ eventBus.on('ChatClearedForBothMessage' as any, ({ blockerId }: { blockerId: num
       ? { ...c, lastMessage: '', lastMessageType: LastMessageType.None }
       : c
   );
-  useSidebarChatsStore.setState({ allChats: updated });
+
+  useSidebarChatsStore.setState({
+    allChats: updated,
+    filteredChats: applyFolderFilter(updated, store.selectedFolderId, store.isSystemFolder),
+  });
 
   if (store.selectedChatUser && !store.selectedChatUser.isGroup && Number(store.selectedChatUser.id) === blockerId) {
     eventBus.emit('ClearActiveChatMessagesMessage' as any, undefined);
   }
+});
+
+// 🟢 15. Переключение папки через Messenger (ChatFolderSelectedMessage)
+eventBus.on('ChatFolderSelectedMessage' as any, ({ folder }: { folder: any }) => {
+  if (!folder) return;
+  const isSystem = Boolean(folder.isSystem ?? folder.IsSystem);
+  const folderId = isSystem ? null : Number(folder.id ?? folder.Id);
+  useSidebarChatsStore.getState().selectFolder(folderId, isSystem);
 });

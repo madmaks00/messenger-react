@@ -108,6 +108,13 @@ html, body, #root {
   color: #8E95A5 !important;
   opacity: 1 !important; /* Убирает встроенное затемнение Chrome */
   font-size: 14.5px !important;
+  input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+  display: none !important;
+  -webkit-appearance: none !important;
+}
 }
 
 /* 🟢 ПОДСКАЗКА ПОЛЯ ВВОДА (1 в 1 с WPF: белый цвет + 56% прозрачность, как у SmartHint) */

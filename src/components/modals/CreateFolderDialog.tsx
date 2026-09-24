@@ -89,56 +89,73 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
   confirmButtonText: propConfirmText,
   onClose: propOnClose,
 }) => {
-  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  // 🟢 Подписываемся на состояние модального окна напрямую из useChatFolderStore
+  const isStoreOpen = useChatFolderStore((s) => s.isCreateFolderDialogOpen);
+  const storeTitle = useChatFolderStore((s) => s.folderDialogTitle);
+  const storeConfirmText = useChatFolderStore((s) => s.folderDialogConfirmButtonText);
+  const storeName = useChatFolderStore((s) => s.newFolderName);
+  const storeColor = useChatFolderStore((s) => s.selectedFolderColor);
+  const storeIcon = useChatFolderStore((s) => s.selectedFolderIcon);
+
+  const cancelCreateFolder = useChatFolderStore((s) => s.cancelCreateFolder);
+  const confirmCreateFolder = useChatFolderStore((s) => s.confirmCreateFolder);
+  const setNewFolderName = useChatFolderStore((s) => s.setNewFolderName);
+  const setSelectedFolderColor = useChatFolderStore((s) => s.setSelectedFolderColor);
+  const setSelectedFolderIcon = useChatFolderStore((s) => s.setSelectedFolderIcon);
+
+  // Режимы редактирования для TaskList и Note (по C# ChatFolderViewModel.cs)
   const [mode, setMode] = useState<'Folder' | 'TaskList' | 'Note'>('Folder');
   const [targetList, setTargetList] = useState<ITodoList | null>(null);
   const [targetNote, setTargetNote] = useState<INote | null>(null);
 
-  const [dialogTitle, setDialogTitle] = useState('Create Folder');
-  const [confirmText, setConfirmText] = useState('Create');
-  const [nameText, setNameText] = useState('');
-  const [selectedColor, setSelectedColor] = useState('#FF3B30');
-  const [selectedIconKind, setSelectedIconKind] = useState('FolderOutline');
+  const [localTitle, setLocalTitle] = useState('Create Folder');
+  const [localConfirmText, setLocalConfirmText] = useState('Create');
+  const [localName, setLocalName] = useState('');
+  const [localColor, setLocalColor] = useState('#FF3B30');
+  const [localIcon, setLocalIcon] = useState('FolderOutline');
   const [isInputFocused, setIsInputFocused] = useState(false);
 
-  const isOpen = Boolean(propIsOpen || internalIsOpen);
+  // Окно открыто, если активен стор папок ИЛИ внешние props
+  const isOpen = Boolean(propIsOpen || isStoreOpen);
   const maxLength = 12;
 
+  const currentTitle = mode === 'Folder' ? (propTitle || storeTitle) : localTitle;
+  const currentConfirmText = mode === 'Folder' ? (propConfirmText || storeConfirmText) : localConfirmText;
+  const currentName = mode === 'Folder' ? storeName : localName;
+  const currentColor = mode === 'Folder' ? storeColor : localColor;
+  const currentIcon = mode === 'Folder' ? storeIcon : localIcon;
+
   useEffect(() => {
-    const handleOpenFolder = () => {
+    if (isStoreOpen && mode !== 'Folder') {
       setMode('Folder');
       setTargetList(null);
       setTargetNote(null);
-      setDialogTitle(propTitle || 'Create Folder');
-      setConfirmText(propConfirmText || 'Create');
-      setNameText('');
-      setSelectedColor('#FF3B30');
-      setSelectedIconKind('FolderOutline');
-      setInternalIsOpen(true);
-    };
+    }
+  }, [isStoreOpen, mode]);
 
+  useEffect(() => {
     const handleOpenTaskList = (data: { list: ITodoList }) => {
       if (!data?.list) return;
       setMode('TaskList');
       setTargetList(data.list);
       setTargetNote(null);
-      setDialogTitle('Edit Task List');
-      setConfirmText('Save');
-      setNameText(data.list.listName || '');
+      setLocalTitle('Edit Task List');
+      setLocalConfirmText('Save');
+      setLocalName(data.list.listName || '');
 
       const targetColor = data.list.iconColor || '#007AFF';
       const matchedColor = AVAILABLE_COLORS.find(
         (c) => c.toLowerCase() === targetColor.toLowerCase()
       );
-      setSelectedColor(matchedColor || '#007AFF');
+      setLocalColor(matchedColor || '#007AFF');
 
       const targetIcon = data.list.iconKind || 'FormatListBulleted';
       const matchedIcon = AVAILABLE_ICONS.find(
         (i) => i.kind.toLowerCase() === targetIcon.toLowerCase()
       );
-      setSelectedIconKind(matchedIcon?.kind || 'FormatListBulleted');
+      setLocalIcon(matchedIcon?.kind || 'FormatListBulleted');
 
-      setInternalIsOpen(true);
+      useChatFolderStore.setState({ isCreateFolderDialogOpen: true });
     };
 
     const handleOpenNote = (data: { note: INote }) => {
@@ -146,26 +163,25 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
       setMode('Note');
       setTargetNote(data.note);
       setTargetList(null);
-      setDialogTitle('Edit Note');
-      setConfirmText('Save');
-      setNameText(data.note.title || '');
+      setLocalTitle('Edit Note');
+      setLocalConfirmText('Save');
+      setLocalName(data.note.title || '');
 
       const targetColor = data.note.iconColor || '#007AFF';
       const matchedColor = AVAILABLE_COLORS.find(
         (c) => c.toLowerCase() === targetColor.toLowerCase()
       );
-      setSelectedColor(matchedColor || '#007AFF');
+      setLocalColor(matchedColor || '#007AFF');
 
       const targetIcon = data.note.iconKind || 'FolderOutline';
       const matchedIcon = AVAILABLE_ICONS.find(
         (i) => i.kind.toLowerCase() === targetIcon.toLowerCase()
       );
-      setSelectedIconKind(matchedIcon?.kind || 'FolderOutline');
+      setLocalIcon(matchedIcon?.kind || 'FolderOutline');
 
-      setInternalIsOpen(true);
+      useChatFolderStore.setState({ isCreateFolderDialogOpen: true });
     };
 
-    window.addEventListener('OpenCreateFolderDialog', handleOpenFolder);
     const unbindTask = eventBus.on('OpenEditTaskListDialogMessage' as any, handleOpenTaskList);
     const unbindNote = eventBus.on('OpenEditNoteDialogMessage' as any, handleOpenNote);
 
@@ -177,46 +193,71 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      window.removeEventListener('OpenCreateFolderDialog', handleOpenFolder);
       unbindTask();
       unbindNote();
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, propTitle, propConfirmText]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleClose = () => {
-    setInternalIsOpen(false);
+    cancelCreateFolder();
     setTargetList(null);
     setTargetNote(null);
+    setMode('Folder');
     if (propOnClose) propOnClose();
+  };
+
+  const handleColorSelect = (color: string) => {
+    if (mode === 'Folder') {
+      setSelectedFolderColor(color);
+    } else {
+      setLocalColor(color);
+    }
+  };
+
+  const handleIconSelect = (iconKind: string) => {
+    if (mode === 'Folder') {
+      setSelectedFolderIcon(iconKind);
+    } else {
+      setLocalIcon(iconKind);
+    }
+  };
+
+  const handleNameChange = (val: string) => {
+    if (mode === 'Folder') {
+      setNewFolderName(val);
+    } else {
+      setLocalName(val);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameText.trim()) return;
+    if (!currentName.trim()) return;
 
     if (mode === 'TaskList' && targetList) {
       const updated: ITodoList = {
         ...targetList,
-        listName: nameText.trim(),
-        iconColor: selectedColor,
-        iconKind: selectedIconKind,
+        listName: currentName.trim(),
+        iconColor: currentColor,
+        iconKind: currentIcon,
         isEditing: false,
       };
       await useTodoStore.getState().commitEditList(updated);
     } else if (mode === 'Note' && targetNote) {
       const updated: INote = {
         ...targetNote,
-        title: nameText.trim(),
-        iconColor: selectedColor,
-        iconKind: selectedIconKind,
+        title: currentName.trim(),
+        iconColor: currentColor,
+        iconKind: currentIcon,
         isEditing: false,
       };
       await useNotesStore.getState().commitEditNote(updated, updated.title);
     } else {
-      await useChatFolderStore.getState().createFolder(nameText.trim(), selectedIconKind, selectedColor);
+      // 🟢 Вызывает сохранение (Создание или Обновление существующей папки через PUT)
+      await confirmCreateFolder();
     }
 
     handleClose();
@@ -239,9 +280,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
         boxSizing: 'border-box',
       }}
     >
-      {/* 🟢 УЛУЧШЕННЫЕ СТИЛИ НАВЕДЕНИЯ (ХОВЕР ПАЛИТРЫ, ИКОНОК И КНОПОК) */}
       <style>{`
-        /* Контейнер ячейки цвета */
         .wpf-color-cell {
           width: 40px;
           height: 40px;
@@ -256,7 +295,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           transform: scale(0.92);
         }
 
-        /* Внешнее кольцо */
         .wpf-color-ring {
           position: absolute;
           width: 38px;
@@ -270,7 +308,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           pointer-events: none;
         }
 
-        /* 🟢 Плавное появление кольца и увеличение при наведении */
         .wpf-color-cell:hover:not(.selected) .wpf-color-ring {
           opacity: 0.75;
           transform: scale(1.05);
@@ -279,14 +316,12 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           transform: scale(1.12);
         }
 
-        /* Выбранный цвет: четкое белое кольцо 2px */
         .wpf-color-cell.selected .wpf-color-ring {
           border: 2px solid #FFFFFF !important;
           opacity: 1 !important;
           transform: scale(1) !important;
         }
 
-        /* Внутренний кружок цвета */
         .wpf-color-dot {
           width: 28px;
           height: 28px;
@@ -296,7 +331,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
         }
 
-        /* 🟢 Ячейка иконки */
         .wpf-icon-cell {
           width: 40px;
           height: 40px;
@@ -329,7 +363,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           transition: fill 0.15s ease;
         }
 
-        /* 🟢 КНОПКИ CANCEL И CREATE (1 в 1 с MaterialDesignFlatButton) */
         .wpf-dialog-cancel-btn {
           background: transparent;
           border: none;
@@ -372,13 +405,13 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
         }
       `}</style>
 
-      {/* Контейнер окна (Width="380", CornerRadius="12", Padding="24,20,24,16") */}
+      {/* Карточка окна */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 380,
           maxHeight: '92vh',
-          backgroundColor: '#161B26', // FolderDialogBackgroundBrush
+          backgroundColor: '#161B26',
           borderRadius: 12,
           padding: '20px 24px 16px 24px',
           boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
@@ -389,7 +422,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           position: 'relative',
         }}
       >
-        {/* Заголовок */}
         <h3
           style={{
             margin: '0 0 15px 0',
@@ -399,11 +431,10 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
             flexShrink: 0,
           }}
         >
-          {dialogTitle}
+          {currentTitle}
         </h3>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          {/* ScrollViewer */}
           <div
             className="wpf-scroll-viewer"
             style={{
@@ -415,7 +446,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               boxSizing: 'border-box',
             }}
           >
-            {/* Поле имени + счетчик 0 / 12 */}
+            {/* Поле ввода имени */}
             <div style={{ position: 'relative', marginBottom: 20 }}>
               <input
                 type="text"
@@ -423,20 +454,20 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
                 placeholder="Folder Name"
                 required
                 autoFocus
-                value={nameText}
+                value={currentName}
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
-                onChange={(e) => setNameText(e.target.value)}
+                onChange={(e) => handleNameChange(e.target.value)}
                 style={{
                   width: '100%',
                   background: 'transparent',
                   border: 'none',
-                  borderBottom: `1px solid ${isInputFocused ? selectedColor : '#283040'}`,
+                  borderBottom: `1px solid ${isInputFocused ? currentColor : '#283040'}`,
                   color: '#FFFFFF',
                   fontSize: 15,
                   padding: '8px 0 4px 0',
                   outline: 'none',
-                  caretColor: selectedColor,
+                  caretColor: currentColor,
                   boxSizing: 'border-box',
                   fontFamily: "'Segoe UI', -apple-system, sans-serif",
                   transition: 'border-color 0.2s ease',
@@ -444,12 +475,12 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
                 <span style={{ fontSize: 11, color: '#7D8494', fontWeight: 500 }}>
-                  {nameText.length} / {maxLength}
+                  {currentName.length} / {maxLength}
                 </span>
               </div>
             </div>
 
-            {/* 🟢 СЕКЦИЯ ВЫБОРА ЦВЕТА (28 цветов: UniformGrid Columns="7") */}
+            {/* Выбор цвета */}
             <div style={{ fontSize: 13, fontWeight: 600, color: '#7D8494', marginBottom: 8 }}>Color</div>
             <div
               style={{
@@ -461,11 +492,11 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               }}
             >
               {AVAILABLE_COLORS.map((c) => {
-                const isSelected = selectedColor.toLowerCase() === c.toLowerCase();
+                const isSelected = currentColor.toLowerCase() === c.toLowerCase();
                 return (
                   <div
                     key={c}
-                    onClick={() => setSelectedColor(c)}
+                    onClick={() => handleColorSelect(c)}
                     className={`wpf-color-cell ${isSelected ? 'selected' : ''}`}
                     title={c}
                   >
@@ -476,7 +507,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               })}
             </div>
 
-            {/* 🟢 СЕКЦИЯ ВЫБОРА ИКОНКИ (28 иконок: UniformGrid Columns="7") */}
+            {/* Выбор иконки */}
             <div style={{ fontSize: 13, fontWeight: 600, color: '#7D8494', marginBottom: 8 }}>Icon</div>
             <div
               style={{
@@ -488,11 +519,11 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               }}
             >
               {AVAILABLE_ICONS.map((item) => {
-                const isSelected = selectedIconKind.toLowerCase() === item.kind.toLowerCase();
+                const isSelected = currentIcon.toLowerCase() === item.kind.toLowerCase();
                 return (
                   <div
                     key={item.kind}
-                    onClick={() => setSelectedIconKind(item.kind)}
+                    onClick={() => handleIconSelect(item.kind)}
                     className={`wpf-icon-cell ${isSelected ? 'selected' : ''}`}
                     title={item.kind}
                   >
@@ -511,7 +542,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
             </div>
           </div>
 
-          {/* 🟢 КНОПКИ CANCEL И CREATE/SAVE С АНИМАЦИЕЙ ХОВЕРА */}
+          {/* Кнопки Cancel / Save */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 5, flexShrink: 0 }}>
             <button
               type="button"
@@ -523,9 +554,9 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
             <button
               type="submit"
               className="wpf-dialog-confirm-btn"
-              style={{ color: selectedColor }}
+              style={{ color: currentColor }}
             >
-              {confirmText}
+              {currentConfirmText}
             </button>
           </div>
         </form>

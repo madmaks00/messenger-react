@@ -25,21 +25,25 @@ import {
   mdiFileDocumentOutline,
   mdiPhone,
   mdiChevronRight,
+  mdiPencilOutline,
 } from '@mdi/js';
 
 import { SidebarHeaderUserControl } from '../common/SidebarHeaderUserControl';
+import { CreateFolderDialog } from '../modals/CreateFolderDialog';
+
 import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
-import { useChatFolderStore, IChatFolder } from '../../stores/chatFolderStore';
+import { useChatFolderStore } from '../../stores/chatFolderStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useSmoothScroll } from '../../hooks/useSmoothScroll';
 import { resolveMdiIcon } from '../../utils/iconResolver';
 import { MessagePreviewHelper, getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
-import { IChatListItem, IUserSearchResult } from '../../types/models';
+import { IChatListItem, IUserSearchResult, IChatFolder } from '../../types/models';
 import { LastMessageType } from '../../types/enums';
 
 const ITEM_HEIGHT = 68;
 const CUBIC_EASE_OUT = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
+const DRAG_THRESHOLD = 5; // Порог начала перетаскивания в пикселях (WPF MinimumHorizontalDragDistance)
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
@@ -47,12 +51,18 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
   color = 'currentColor',
   style,
 }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} fill={color} style={{ display: 'inline-block', flexShrink: 0, ...style }}>
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill={color}
+    style={{ display: 'inline-block', flexShrink: 0, ...style }}
+  >
     <path d={path} />
   </svg>
 );
 
-const getChatKey = (item: any) => {
+const getChatKey = (item: any): string => {
   if (!item) return '';
   if (item.isSecretChat) return `s_${item.secretChatId || item.id}`;
   if (item.isGroup) return `g_${item.groupId || item.id}`;
@@ -67,12 +77,24 @@ export const SidebarChatsView: React.FC = () => {
     toggleMuteChat,
     deleteChat,
     clearChatHistory,
+    blockUser,
     selectedChatUser,
     loadChats,
-    syncOnlineStatuses,
   } = useSidebarChatsStore();
 
-  const { chatFolders, selectedFolderId, selectFolder, toggleChatInFolder } = useChatFolderStore();
+  const {
+    chatFolders,
+    customFolders,
+    selectedFolderId,
+    selectFolder,
+    toggleChatInFolder,
+    openEditFolderDialog,
+    confirmRemoveFolder,
+    loadFoldersAsync,
+    reorderFoldersLive,
+    saveFoldersOrderAsync,
+  } = useChatFolderStore();
+
   const { isChatSearchMode, exitSearch } = useChatStore();
 
   const {
@@ -89,15 +111,33 @@ export const SidebarChatsView: React.FC = () => {
 
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   const [hoveredChatKey, setHoveredChatKey] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chat: IChatListItem } | null>(null);
-  const [isFolderSubmenuOpen, setIsFolderSubmenuOpen] = useState(false);
 
+  // Контекстные меню
+  const [chatContextMenu, setChatContextMenu] = useState<{ x: number; y: number; chat: IChatListItem } | null>(null);
+  const [isFolderSubmenuOpen, setIsFolderSubmenuOpen] = useState(false);
+  const [folderContextMenu, setFolderContextMenu] = useState<{ x: number; y: number; folder: IChatFolder } | null>(null);
+
+  // Скролл списка чатов
   const [isListHovered, setIsListHovered] = useState(false);
   const [isScrollDragging, setIsScrollDragging] = useState(false);
   const [isThumbHovered, setIsThumbHovered] = useState(false);
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const foldersScrollRef = useRef<HTMLDivElement>(null);
+
+  // =========================================================================
+  // 🟢 LIVE DRAG & DROP FOLDERS (ТОЧНО КАК В C# WPF)
+  // =========================================================================
+  const [draggedFolderId, setDraggedFolderId] = useState<number | null>(null);
+  const [dragOffset, setDragOffset] = useState<number>(0);
+
+  const isDraggingRef = useRef<boolean>(false);
+  const justFinishedDragRef = useRef<boolean>(false);
+  const dragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const draggedFolderRef = useRef<IChatFolder | null>(null);
+  const dragOffsetRef = useRef<number>(0);
+  const folderRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
   const [scrollTop, setScrollTop] = useState(0);
@@ -107,8 +147,9 @@ export const SidebarChatsView: React.FC = () => {
   const hasFolders = chatFolders && chatFolders.length > 1;
 
   useEffect(() => {
-    loadChats();
-  }, [loadChats]);
+    loadFoldersAsync();
+    loadChats(true);
+  }, [loadFoldersAsync, loadChats]);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -138,18 +179,133 @@ export const SidebarChatsView: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [searchText]);
 
-  const filteredChats = useMemo(() => {
-    let result = allChats;
-    if (selectedFolderId && selectedFolderId > 0) {
-      const currentFolder = chatFolders.find((f) => f.id === selectedFolderId);
-      if (currentFolder) {
-        result = result.filter((c) => {
-          const id = c.isGroup ? c.groupId : c.userId;
-          return id && currentFolder.includedChatIds?.includes(id);
-        });
+  // Глобальные обработчики перетаскивания (WPF element.CaptureMouse)
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!draggedFolderRef.current) return;
+
+      const deltaX = e.clientX - dragStartPosRef.current.x;
+
+      if (!isDraggingRef.current) {
+        if (Math.abs(deltaX) > DRAG_THRESHOLD) {
+          isDraggingRef.current = true;
+          setDraggedFolderId(draggedFolderRef.current.id);
+        } else {
+          return;
+        }
       }
+
+      dragOffsetRef.current = deltaX;
+      setDragOffset(deltaX);
+
+      // 1. Автоматическая прокрутка панели папок (HandleAutoScroll)
+      if (foldersScrollRef.current) {
+        const rect = foldersScrollRef.current.getBoundingClientRect();
+        const mouseXRel = e.clientX - rect.left;
+        const scrollZone = 35;
+
+        if (mouseXRel > rect.width - scrollZone) {
+          const speed = (mouseXRel - (rect.width - scrollZone)) * 0.18;
+          foldersScrollRef.current.scrollLeft += speed;
+        } else if (mouseXRel < scrollZone) {
+          const speed = (scrollZone - mouseXRel) * 0.18;
+          foldersScrollRef.current.scrollLeft -= speed;
+        }
+      }
+
+      // 2. Живой обмен позициями при смещении на 60% ширины соседа (CheckAndSwapLive)
+      const currentList = useChatFolderStore.getState().chatFolders;
+      const targetFolder = draggedFolderRef.current;
+      const currentIndex = currentList.findIndex((f) => f.id === targetFolder.id);
+      if (currentIndex === -1) return;
+
+      // Движение вправо
+if (deltaX > 0 && currentIndex < currentList.length - 1) {
+  const nextEl = folderRefs.current[currentIndex + 1];
+  if (nextEl) {
+    const nextWidth = nextEl.offsetWidth + 4;
+    if (deltaX >= nextWidth * 0.6) {
+      reorderFoldersLive(currentIndex, currentIndex + 1);
+      dragStartPosRef.current.x += nextWidth;
+      dragOffsetRef.current -= nextWidth;
+      setDragOffset(dragOffsetRef.current);
     }
-    return result;
+  }
+}
+// Движение влево (🟢 теперь можно свапать вплоть до нулевого индекса!)
+else if (deltaX < 0 && currentIndex > 0) {
+  const prevEl = folderRefs.current[currentIndex - 1];
+  if (prevEl) {
+    const prevWidth = prevEl.offsetWidth + 4;
+    if (-deltaX >= prevWidth * 0.6) {
+      reorderFoldersLive(currentIndex, currentIndex - 1);
+      // 🟢 Правильная математика без телепортации:
+      dragStartPosRef.current.x -= prevWidth;
+      dragOffsetRef.current += prevWidth;
+      setDragOffset(dragOffsetRef.current);
+    }
+  }
+}
+    };
+
+    const handleGlobalMouseUp = () => {
+      if (draggedFolderRef.current) {
+        if (isDraggingRef.current) {
+          justFinishedDragRef.current = true;
+          setTimeout(() => {
+            justFinishedDragRef.current = false;
+          }, 100);
+
+          // Сохраняем порядок на сервере и рассылаем через SignalR
+          saveFoldersOrderAsync();
+        }
+
+        draggedFolderRef.current = null;
+        isDraggingRef.current = false;
+        setDraggedFolderId(null);
+        setDragOffset(0);
+      }
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [reorderFoldersLive, saveFoldersOrderAsync]);
+
+  const handleFolderMouseDown = (e: React.MouseEvent, folder: IChatFolder) => {
+    if (e.button !== 0) return;
+
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    draggedFolderRef.current = folder;
+    isDraggingRef.current = false;
+    dragOffsetRef.current = 0;
+  };
+
+  const handleFoldersWheel = (e: React.WheelEvent) => {
+    if (foldersScrollRef.current) {
+      e.preventDefault();
+      const step = e.deltaY > 0 ? 100 : -100;
+      foldersScrollRef.current.scrollBy({ left: step, behavior: 'smooth' });
+    }
+  };
+
+  // Фильтрация чатов строго 1 в 1 с WPF FilterChats
+  const filteredChats = useMemo(() => {
+    const currentFolder = chatFolders.find((f) => f.id === selectedFolderId);
+
+    if (!currentFolder || currentFolder.isSystem || currentFolder.id === 0) {
+      return allChats;
+    }
+
+    return allChats.filter((chat) => {
+      const ids = chat.folderIds ?? (chat as any).FolderIds;
+      if (!Array.isArray(ids)) return false;
+      return ids.some((id) => Number(id) === Number(currentFolder.id));
+    });
   }, [allChats, selectedFolderId, chatFolders]);
 
   const totalHeight = filteredChats.length * ITEM_HEIGHT;
@@ -226,7 +382,7 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* РЯД 0: ШАПКА "Chats" (1:1 идентична Notes и Tasks через SidebarHeaderUserControl) */}
+      {/* РЯД 0: ШАПКА "Chats" */}
       <SidebarHeaderUserControl
         title="Chats"
         iconPath={mdiChatOutline}
@@ -254,28 +410,31 @@ export const SidebarChatsView: React.FC = () => {
         <div
           style={{
             height: 37,
-            backgroundColor: isSearchInputFocused ? 'var(--sidebar-search-focus-bg)' : 'var(--sidebar-search-bg)',
+            backgroundColor: 'var(--sidebar-search-bg)',
             borderRadius: 9,
             display: 'flex',
             alignItems: 'center',
             padding: '0 12px',
             border: '1.2px solid transparent',
             boxSizing: 'border-box',
-            transition: 'background-color 0.15s ease',
           }}
         >
           <MdiIcon path={mdiMagnify} size={18} color="#8E95A5" style={{ marginRight: 10 }} />
 
           <input
             ref={searchInputRef}
-            type="text"
+            type="search"
+            role="searchbox"
+            name="chat_search_query"
+            id="chat_search_query"
+            autoComplete="off"
+            spellCheck={false}
             placeholder={isChatSearchMode ? 'Search in messages...' : 'Search Chat'}
             value={searchText}
             onFocus={() => setIsSearchInputFocused(true)}
             onBlur={() => setIsSearchInputFocused(false)}
             onChange={(e) => setSearchText(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && handleCloseSearch()}
-            className="wpf-search-input"
             style={{
               flex: 1,
               minWidth: 0,
@@ -315,9 +474,11 @@ export const SidebarChatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* РЯД 2: ПАПКИ ЧАТОВ */}
+      {/* РЯД 2: ПАПКИ ЧАТОВ С ЖИВЫМ ПЕРЕТАСКИВАНИЕМ (DRAG & DROP) */}
       {hasFolders && (
         <div
+          ref={foldersScrollRef}
+          onWheel={handleFoldersWheel}
           style={{
             height: 45,
             minHeight: 45,
@@ -325,6 +486,8 @@ export const SidebarChatsView: React.FC = () => {
             alignItems: 'center',
             padding: '5px 10px 0 10px',
             marginBottom: 4,
+            overflowX: 'auto',
+            scrollbarWidth: 'none',
             opacity: isSearchActive ? 0 : 1,
             pointerEvents: isSearchActive ? 'none' : 'auto',
             transition: isSearchActive ? 'opacity 150ms ease-out' : 'opacity 200ms ease-out',
@@ -332,14 +495,29 @@ export const SidebarChatsView: React.FC = () => {
             boxSizing: 'border-box',
           }}
         >
-          {chatFolders.map((folder: IChatFolder) => {
+          {chatFolders.map((folder: IChatFolder, idx: number) => {
             const isSelected = selectedFolderId === folder.id;
+            const isDragging = draggedFolderId === folder.id;
             const folderIconPath = resolveMdiIcon(folder.icon, mdiFolderOutline);
 
             return (
               <div
                 key={folder.id}
-                onClick={() => selectFolder(folder.id)}
+                ref={(el) => {
+                  folderRefs.current[idx] = el;
+                }}
+                onMouseDown={(e) => handleFolderMouseDown(e, folder)}
+                onClick={() => {
+                  if (justFinishedDragRef.current || isDraggingRef.current) return;
+                  selectFolder(folder);
+                }}
+                onContextMenu={(e) => {
+                  if (folder.isSystem) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setChatContextMenu(null);
+                  setFolderContextMenu({ x: e.clientX, y: e.clientY, folder });
+                }}
                 style={{
                   position: 'relative',
                   height: 35,
@@ -348,17 +526,30 @@ export const SidebarChatsView: React.FC = () => {
                   fontSize: 14.5,
                   fontWeight: 600,
                   color: isSelected ? '#FFFFFF' : 'var(--text-muted)',
-                  cursor: 'pointer',
+                  cursor: folder.isSystem ? 'pointer' : isDragging ? 'grabbing' : 'grab',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
+                  maxWidth: 160,
                   boxSizing: 'border-box',
+                  whiteSpace: 'nowrap',
+                  zIndex: isDragging ? 100 : 1,
+                  opacity: isDragging ? 0.9 : 1,
+                  transform: isDragging ? `translateX(${dragOffset}px)` : 'translateX(0)',
+                  transition: isDragging ? 'none' : 'transform 0.15s ease, opacity 0.15s ease',
+                  willChange: isDragging ? 'transform' : 'auto',
                 }}
               >
                 {!folder.isSystem && (
-                  <MdiIcon path={folderIconPath} size={16} color={folder.color || '#FFFFFF'} style={{ opacity: isSelected ? 1 : 0.6 }} />
+                  <MdiIcon
+                    path={folderIconPath}
+                    size={16}
+                    color={folder.color || '#FFFFFF'}
+                    style={{ opacity: isSelected ? 1 : 0.6 }}
+                  />
                 )}
-                <span>{folder.name}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
+
                 {isSelected && (
                   <div
                     style={{
@@ -436,19 +627,8 @@ export const SidebarChatsView: React.FC = () => {
                 );
                 const isHovered = hoveredChatKey === key;
 
-                const rawText = chat.lastMessage || (chat as any).rawLastMessage || '';
-                const [preview, computedMsgType] = MessagePreviewHelper.formatPreview(
-                  rawText,
-                  (chat as any).lastAttachmentType ?? chat.lastMessageType,
-                  (chat as any).lastMessageSenderId ?? chat.userId,
-                  0,
-                  chat.isLastMessageDeletedForMe,
-                  chat.isGroup,
-                  chat.isChannel,
-                  (chat as any).isLastAttachmentGif
-                );
-
-                const msgIcon = getLastMessageIcon(chat.lastMessageType || computedMsgType);
+                const rawText = chat.lastMessage || '';
+                const msgIcon = getLastMessageIcon(chat.lastMessageType);
                 const avatarRaw = chat.avatarPath || (chat as any).avatar;
                 const chatAvatarSrc = normalizeAvatarUrl(avatarRaw);
 
@@ -458,8 +638,10 @@ export const SidebarChatsView: React.FC = () => {
                     onClick={() => openChat(chat)}
                     onContextMenu={(e) => {
                       e.preventDefault();
+                      e.stopPropagation();
+                      setFolderContextMenu(null);
                       setIsFolderSubmenuOpen(false);
-                      setContextMenu({ x: e.clientX, y: e.clientY, chat });
+                      setChatContextMenu({ x: e.clientX, y: e.clientY, chat });
                     }}
                     onMouseEnter={() => setHoveredChatKey(key)}
                     onMouseLeave={() => setHoveredChatKey(null)}
@@ -516,7 +698,7 @@ export const SidebarChatsView: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Зеленый индикатор онлайна */}
+                      {/* Индикатор онлайна */}
                       {Boolean(chat.isOnline) && !chat.isGroup && (
                         <div
                           style={{
@@ -555,7 +737,7 @@ export const SidebarChatsView: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Текст */}
+                    {/* Текстовая область */}
                     <div style={{ flex: 1, minWidth: 0, marginRight: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
                         {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
@@ -585,7 +767,7 @@ export const SidebarChatsView: React.FC = () => {
                             lineHeight: '1.2',
                           }}
                         >
-                          {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : (preview || rawText || '')}
+                          {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : (chat.lastMessage || '')}
                         </span>
                       </div>
                     </div>
@@ -628,7 +810,7 @@ export const SidebarChatsView: React.FC = () => {
           )}
         </div>
 
-        {/* Плавающий скроллбар */}
+        {/* Скроллбар */}
         {isScrollable && (
           <div
             style={{
@@ -796,14 +978,17 @@ export const SidebarChatsView: React.FC = () => {
       </div>
 
       {/* КОНТЕКСТНОЕ МЕНЮ ЧАТА */}
-      {contextMenu && (
-        <div onClick={() => setContextMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
+      {chatContextMenu && (
+        <div
+          onMouseDown={() => setChatContextMenu(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000 }}
+        >
           <div
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             style={{
               position: 'fixed',
-              top: contextMenu.y,
-              left: contextMenu.x,
+              top: chatContextMenu.y,
+              left: chatContextMenu.x,
               backgroundColor: 'var(--context-menu-bg)',
               border: '1px solid var(--context-menu-border)',
               borderRadius: 12,
@@ -813,25 +998,28 @@ export const SidebarChatsView: React.FC = () => {
               zIndex: 1001,
             }}
           >
+            {/* 1. PIN / UNPIN */}
             <ContextRow
               icon={mdiPinOutline}
               rotate={45}
-              text={contextMenu.chat.isPinned ? 'Unpin' : 'Pin'}
+              text={chatContextMenu.chat.isPinned ? 'Unpin' : 'Pin'}
               onClick={() => {
-                togglePinChat(contextMenu.chat);
-                setContextMenu(null);
+                togglePinChat(chatContextMenu.chat);
+                setChatContextMenu(null);
               }}
             />
 
+            {/* 2. MUTE / UNMUTE NOTIFICATIONS */}
             <ContextRow
-              icon={contextMenu.chat.isMuted ? mdiBellOutline : mdiBellOffOutline}
-              text={contextMenu.chat.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
+              icon={chatContextMenu.chat.isMuted ? mdiBellOutline : mdiBellOffOutline}
+              text={chatContextMenu.chat.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
               onClick={() => {
-                toggleMuteChat(contextMenu.chat);
-                setContextMenu(null);
+                toggleMuteChat(chatContextMenu.chat);
+                setChatContextMenu(null);
               }}
             />
 
+            {/* 3. ADD TO FOLDER */}
             <div
               style={{ position: 'relative' }}
               onMouseEnter={() => setIsFolderSubmenuOpen(true)}
@@ -841,6 +1029,7 @@ export const SidebarChatsView: React.FC = () => {
 
               {isFolderSubmenuOpen && (
                 <div
+                  onMouseDown={(e) => e.stopPropagation()}
                   style={{
                     position: 'absolute',
                     left: '100%',
@@ -854,20 +1043,21 @@ export const SidebarChatsView: React.FC = () => {
                     boxShadow: '0 2px 15px rgba(0, 0, 0, 0.25)',
                   }}
                 >
-                  {chatFolders.filter((f) => !f.isSystem).map((folder) => {
-                    const isInFolder = folder.includedChatIds?.includes(contextMenu.chat.userId || contextMenu.chat.groupId || 0);
+                  {customFolders.map((folder) => {
+                    const ids = chatContextMenu.chat.folderIds ?? (chatContextMenu.chat as any).FolderIds;
+                    const isInFolder = Array.isArray(ids) && ids.some((id) => Number(id) === Number(folder.id));
                     const folderIcon = resolveMdiIcon(folder.icon, mdiFolderOutline);
 
                     return (
                       <ContextRow
                         key={folder.id}
                         icon={folderIcon}
-                        iconColor={folder.color}
+                        iconColor={folder.color || undefined}
                         text={folder.name}
                         checkMark={isInFolder}
                         onClick={async () => {
-                          await toggleChatInFolder?.(folder.id, contextMenu.chat);
-                          setContextMenu(null);
+                          await toggleChatInFolder(folder.id, chatContextMenu.chat);
+                          setChatContextMenu(null);
                         }}
                       />
                     );
@@ -876,29 +1066,88 @@ export const SidebarChatsView: React.FC = () => {
               )}
             </div>
 
+            {/* 4. BLOCK / UNBLOCK USER */}
+            {!chatContextMenu.chat.isGroup && (
+              <ContextRow
+                icon={mdiBlockHelper}
+                text={chatContextMenu.chat.isBlocked ? 'Unblock User' : 'Block User'}
+                onClick={() => {
+                  blockUser(chatContextMenu.chat);
+                  setChatContextMenu(null);
+                }}
+              />
+            )}
+
             <div style={{ height: 1, backgroundColor: 'var(--context-menu-border)', margin: '4px 0' }} />
 
+            {/* 5. CLEAR HISTORY */}
             <ContextRow
               icon={mdiBroom}
               text="Clear History"
               onClick={() => {
-                clearChatHistory(contextMenu.chat, false);
-                setContextMenu(null);
+                clearChatHistory(chatContextMenu.chat, false);
+                setChatContextMenu(null);
               }}
             />
 
+            {/* 6. DELETE CHAT */}
             <ContextRow
               icon={mdiDeleteOutline}
               text="Delete Chat"
               isDestructive
               onClick={() => {
-                deleteChat(contextMenu.chat);
-                setContextMenu(null);
+                deleteChat(chatContextMenu.chat);
+                setChatContextMenu(null);
               }}
             />
           </div>
         </div>
       )}
+
+      {/* КОНТЕКСТНОЕ МЕНЮ ВКЛАДКИ ПАПКИ */}
+      {folderContextMenu && (
+        <div
+          onMouseDown={() => setFolderContextMenu(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000 }}
+        >
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: folderContextMenu.y,
+              left: folderContextMenu.x,
+              backgroundColor: 'var(--context-menu-bg)',
+              border: '1px solid var(--context-menu-border)',
+              borderRadius: 12,
+              padding: '2px 0',
+              minWidth: 160,
+              boxShadow: '0 2px 15px rgba(0, 0, 0, 0.25)',
+              zIndex: 1001,
+            }}
+          >
+            <ContextRow
+              icon={mdiPencilOutline}
+              text="Edit folder"
+              onClick={() => {
+                openEditFolderDialog(folderContextMenu.folder);
+                setFolderContextMenu(null);
+              }}
+            />
+            <ContextRow
+              icon={mdiDeleteOutline}
+              text="Remove"
+              isDestructive
+              onClick={() => {
+                confirmRemoveFolder(folderContextMenu.folder);
+                setFolderContextMenu(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ДИАЛОГ СОЗДАНИЯ И РЕДАКТИРОВАНИЯ */}
+      <CreateFolderDialog />
     </div>
   );
 };
@@ -978,9 +1227,16 @@ const ContextRow: React.FC<{
 }> = ({ icon, text, rotate, iconColor, isDestructive, hasChevron, checkMark, onClick }) => {
   const [isHovered, setIsHovered] = useState(false);
 
+  const handleTrigger = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClick?.();
+  };
+
   return (
     <div
-      onClick={onClick}
+      onMouseDown={handleTrigger}
+      onClick={handleTrigger}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{

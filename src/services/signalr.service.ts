@@ -11,8 +11,10 @@ import { BASE_SERVER_URL } from './apiClient';
 import { getLocalDatabase } from '../db/localDb';
 import { AttachmentDto, PrivacySettingsDto } from '../types/dtos';
 import { AttachmentType, LastMessageType } from '../types/enums';
-import { IMessage, IUser } from '../types/models';
+import { IMessage, IUser, IChatFolder } from '../types/models';
 import { parsePrivacyVisibility } from '../components/profile/profileView.utils';
+import { useChatFolderStore } from '../stores/chatFolderStore';
+import { useSidebarChatsStore } from '../stores/sidebarChatsStore';
 
 function getCleanToken(): string {
   let raw =
@@ -92,7 +94,6 @@ export class SignalRService {
           this.hubConnection = null;
         }
 
-        // 🟢 ИСПРАВЛЕНО: Чистый нативный протокол SignalR (JSON) исключает RangeError из-за LZ4-сжатия
         const builder = new HubConnectionBuilder()
           .withUrl(`${this.serverUrl}/${this.hubPath}`, {
             accessTokenFactory: () => getCleanToken(),
@@ -152,16 +153,19 @@ export class SignalRService {
 
   private registerHubHandlers(): void {
     if (!this.hubConnection) return;
-// 🟢 В registerHubHandlers() внутри signalr.service.ts:
-this.hubConnection.on('StoryPosted', (userId: number, userName: string, userAvatar: any) => {
-  eventBus.emit('StoryPostedMessage', { userId, userName, userAvatar });
-});
-this.hubConnection.on('StoryDeleted', (storyId: number, userId: number) => {
-  eventBus.emit('StoryDeletedMessage', { storyId, userId });
-});
-this.hubConnection.on('StoryCommentAdded', (storyId: number, commentsCount: number) => {
-  eventBus.emit('StoryCommentAddedMessage', { storyId, commentsCount });
-});
+
+    this.hubConnection.on('StoryPosted', (userId: number, userName: string, userAvatar: any) => {
+      eventBus.emit('StoryPostedMessage', { userId, userName, userAvatar });
+    });
+
+    this.hubConnection.on('StoryDeleted', (storyId: number, userId: number) => {
+      eventBus.emit('StoryDeletedMessage', { storyId, userId });
+    });
+
+    this.hubConnection.on('StoryCommentAdded', (storyId: number, commentsCount: number) => {
+      eventBus.emit('StoryCommentAddedMessage', { storyId, commentsCount });
+    });
+
     // 🟢 1. ВХОДЯЩИЕ СООБЩЕНИЯ
     this.hubConnection.on('ReceiveMessage', async (rawDto: any) => {
       console.log('⚡ [SignalR] Входящее сообщение ReceiveMessage:', rawDto);
@@ -437,7 +441,7 @@ this.hubConnection.on('StoryCommentAdded', (storyId: number, commentsCount: numb
       eventBus.emit('UserProfileUpdatedMessage', { user: updatedUser });
     });
 
-    // 🟢 9. СИНХРОНИЗАЦИЯ НАСТРОЕК ПРИВАТНОСТИ (ЧИСТЫЙ JSON БЕЗ LZ4 СБОЕВ)
+    // 🟢 9. СИНХРОНИЗАЦИЯ НАСТРОЕК ПРИВАТНОСТИ
     this.hubConnection.on('PrivacySettingsUpdated', (rawSettings: any) => {
       console.log('⚡ [SignalR] Настройки приватности получены от сервера:', rawSettings);
       if (!rawSettings) return;
@@ -453,9 +457,140 @@ this.hubConnection.on('StoryCommentAdded', (storyId: number, commentsCount: numb
         birthdayVisibility: parsePrivacyVisibility(rawSettings.birthdayVisibility ?? rawSettings.BirthdayVisibility),
       };
 
-      console.log('✅ [SignalR] Успешно применены настройки приватности:', dto);
       eventBus.emit('PrivacySettingsUpdatedMessage', { settings: dto });
     });
+
+    // =========================================================================
+    // 🟢 10. ПАПКИ ЧАТОВ (СИНХРОНИЗАЦИЯ В РЕАЛЬНОМ ВРЕМЕНИ МЕЖДУ УСТРОЙСТВАМИ)
+    // =========================================================================
+    this.hubConnection.on('ChatFolderCreated', (rawFolder: any) => {
+      console.log('⚡ [SignalR] Создана новая папка на другом устройстве:', rawFolder);
+      if (!rawFolder) return;
+
+      const folder: IChatFolder = {
+        id: Number(rawFolder.id ?? rawFolder.Id),
+        name: String(rawFolder.name ?? rawFolder.Name ?? ''),
+        orderIndex: Number(rawFolder.orderIndex ?? rawFolder.OrderIndex ?? 0),
+        isSystem: Boolean(rawFolder.isSystem ?? rawFolder.IsSystem),
+        icon: rawFolder.icon ?? rawFolder.Icon ?? 'FolderOutline',
+        color: rawFolder.color ?? rawFolder.Color ?? '#FF3B30',
+        isSelected: false,
+        isDragging: false,
+      };
+
+      const { chatFolders, customFolders } = useChatFolderStore.getState();
+      if (!chatFolders.some((f) => f.id === folder.id)) {
+        const updatedChatFolders = [...chatFolders, folder].sort((a, b) => a.orderIndex - b.orderIndex);
+        const updatedCustom = [...customFolders, folder].sort((a, b) => a.orderIndex - b.orderIndex);
+        useChatFolderStore.setState({
+          chatFolders: updatedChatFolders,
+          customFolders: updatedCustom,
+        });
+      }
+    });
+
+    this.hubConnection.on('ChatFolderUpdated', (rawFolder: any) => {
+      console.log('⚡ [SignalR] Папка обновлена на другом устройстве:', rawFolder);
+      if (!rawFolder) return;
+
+      const folderId = Number(rawFolder.id ?? rawFolder.Id);
+      const name = String(rawFolder.name ?? rawFolder.Name ?? '');
+      const icon = rawFolder.icon ?? rawFolder.Icon ?? 'FolderOutline';
+      const color = rawFolder.color ?? rawFolder.Color ?? '#FF3B30';
+      const orderIndex = Number(rawFolder.orderIndex ?? rawFolder.OrderIndex ?? 0);
+      const isSystem = Boolean(rawFolder.isSystem ?? rawFolder.IsSystem);
+
+      const { chatFolders, customFolders, selectedFolderId } = useChatFolderStore.getState();
+
+      const updatedChatFolders = chatFolders.map((f) =>
+        f.id === folderId ? { ...f, name, icon, color, orderIndex, isSystem } : f
+      );
+      const updatedCustom = customFolders.map((f) =>
+        f.id === folderId ? { ...f, name, icon, color, orderIndex, isSystem } : f
+      );
+
+      useChatFolderStore.setState({
+        chatFolders: updatedChatFolders,
+        customFolders: updatedCustom,
+      });
+
+      // Если в текущий момент выбрана именно эта папка — обновляем фильтр в сайдбаре
+      if (selectedFolderId === folderId) {
+        useSidebarChatsStore.getState().selectFolder(folderId, false);
+      }
+    });
+
+    this.hubConnection.on('ChatFolderDeleted', (deletedFolderId: any) => {
+      const id = Number(deletedFolderId);
+      console.log('⚡ [SignalR] Папка удалена на другом устройстве:', id);
+
+      const { chatFolders, customFolders, selectedFolderId, selectFolder } = useChatFolderStore.getState();
+
+      const filteredChatFolders = chatFolders.filter((f) => f.id !== id);
+      const filteredCustom = customFolders.filter((f) => f.id !== id);
+
+      useChatFolderStore.setState({
+        chatFolders: filteredChatFolders,
+        customFolders: filteredCustom,
+      });
+
+      if (selectedFolderId === id) {
+        const allFolder = filteredChatFolders.find((f) => f.isSystem && f.name === 'All') || filteredChatFolders[0];
+        if (allFolder) {
+          selectFolder(allFolder);
+        }
+      }
+    });
+
+    this.hubConnection.on('ChatFoldersOrderUpdated', (rawOrders: any[]) => {
+      console.log('⚡ [SignalR] Порядок папок изменен на другом устройстве:', rawOrders);
+      if (!Array.isArray(rawOrders)) return;
+
+      const orderMap = new Map<number, number>(
+        rawOrders.map((o: any) => [
+          Number(o.folderId ?? o.FolderId ?? o.id ?? o.Id),
+          Number(o.orderIndex ?? o.OrderIndex ?? 0),
+        ])
+      );
+
+      const { chatFolders, customFolders } = useChatFolderStore.getState();
+
+      const updatedChatFolders = chatFolders
+        .map((f) => ({
+          ...f,
+          orderIndex: orderMap.has(f.id) ? orderMap.get(f.id)! : f.orderIndex,
+        }))
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+
+      const updatedCustom = customFolders
+        .map((f) => ({
+          ...f,
+          orderIndex: orderMap.has(f.id) ? orderMap.get(f.id)! : f.orderIndex,
+        }))
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+
+      useChatFolderStore.setState({
+        chatFolders: updatedChatFolders,
+        customFolders: updatedCustom,
+      });
+    });
+
+    this.hubConnection.on(
+      'ChatFolderChatToggled',
+      (folderId: any, targetUserId: any, targetGroupId: any, isAdded: boolean) => {
+        const fId = Number(folderId);
+        const tUid = targetUserId ? Number(targetUserId) : null;
+        const tGid = targetGroupId ? Number(targetGroupId) : null;
+        const added = Boolean(isAdded);
+
+        console.log(`⚡ [SignalR] Чат переключен в папке ${fId}: User=${tUid}, Group=${tGid}, Added=${added}`);
+
+        const isGroup = Boolean(tGid && tGid > 0);
+        const chatId = isGroup ? tGid! : (tUid ?? 0);
+
+        useSidebarChatsStore.getState().updateChatFolderIds(chatId, isGroup, fId, added);
+      }
+    );
   }
 
   private async safeInvoke<T = void>(methodName: string, ...args: any[]): Promise<T | null> {

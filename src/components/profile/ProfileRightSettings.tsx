@@ -182,10 +182,12 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* ДИНАМИЧЕСКАЯ ШАПКА НАСТРОЕК */}
+      {/* ДИНАМИЧЕСКАЯ ШАПКА НАСТРОЕК (1:1 со структурой WPF) */}
       <div style={rightHeaderStyle}>
         {currentSettingsSubPanel === 'main' ? (
-          <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText }}>Settings</span>
+          <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText, lineHeight: 1.1 }}>
+            Settings
+          </span>
         ) : (
           <button
             onClick={() => {
@@ -205,6 +207,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
               alignItems: 'center',
               gap: 8,
               padding: 0,
+              height: 36,
             }}
           >
             <Icons.ArrowLeft size={20} color={Theme.ProfileSectionLabel} />
@@ -214,7 +217,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
         <CloseButton onClick={onClose} />
       </div>
 
-      <div className="wpf-scroll-viewer" style={{ flex: 1, padding: '0 25px 24px 25px' }}>
+      <div className="wpf-scroll-viewer" style={{ flex: 1, padding: '0 25px 24px 25px', overflowY: 'auto' }}>
         {/* ================= 1. ГЛАВНЫЙ СПИСОК НАСТРОЕК ================= */}
         {currentSettingsSubPanel === 'main' && (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -846,12 +849,13 @@ const SettingsRowItem: React.FC<SettingsRowItemProps> = ({
 };
 
 const rightHeaderStyle: React.CSSProperties = {
-  height: 64,
-  padding: '0 25px',
+  padding: '15px 25px 0 25px', // WPF: Margin="25,15,25,0"
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  marginBottom: 17,
+  marginBottom: 17, // WPF: Margin="0,0,0,17"
+  flexShrink: 0,
+  minHeight: 32,
 };
 
 const iconBtnStyle: React.CSSProperties = {
