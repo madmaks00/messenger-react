@@ -34,6 +34,39 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
   </svg>
 );
 
+const ActionIconButton: React.FC<{
+  title: string;
+  hoverBg: string;
+  onClick: (e: React.MouseEvent) => void;
+  children: React.ReactNode;
+}> = ({ title, hoverBg, onClick, children }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        width: 26,
+        height: 26,
+        padding: 0,
+        backgroundColor: isHovered ? hoverBg : 'transparent',
+        border: 'none',
+        borderRadius: '50%',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'background-color 0.15s ease',
+      }}
+    >
+      {children}
+    </button>
+  );
+};
+
 export const SidebarNotesView: React.FC = () => {
   const {
     myNotes,
@@ -72,10 +105,8 @@ export const SidebarNotesView: React.FC = () => {
         boxSizing: 'border-box',
       }}
     >
-      {/* 0. ШАПКА */}
       <SidebarHeaderUserControl title="Notes" iconPath={mdiBookmarkOutline} />
 
-      {/* 1. ПОИСК */}
       <SearchInputUserControl
         text={noteSearchText}
         hintText="Search notes..."
@@ -84,7 +115,6 @@ export const SidebarNotesView: React.FC = () => {
         margin="0 6px 10px 6px"
       />
 
-      {/* 2. СПИСОК ЗАМЕТОК */}
       <div
         ref={containerRef}
         className="wpf-scroll-viewer"
@@ -153,7 +183,6 @@ export const SidebarNotesView: React.FC = () => {
                   width: 'auto',
                 }}
               >
-                {/* 🟢 ИКОНКА С НАВИСАЮЩИМ БЕЙДЖИКОМ: теперь вызывает диалог смены иконки и цвета */}
                 <div
                   onMouseDown={(e) => {
                     if (isEditing) {
@@ -185,7 +214,6 @@ export const SidebarNotesView: React.FC = () => {
                     style={{ position: 'absolute', left: 0, top: 0 }}
                   />
 
-                  {/* Бейджик карандаша при IsEditing */}
                   {isEditing && (
                     <div
                       style={{
@@ -206,7 +234,6 @@ export const SidebarNotesView: React.FC = () => {
                   )}
                 </div>
 
-                {/* ТЕКСТ / ПОЛЕ ВВОДА ИМЕНИ */}
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
                   {isEditing ? (
                     <input
@@ -253,12 +280,12 @@ export const SidebarNotesView: React.FC = () => {
                   )}
                 </div>
 
-                {/* ПРАВАЯ ЧАСТЬ: КНОПКИ ДЕЙСТВИЙ */}
                 {!isEditing && (
                   <div
                     style={{
                       display: 'flex',
                       alignItems: 'center',
+                      gap: 2,
                       opacity: isHovered ? 1 : 0,
                       pointerEvents: isHovered ? 'auto' : 'none',
                       transition: 'opacity 0.15s ease',
@@ -266,28 +293,28 @@ export const SidebarNotesView: React.FC = () => {
                       marginLeft: 6,
                     }}
                   >
-                    <button
+                    <ActionIconButton
                       title="Edit Note"
+                      hoverBg="rgba(59, 130, 246, 0.18)"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingText(note.title);
                         beginEditNote(note.id!);
                       }}
-                      style={{ ...actionBtnStyle, color: '#3B82F6' }}
                     >
                       <MdiIcon path={mdiPencilOutline} size={16} color="#3B82F6" />
-                    </button>
+                    </ActionIconButton>
 
-                    <button
+                    <ActionIconButton
                       title="Delete Note"
+                      hoverBg="rgba(239, 68, 68, 0.18)"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteNote(note);
                       }}
-                      style={{ ...actionBtnStyle, color: '#EF4444' }}
                     >
                       <MdiIcon path={mdiTrashCanOutline} size={16} color="#EF4444" />
-                    </button>
+                    </ActionIconButton>
                   </div>
                 )}
               </div>
@@ -297,19 +324,6 @@ export const SidebarNotesView: React.FC = () => {
       </div>
     </div>
   );
-};
-
-const actionBtnStyle: React.CSSProperties = {
-  width: 26,
-  height: 26,
-  padding: 0,
-  background: 'transparent',
-  border: 'none',
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: 4,
 };
 
 export default SidebarNotesView;

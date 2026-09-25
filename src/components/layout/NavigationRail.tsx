@@ -25,6 +25,7 @@ import { useNavigationStore } from '../../stores/navigationStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useTodoStore } from '../../stores/todoStore';
+import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
 import { useStoriesStore } from '../../stores/storiesStore';
 import { MainTab } from '../../types/enums';
 import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
@@ -56,12 +57,18 @@ export const NavigationRail: React.FC = () => {
   const {
     currentTab,
     isDarkTheme,
-    hasUnreadChats,
-    hasDueTasks,
     switchTab,
     toggleTheme,
     openProfile,
   } = useNavigationStore();
+
+  // 🟢 1. Точка горящего дедлайна задач (менее 24 часов) напрямую из useTodoStore
+  const hasDueTasks = useTodoStore((s) => s.hasDueTasks);
+
+  // 🟢 2. Точка непрочитанных сообщений напрямую из списка чатов useSidebarChatsStore
+  const hasUnreadChats = useSidebarChatsStore((s) =>
+    s.allChats.some((chat) => (chat.unreadCount ?? 0) > 0)
+  );
 
   const { currentUser } = useAuthStore();
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
@@ -186,7 +193,7 @@ export const NavigationRail: React.FC = () => {
             </div>
           </div>
 
-          {/* 🟢 КНОПКА ДОБАВЛЕНИЯ ИСТОРИИ (+) С НАДЕЖНЫМ FILE INPUT (1 в 1 StoriesVM.CreateNewStoryCommand) */}
+          {/* 🟢 КНОПКА ДОБАВЛЕНИЯ ИСТОРИИ (+) */}
           <label
             title="Create Story"
             style={{
@@ -376,7 +383,7 @@ export const NavigationRail: React.FC = () => {
           </div>
         </button>
 
-        {/* 🟢 Шестерёнка: открывает профиль сразу со вкладки НАСТРОЕК */}
+        {/* 🟢 Шестерёнка: настройки */}
         <button
           onClick={handleOpenSettings}
           onMouseEnter={() => setHoveredBtn('settings')}
