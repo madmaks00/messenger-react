@@ -188,6 +188,12 @@ export class SignalRService {
           : rawDto.GroupId !== undefined
           ? Number(rawDto.GroupId)
           : null;
+          const noteId =
+  rawDto.noteId !== undefined
+    ? Number(rawDto.noteId)
+    : rawDto.NoteId !== undefined
+    ? Number(rawDto.NoteId)
+    : null;
       const serverId = Number(rawDto.serverId ?? rawDto.ServerId ?? rawDto.id ?? rawDto.Id ?? 0);
       const text = String(rawDto.text ?? rawDto.Text ?? '');
       const isRead = Boolean(rawDto.isRead ?? rawDto.IsRead ?? false);
@@ -205,6 +211,7 @@ export class SignalRService {
         senderId,
         receiverId,
         groupId,
+        noteId,
         senderName: senderName || undefined,
         senderAvatar: senderAvatar || undefined,
         isMyMessage,
@@ -247,13 +254,15 @@ export class SignalRService {
       }
 
       eventBus.emit('ReceiveMessage', newMsg);
-      eventBus.emit('SidebarUpdateMessage', {
-        userId: isMyMessage ? receiverId : senderId,
-        groupId,
-        previewText: text || ((newMsg.attachments?.length ?? 0) > 0 ? 'Вложение' : ''),
-        incrementUnread: !isMyMessage,
-        messageType: LastMessageType.Text,
-      });
+      if (!noteId) {
+  eventBus.emit('SidebarUpdateMessage', {
+    userId: isMyMessage ? receiverId : senderId,
+    groupId,
+    previewText: text || ((newMsg.attachments?.length ?? 0) > 0 ? 'Вложение' : ''),
+    incrementUnread: !isMyMessage,
+    messageType: LastMessageType.Text,
+  });
+}
     });
 
     // 🟢 2. СТАТУС ОНЛАЙНА
@@ -291,7 +300,13 @@ export class SignalRService {
     this.hubConnection.on('ReceiveSecretMessage', (senderId: number, secretChatId: string, ciphertext: string, nonce: string, tag: string, seq: number, timestamp: any) => {
       eventBus.emit('ReceiveSecretMessage' as any, { senderId, secretChatId, ciphertext, nonce, tag, seq, timestamp });
     });
+this.hubConnection.on('NoteUpdated', (noteId: number) => {
+  eventBus.emit('NoteUpdated' as any, Number(noteId));
+});
 
+this.hubConnection.on('NoteDeleted', (noteId: number) => {
+  eventBus.emit('NoteDeleted' as any, Number(noteId));
+});
     this.hubConnection.on('SecretChatDiscarded', (senderId: number, secretChatId: string) => {
       eventBus.emit('SecretChatDiscardedMessage' as any, { senderId, secretChatId });
     });

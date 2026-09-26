@@ -20,10 +20,12 @@ import { PhotoViewerView } from './components/media/PhotoViewerView';
 import { VideoViewerView } from './components/media/VideoViewerView';
 import { ImageEditorView } from './components/media/ImageEditorView';
 import { MusicPlayerView } from './components/media/MusicPlayerView';
-import { CallModal } from './components/modals/CallModal';
+
+// 🟢 1:1 C# WPF: Окно звонков CallWindow (CallWindow.xaml / CallsViewModel.cs)
+import { CallWindow } from './components/modals/CallWindow';
 import { InAppNotification } from './components/common/InAppNotification';
 
-// Диалоги
+// Диалоги и оверлеи
 import { ConfirmDialogView } from './components/modals/ConfirmDialogView';
 import { CreateFolderDialog } from './components/modals/CreateFolderDialog';
 import { PinMessageDialog } from './components/modals/PinMessageDialog';
@@ -80,9 +82,21 @@ export const App: React.FC = () => {
   const [joinGroupData, setJoinGroupData] = useState<JoinGroupPreviewData | null>(null);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
 
-  const [photoViewer, setPhotoViewer] = useState<{ isOpen: boolean; list: IAttachment[]; index: number }>({ isOpen: false, list: [], index: 0 });
-  const [videoViewer, setVideoViewer] = useState<{ isOpen: boolean; url: string; fileHeader?: string; senderMeta?: string }>({ isOpen: false, url: '' });
-  const [imageEditor, setImageEditor] = useState<{ isOpen: boolean; src: string; onDone?: (res: string) => void }>({ isOpen: false, src: '' });
+  const [photoViewer, setPhotoViewer] = useState<{ isOpen: boolean; list: IAttachment[]; index: number }>({
+    isOpen: false,
+    list: [],
+    index: 0,
+  });
+  const [videoViewer, setVideoViewer] = useState<{
+    isOpen: boolean;
+    url: string;
+    fileHeader?: string;
+    senderMeta?: string;
+  }>({ isOpen: false, url: '' });
+  const [imageEditor, setImageEditor] = useState<{ isOpen: boolean; src: string; onDone?: (res: string) => void }>({
+    isOpen: false,
+    src: '',
+  });
 
   // 🟢 1:1 WPF: Состояние редактора историй StoryEditorOverlay
   const [storyEditor, setStoryEditor] = useState<{
@@ -170,15 +184,28 @@ export const App: React.FC = () => {
     window.addEventListener('OpenCreateGroupModal', unbindCreateGroup);
     window.addEventListener('OpenPasscodeSetupModal', unbindPasscodeSetup);
 
-    const unbindPhoto = eventBus.on('OpenPhotoViewerMessage' as any, (d: any) =>
-      setPhotoViewer({ isOpen: true, list: d.mediaList || [], index: d.startIndex || 0 })
-    );
+    // 🟢 Поддержка обоих контрактов фото-галереи (WPF OpenPhotoGalleryMessage и web OpenPhotoViewerMessage)
+    const handleOpenPhoto = (d: any) => {
+      setPhotoViewer({
+        isOpen: true,
+        list: d.photos || d.mediaList || [],
+        index: d.startIndex ?? d.index ?? 0,
+      });
+    };
+    const unbindPhotoLegacy = eventBus.on('OpenPhotoViewerMessage' as any, handleOpenPhoto);
+    const unbindPhotoGallery = eventBus.on('OpenPhotoGalleryMessage' as any, handleOpenPhoto);
 
+    // 🟢 Видеоплеер
     const unbindVideo = eventBus.on('OpenVideoViewerRequestMessage' as any, (d: any) =>
-      setVideoViewer({ isOpen: true, url: d.videoUrl, fileHeader: d.fileName, senderMeta: d.senderName })
+      setVideoViewer({
+        isOpen: true,
+        url: d.videoUrl || d.url || d.pathToPlay || '',
+        fileHeader: d.fileName || d.fileHeader,
+        senderMeta: d.senderName || d.senderMeta,
+      })
     );
 
-    // 🟢 1:1 WPF WeakReferenceMessenger.Default.Register<OpenStoryEditorMessage>
+    // 🟢 1:1 WPF: Редактор историй
     const unbindStoryEditor = eventBus.on('OpenStoryEditorMessage', (d) =>
       setStoryEditor({
         isOpen: true,
@@ -193,7 +220,8 @@ export const App: React.FC = () => {
       unbindAccountSwitched();
       unbindProfileUpdated();
       unbindConfirm();
-      unbindPhoto();
+      unbindPhotoLegacy();
+      unbindPhotoGallery();
       unbindVideo();
       unbindStoryEditor();
       window.removeEventListener('OpenCreateFolderDialog', unbindCreateFolder);
@@ -324,7 +352,7 @@ export const App: React.FC = () => {
         </div>
       </div>
 
-      {/* КОЛОНКА 3: ОКНО ЧАТА */}
+      {/* КОЛОНКА 3: ОКНО ЧАТА / РАБОЧАЯ ОБЛАСТЬ */}
       <div
         style={{
           flex: 1,
@@ -391,7 +419,9 @@ export const App: React.FC = () => {
       />
 
       <StoryViewerView />
-      <CallModal />
+
+      {/* 🟢 1:1 WPF ОКНО ЗВОНКА (CallWindow.xaml / CallWindow.xaml.cs) */}
+      <CallWindow />
 
       <ConfirmDialogView
         isOpen={confirmDialog.isOpen}

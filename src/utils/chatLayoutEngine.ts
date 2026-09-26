@@ -3,6 +3,16 @@ import { IMessage, IAttachment } from '../types/models';
 import { AttachmentType } from '../types/enums';
 import { MediaFormatHelper } from './mediaFormatHelper';
 
+function formatWpfCallDuration(seconds: number): string {
+  if (seconds <= 0) return '';
+  if (seconds === 1) return '1 second';
+  if (seconds < 60) return `${seconds} seconds`;
+  const mins = Math.floor(seconds / 60);
+  const rem = seconds % 60;
+  if (rem === 0) return mins === 1 ? '1 minute' : `${mins} minutes`;
+  return `${mins} min ${rem} sec`;
+}
+
 export class AsyncChatLayoutEngine {
   public static calculateMediaDimensionsFromPixels(
     origWidth: number,
@@ -64,8 +74,16 @@ export class AsyncChatLayoutEngine {
       (m.attachments || []).forEach((att) => {
         if (!att) return;
         const isVoice = att.type === AttachmentType.Voice;
-        const isAudio = !isVoice && (att.type === AttachmentType.Audio || MediaFormatHelper.isAudioExtension(att.fileName || ''));
-        const isMedia = !isVoice && !isAudio && (att.type === AttachmentType.Photo || att.type === AttachmentType.Video || MediaFormatHelper.isPhotoExtension(att.fileName || '') || MediaFormatHelper.isVideoExtension(att.fileName || ''));
+        const isAudio =
+          !isVoice &&
+          (att.type === AttachmentType.Audio || MediaFormatHelper.isAudioExtension(att.fileName || ''));
+        const isMedia =
+          !isVoice &&
+          !isAudio &&
+          (att.type === AttachmentType.Photo ||
+            att.type === AttachmentType.Video ||
+            MediaFormatHelper.isPhotoExtension(att.fileName || '') ||
+            MediaFormatHelper.isVideoExtension(att.fileName || ''));
 
         if (isVoice) voiceAttachments.push(att);
         else if (isAudio) audioAttachments.push(att);
@@ -73,11 +91,45 @@ export class AsyncChatLayoutEngine {
         else documentAttachments.push(att);
       });
 
-      const isCall = Boolean(m.isCallMessage || (m.text && m.text.startsWith('CALL:')));
-      const isMediaOnly = mediaAttachments.length > 0 && !m.text && documentAttachments.length === 0 && audioAttachments.length === 0;
-
-      // 🟢 Строгая проверка принадлежности сообщения текущему пользователю
       const isMy = Boolean(m.isMyMessage) || (curId > 0 && Number(m.senderId) === curId);
+
+      const rawText = String(m.text || '');
+      const isCall = Boolean(
+        m.isCallMessage || rawText.includes('_CALL:') || rawText.includes('CALL:')
+      );
+
+      // 🟢 1 в 1 с MessageLayoutModel из WPF C#
+      let callTitle = 'Call';
+      let callTimeAndDuration = '';
+      let callArrowKind: 'in' | 'out' | 'missed' = isMy ? 'out' : 'in';
+      let callArrowColor = '#4CAF50';
+
+      if (isCall) {
+        const callIdx = rawText.indexOf('CALL:');
+        const clean = callIdx !== -1 ? rawText.slice(callIdx) : rawText;
+        const parts = clean.split(':');
+        const status = (parts[1] || '').toUpperCase();
+        const durationSec = parseInt(parts[2] || '0', 10);
+
+        const isMissed = status === 'CANCELED' || status === 'MISSED' || status === 'DECLINED';
+
+        if (isMissed) {
+          callTitle = isMy ? 'Cancelled call' : 'Missed call';
+          callArrowKind = 'missed';
+          callArrowColor = '#FF4B4B';
+        } else {
+          callTitle = isMy ? 'Outgoing call' : 'Incoming call';
+          callArrowKind = isMy ? 'out' : 'in';
+          callArrowColor = '#4CAF50';
+        }
+
+        const timeStr = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const durStr = formatWpfCallDuration(durationSec);
+        callTimeAndDuration = durStr ? `${timeStr}, ${durStr}` : timeStr;
+      }
+
+      const isMediaOnly =
+        mediaAttachments.length > 0 && !m.text && documentAttachments.length === 0 && audioAttachments.length === 0;
 
       return {
         id: m.id || 0,
@@ -109,10 +161,10 @@ export class AsyncChatLayoutEngine {
         isAlbum: mediaAttachments.length > 1,
         mediaCount: mediaAttachments.length,
         isCallMessage: isCall,
-        callTitle: m.callTitle || 'Call',
-        callArrowKind: m.callArrowKind || 'Phone',
-        callArrowColor: m.callArrowColor || '#22C55E',
-        callTimeAndDuration: m.callTimeAndDuration || '',
+        callTitle,
+        callArrowKind,
+        callArrowColor,
+        callTimeAndDuration,
         isMediaOnly,
         hasAudio: mediaAttachments.some((a) => a.hasAudio),
         isSilentVideo: mediaAttachments.length === 1 && Boolean(mediaAttachments[0].isSilentVideo),
@@ -129,14 +181,11 @@ export class AsyncChatLayoutEngine {
     messages: IMessageLayoutModel[],
     containerWidth: number = 600
   ): { items: IMessageLayoutModel[]; totalHeight: number } {
-    // 🟢 Коэффициент масштабирования дисплея (125% = 1.25, 100% = 1.0)
     const dpi = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const snap = (v: number) => Math.round(v * dpi) / dpi;
 
     let currentY = snap(15.0);
     const maxBubbleWidth = Math.min(containerWidth * 0.75, 500.0);
-
-    // 🟢 Строго 2.0px, привязанные к физическим пикселям матрицы
     const gap = snap(1.0);
 
     for (const msg of messages) {
@@ -144,7 +193,8 @@ export class AsyncChatLayoutEngine {
       let bubbleHeight = 0;
 
       if (msg.isCallMessage) {
-        bubbleHeight = snap(54.0);
+        // 54px высота самого блока + 6px (отступы Margin="4,2,4,4") = 60px
+        bubbleHeight = snap(61.0);
         if (msg.isForwarded && !msg.isDeletedForMe) bubbleHeight += snap(45.0);
       } else if (msg.isDeletedForMe) {
         bubbleHeight = snap(34.0);
@@ -156,7 +206,6 @@ export class AsyncChatLayoutEngine {
         const hasAudios = msg.audios && msg.audios.length > 0;
         const hasText = Boolean(msg.text && msg.text.trim().length > 0);
 
-        // 19.0px под отступы (7px top + 12px bottom)
         const textGridPaddingAndMargin = hasText ? 19.0 : 0.0;
         let textContentHeight = 0.0;
 
@@ -201,7 +250,6 @@ export class AsyncChatLayoutEngine {
         }
       }
 
-      // msg.totalHeight всегда строго равен bubbleHeight + gap
       msg.totalHeight = snap(bubbleHeight + gap);
       currentY = snap(currentY + msg.totalHeight);
     }

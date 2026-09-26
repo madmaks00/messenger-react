@@ -312,6 +312,7 @@ export interface IChatListItem {
   isMuted: boolean;
   isBlocked: boolean;
   avatarPath?: string | null;
+  avatar?: string | null;
   nickName?: string | null;
   groupName?: string | null;
   groupDescription: string;

@@ -4,6 +4,7 @@ import { userService } from '../services/user.service';
 import { chatService } from '../services/chat.service';
 import { userSession } from '../services/userSession';
 import { eventBus } from '../services/eventBus';
+import { useChatStore } from './chatStore';
 
 const RECENT_SEARCHES_KEY = 'recent_searches_users';
 
@@ -33,16 +34,23 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   setSearchText: (text) => {
     set({ searchText: text });
 
+    // 🟢 Всегда передаем ввод в ChatViewModel (1 в 1 с Messenger.Send(new ChatSearchQueryChangedMessage(value)))
+    eventBus.emit('ChatSearchQueryChangedMessage', { query: text });
+
+    // 🟢 Если включен поиск внутри текущего диалога — глобальный поиск контактов не запускается
+    if (useChatStore.getState().isChatSearchMode) {
+      return;
+    }
+
     if (!text.trim()) {
       set({ foundUsers: [], foundMessages: [], isSearching: false });
       return;
     }
 
     if (debounceTimer) clearTimeout(debounceTimer);
-
     set({ isSearching: true });
 
-    // Дебаунс 250 мс из C#
+    // Дебаунс 250 мс из C# SearchViewModel.cs
     debounceTimer = setTimeout(async () => {
       const query = text.trim();
       try {
@@ -66,6 +74,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
 
     eventBus.emit('SelectChatUserMessage', { target: user });
+    eventBus.emit('EndSearchBoxMessage', undefined);
   },
 
   clearRecentSearches: () => {
@@ -90,10 +99,21 @@ export const useSearchStore = create<SearchState>((set, get) => ({
         isSecretChat: false,
       };
       eventBus.emit('SelectChatUserMessage', { target: targetUser });
-      eventBus.emit('ScrollToMessageRequestMessage' as any, { messageId: message.serverId || message.id });
+      eventBus.emit('ScrollToMessageRequestMessage', { messageId: message.serverId || message.id });
+      eventBus.emit('EndSearchBoxMessage', undefined);
     }
   },
 }));
+
+// Слушатель сброса поля поиска (EndSearchBoxMessage)
+eventBus.on('EndSearchBoxMessage', () => {
+  useSearchStore.setState({
+    searchText: '',
+    foundMessages: [],
+    foundUsers: [],
+    isSearching: false,
+  });
+});
 
 function loadRecentFromStorage(): IUserSearchResult[] {
   try {

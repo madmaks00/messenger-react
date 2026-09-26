@@ -37,13 +37,15 @@ import { useChatStore } from '../../stores/chatStore';
 import { useSearchStore } from '../../stores/searchStore';
 import { useSmoothScroll } from '../../hooks/useSmoothScroll';
 import { resolveMdiIcon } from '../../utils/iconResolver';
-import { MessagePreviewHelper, getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
-import { IChatListItem, IUserSearchResult, IChatFolder } from '../../types/models';
+import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
+import { IChatListItem, IUserSearchResult, IChatFolder, IMessage } from '../../types/models';
 import { LastMessageType } from '../../types/enums';
+import { userSession } from '../../services/userSession';
+import { eventBus } from '../../services/eventBus';
 
 const ITEM_HEIGHT = 68;
 const CUBIC_EASE_OUT = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
-const DRAG_THRESHOLD = 5; // Порог начала перетаскивания в пикселях (WPF MinimumHorizontalDragDistance)
+const DRAG_THRESHOLD = 5;
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
@@ -95,11 +97,18 @@ export const SidebarChatsView: React.FC = () => {
     saveFoldersOrderAsync,
   } = useChatFolderStore();
 
-  const { isChatSearchMode, exitSearch } = useChatStore();
+  // 🟢 1 в 1 с WPF: Состояние поиска в активном диалоге
+  const {
+    isChatSearchMode,
+    isChatSearching,
+    chatSearchResults,
+    exitSearch,
+    jumpToSearchedMessage,
+  } = useChatStore();
 
   const {
     searchText,
-    isSearching,
+    isSearching: isGlobalSearching,
     recentUsers,
     foundUsers,
     foundMessages,
@@ -126,9 +135,7 @@ export const SidebarChatsView: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const foldersScrollRef = useRef<HTMLDivElement>(null);
 
-  // =========================================================================
-  // 🟢 LIVE DRAG & DROP FOLDERS (ТОЧНО КАК В C# WPF)
-  // =========================================================================
+  // Drag & drop папок
   const [draggedFolderId, setDraggedFolderId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState<number>(0);
 
@@ -143,13 +150,35 @@ export const SidebarChatsView: React.FC = () => {
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
 
-  const isSearchActive = isSearchInputFocused || searchText.length > 0;
+  // 🟢 В WPF: поиск активен, если фокус в инпуте, если есть текст ИЛИ если включен режим поиска по чату
+  const isSearchActive = isSearchInputFocused || searchText.length > 0 || isChatSearchMode;
   const hasFolders = chatFolders && chatFolders.length > 1;
 
   useEffect(() => {
     loadFoldersAsync();
     loadChats(true);
   }, [loadFoldersAsync, loadChats]);
+
+  // 🟢 1 в 1 с WPF: Перехват сигналов FocusSearchBoxMessage и EndSearchBoxMessage
+  useEffect(() => {
+    const unbindFocus = eventBus.on('FocusSearchBoxMessage', () => {
+      setIsSearchInputFocused(true);
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 50);
+    });
+
+    const unbindEnd = eventBus.on('EndSearchBoxMessage', () => {
+      setIsSearchInputFocused(false);
+      setSearchText('');
+      searchInputRef.current?.blur();
+    });
+
+    return () => {
+      unbindFocus();
+      unbindEnd();
+    };
+  }, [setSearchText]);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -163,23 +192,27 @@ export const SidebarChatsView: React.FC = () => {
   }, [containerRef]);
 
   const handleCloseSearch = () => {
-    setSearchText('');
-    setIsSearchInputFocused(false);
-    exitSearch();
-    if (searchInputRef.current) searchInputRef.current.blur();
+    if (isChatSearchMode) {
+      exitSearch();
+    } else {
+      setSearchText('');
+      setIsSearchInputFocused(false);
+      if (searchInputRef.current) searchInputRef.current.blur();
+    }
   };
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
-        if (!searchText.trim()) handleCloseSearch();
+        if (!searchText.trim() && !isChatSearchMode) {
+          handleCloseSearch();
+        }
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [searchText]);
+  }, [searchText, isChatSearchMode]);
 
-  // Глобальные обработчики перетаскивания (WPF element.CaptureMouse)
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
       if (!draggedFolderRef.current) return;
@@ -198,7 +231,6 @@ export const SidebarChatsView: React.FC = () => {
       dragOffsetRef.current = deltaX;
       setDragOffset(deltaX);
 
-      // 1. Автоматическая прокрутка панели папок (HandleAutoScroll)
       if (foldersScrollRef.current) {
         const rect = foldersScrollRef.current.getBoundingClientRect();
         const mouseXRel = e.clientX - rect.left;
@@ -213,39 +245,34 @@ export const SidebarChatsView: React.FC = () => {
         }
       }
 
-      // 2. Живой обмен позициями при смещении на 60% ширины соседа (CheckAndSwapLive)
       const currentList = useChatFolderStore.getState().chatFolders;
       const targetFolder = draggedFolderRef.current;
       const currentIndex = currentList.findIndex((f) => f.id === targetFolder.id);
       if (currentIndex === -1) return;
 
-      // Движение вправо
-if (deltaX > 0 && currentIndex < currentList.length - 1) {
-  const nextEl = folderRefs.current[currentIndex + 1];
-  if (nextEl) {
-    const nextWidth = nextEl.offsetWidth + 4;
-    if (deltaX >= nextWidth * 0.6) {
-      reorderFoldersLive(currentIndex, currentIndex + 1);
-      dragStartPosRef.current.x += nextWidth;
-      dragOffsetRef.current -= nextWidth;
-      setDragOffset(dragOffsetRef.current);
-    }
-  }
-}
-// Движение влево (🟢 теперь можно свапать вплоть до нулевого индекса!)
-else if (deltaX < 0 && currentIndex > 0) {
-  const prevEl = folderRefs.current[currentIndex - 1];
-  if (prevEl) {
-    const prevWidth = prevEl.offsetWidth + 4;
-    if (-deltaX >= prevWidth * 0.6) {
-      reorderFoldersLive(currentIndex, currentIndex - 1);
-      // 🟢 Правильная математика без телепортации:
-      dragStartPosRef.current.x -= prevWidth;
-      dragOffsetRef.current += prevWidth;
-      setDragOffset(dragOffsetRef.current);
-    }
-  }
-}
+      if (deltaX > 0 && currentIndex < currentList.length - 1) {
+        const nextEl = folderRefs.current[currentIndex + 1];
+        if (nextEl) {
+          const nextWidth = nextEl.offsetWidth + 4;
+          if (deltaX >= nextWidth * 0.6) {
+            reorderFoldersLive(currentIndex, currentIndex + 1);
+            dragStartPosRef.current.x += nextWidth;
+            dragOffsetRef.current -= nextWidth;
+            setDragOffset(dragOffsetRef.current);
+          }
+        }
+      } else if (deltaX < 0 && currentIndex > 0) {
+        const prevEl = folderRefs.current[currentIndex - 1];
+        if (prevEl) {
+          const prevWidth = prevEl.offsetWidth + 4;
+          if (-deltaX >= prevWidth * 0.6) {
+            reorderFoldersLive(currentIndex, currentIndex - 1);
+            dragStartPosRef.current.x -= prevWidth;
+            dragOffsetRef.current += prevWidth;
+            setDragOffset(dragOffsetRef.current);
+          }
+        }
+      }
     };
 
     const handleGlobalMouseUp = () => {
@@ -256,7 +283,6 @@ else if (deltaX < 0 && currentIndex > 0) {
             justFinishedDragRef.current = false;
           }, 100);
 
-          // Сохраняем порядок на сервере и рассылаем через SignalR
           saveFoldersOrderAsync();
         }
 
@@ -293,7 +319,6 @@ else if (deltaX < 0 && currentIndex > 0) {
     }
   };
 
-  // Фильтрация чатов строго 1 в 1 с WPF FilterChats
   const filteredChats = useMemo(() => {
     const currentFolder = chatFolders.find((f) => f.id === selectedFolderId);
 
@@ -396,7 +421,7 @@ else if (deltaX < 0 && currentIndex > 0) {
         }}
       />
 
-      {/* РЯД 1: СТРОКА ПОИСКА */}
+      {/* 🟢 РЯД 1: СТРОКА ПОИСКА (Высота 40px строго по SidebarSearchInputBorderStyle из WPF) */}
       <div
         style={{
           margin: hasFolders ? '0 6px 2px 6px' : '0 6px 8px 6px',
@@ -409,9 +434,9 @@ else if (deltaX < 0 && currentIndex > 0) {
       >
         <div
           style={{
-            height: 37,
+            height: 40,
             backgroundColor: 'var(--sidebar-search-bg)',
-            borderRadius: 9,
+            borderRadius: 12,
             display: 'flex',
             alignItems: 'center',
             padding: '0 12px',
@@ -444,10 +469,9 @@ else if (deltaX < 0 && currentIndex > 0) {
               border: 'none',
               outline: 'none',
               color: '#FFFFFF',
-              fontSize: 14,
+              fontSize: 14.5,
               padding: 0,
               margin: 0,
-              fontFamily: "'Segoe UI', -apple-system, sans-serif",
             }}
           />
 
@@ -474,7 +498,7 @@ else if (deltaX < 0 && currentIndex > 0) {
         </div>
       </div>
 
-      {/* РЯД 2: ПАПКИ ЧАТОВ С ЖИВЫМ ПЕРЕТАСКИВАНИЕМ (DRAG & DROP) */}
+      {/* РЯД 2: ПАПКИ ЧАТОВ */}
       {hasFolders && (
         <div
           ref={foldersScrollRef}
@@ -523,10 +547,10 @@ else if (deltaX < 0 && currentIndex > 0) {
                   height: 35,
                   padding: folder.isSystem ? '0 12px' : '0 12px 0 6px',
                   marginRight: 4,
-                  fontSize: 14.5,
+                  fontSize: 15,
                   fontWeight: 600,
                   color: isSelected ? '#FFFFFF' : 'var(--text-muted)',
-                  cursor: folder.isSystem ? 'pointer' : isDragging ? 'grabbing' : 'grab',
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
@@ -627,8 +651,39 @@ else if (deltaX < 0 && currentIndex > 0) {
                 );
                 const isHovered = hoveredChatKey === key;
 
-                const rawText = chat.lastMessage || '';
-                const msgIcon = getLastMessageIcon(chat.lastMessageType);
+                const rawLastMsg = String(chat.lastMessage || '');
+                const isCallLast = Boolean(
+                  chat.lastMessageType === LastMessageType.Call ||
+                  rawLastMsg.includes('_CALL:') ||
+                  rawLastMsg.includes('CALL:')
+                );
+
+                let displayLastMessage = rawLastMsg;
+                let msgIcon = getLastMessageIcon(chat.lastMessageType);
+
+                if (isCallLast) {
+                  msgIcon = mdiPhone;
+                  const callIdx = rawLastMsg.indexOf('CALL:');
+                  const clean = callIdx !== -1 ? rawLastMsg.slice(callIdx) : rawLastMsg;
+                  const parts = clean.split(':');
+                  const status = (parts[1] || '').toUpperCase();
+                  const isMissed = status === 'CANCELED' || status === 'MISSED' || status === 'DECLINED';
+                  
+                  const currentUid = Number(userSession.userId);
+                  const isMy = Boolean(
+                    (chat as any).isMyLastMessage ||
+                    (chat as any).lastMessageFromMe ||
+                    (chat as any).isLastMessageMy ||
+                    (currentUid > 0 && Number((chat as any).lastMessageSenderId) === currentUid)
+                  );
+
+                  if (isMissed) {
+                    displayLastMessage = isMy ? 'Cancelled call' : 'Missed call';
+                  } else {
+                    displayLastMessage = isMy ? 'Outgoing call' : 'Incoming call';
+                  }
+                }
+
                 const avatarRaw = chat.avatarPath || (chat as any).avatar;
                 const chatAvatarSrc = normalizeAvatarUrl(avatarRaw);
 
@@ -660,7 +715,6 @@ else if (deltaX < 0 && currentIndex > 0) {
                       boxSizing: 'border-box',
                     }}
                   >
-                    {/* Аватар 46x46 */}
                     <div style={{ position: 'relative', width: 46, height: 46, marginRight: 12, flexShrink: 0 }}>
                       <div
                         style={{
@@ -673,7 +727,7 @@ else if (deltaX < 0 && currentIndex > 0) {
                           justifyContent: 'center',
                           color: '#FFFFFF',
                           fontWeight: 600,
-                          fontSize: 16,
+                          fontSize: 16.5,
                           overflow: 'hidden',
                           position: 'relative',
                         }}
@@ -698,7 +752,6 @@ else if (deltaX < 0 && currentIndex > 0) {
                         )}
                       </div>
 
-                      {/* Индикатор онлайна */}
                       {Boolean(chat.isOnline) && !chat.isGroup && (
                         <div
                           style={{
@@ -737,14 +790,13 @@ else if (deltaX < 0 && currentIndex > 0) {
                       )}
                     </div>
 
-                    {/* Текстовая область */}
                     <div style={{ flex: 1, minWidth: 0, marginRight: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
                         {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
                         <span
                           style={{
                             color: '#FFFFFF',
-                            fontSize: 15,
+                            fontSize: 15.5,
                             fontWeight: 600,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -755,29 +807,28 @@ else if (deltaX < 0 && currentIndex > 0) {
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {msgIcon && <MdiIcon path={msgIcon} size={14} color="var(--text-muted)" />}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {msgIcon && <MdiIcon path={msgIcon} size={15} color="var(--text-muted)" />}
                         <span
                           style={{
                             color: 'var(--text-muted)',
-                            fontSize: 13,
+                            fontSize: 14,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
-                            lineHeight: '1.2',
+                            lineHeight: '1.35',
                           }}
                         >
-                          {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : (chat.lastMessage || '')}
+                          {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : displayLastMessage}
                         </span>
                       </div>
                     </div>
 
-                    {/* Время и бейдж */}
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', flexShrink: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         {chat.isMuted && <MdiIcon path={mdiBellOffOutline} size={14} color="var(--text-muted)" />}
                         {chat.isPinned && <MdiIcon path={mdiPin} size={14} color="var(--text-muted)" style={{ transform: 'rotate(45deg)' }} />}
-                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>
                           {chat.lastMessageTime ? new Date(chat.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                         </span>
                       </div>
@@ -792,7 +843,7 @@ else if (deltaX < 0 && currentIndex > 0) {
                             minWidth: 20,
                             height: 20,
                             padding: '0 5px',
-                            fontSize: 11,
+                            fontSize: 11.5,
                             fontWeight: 'bold',
                             display: 'flex',
                             alignItems: 'center',
@@ -848,7 +899,7 @@ else if (deltaX < 0 && currentIndex > 0) {
         )}
       </div>
 
-      {/* РЕЗУЛЬТАТЫ ПОИСКА */}
+      {/* ================= РЕЗУЛЬТАТЫ ПОИСКА (1 в 1 с WPF SearchResultsPanel) ================= */}
       <div
         className="wpf-scroll-viewer"
         style={{
@@ -868,10 +919,11 @@ else if (deltaX < 0 && currentIndex > 0) {
             : 'opacity 120ms ease-out, transform 120ms ease-in, visibility 0ms 120ms',
         }}
       >
-        {searchText.trim().length === 0 && (
+        {/* 🟢 БЛОК 1: НЕДАВНИЕ ПОИСКИ (Скрывается, если включен поиск по чату) */}
+        {!isChatSearchMode && searchText.trim().length === 0 && (
           <div style={{ marginTop: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 5px' }}>
-              <span style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600 }}>Recent Searches</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: 14.5, fontWeight: 600 }}>Recent Searches</span>
               {recentUsers && recentUsers.length > 0 && (
                 <button
                   onClick={clearRecentSearches}
@@ -909,15 +961,16 @@ else if (deltaX < 0 && currentIndex > 0) {
           </div>
         )}
 
-        {searchText.trim().length > 0 && (
+        {/* 🟢 БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК (Скрывается, если включен поиск по чату) */}
+        {!isChatSearchMode && searchText.trim().length > 0 && (
           <div style={{ marginTop: 6 }}>
-            {isSearching ? (
+            {isGlobalSearching ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '40px 0' }}>
                 <div style={{ color: 'var(--app-accent)', fontSize: 15, fontWeight: 600 }}>Searching...</div>
               </div>
             ) : (
               <>
-                <div style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600, margin: '5px 0 12px 5px' }}>
+                <div style={{ color: 'var(--text-muted)', fontSize: 14.5, fontWeight: 600, margin: '5px 0 12px 5px' }}>
                   Global Search
                 </div>
 
@@ -940,7 +993,7 @@ else if (deltaX < 0 && currentIndex > 0) {
 
                 {foundMessages && foundMessages.length > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600, margin: '5px 0 12px 5px' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 14.5, fontWeight: 600, margin: '5px 0 12px 5px' }}>
                       Messages
                     </div>
                     {foundMessages.map((msg: any) => (
@@ -959,12 +1012,12 @@ else if (deltaX < 0 && currentIndex > 0) {
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                          <span style={{ color: '#FFFFFF', fontSize: 14, fontWeight: 600 }}>{msg.senderName || 'Chat'}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
+                          <span style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: 600 }}>{msg.senderName || 'Chat'}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                             {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                           </span>
                         </div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 13.5, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                           {msg.text}
                         </div>
                       </div>
@@ -975,6 +1028,135 @@ else if (deltaX < 0 && currentIndex > 0) {
             )}
           </div>
         )}
+
+        {/* 🟢 БЛОК 3: РЕЗУЛЬТАТЫ ПОИСКА В АКТИВНОМ ЧАТЕ */}
+{isChatSearchMode && (
+  <div style={{ marginTop: 6 }}>
+    {isChatSearching ? (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '80px 0' }}>
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            border: '3px solid rgba(255,255,255,0.1)',
+            borderTopColor: 'var(--app-accent)',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+            marginBottom: 15,
+          }}
+        />
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+        <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>Searching...</div>
+      </div>
+    ) : (
+      <>
+        {chatSearchResults.length > 0 && (
+          <div style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600, margin: '5px 0 15px 5px' }}>
+            Messages
+          </div>
+        )}
+
+        {chatSearchResults.length === 0 && searchText.trim().length > 0 ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 14.5, textAlign: 'center', margin: '40px 0' }}>
+            No messages found
+          </div>
+        ) : (
+          chatSearchResults.map((msg: IMessage) => {
+            const authorName = msg.senderName || 'User';
+            const authorAvatar = normalizeAvatarUrl(msg.senderAvatar);
+
+            return (
+              <div
+                key={msg.id || msg.serverId}
+                onClick={() => {
+                  jumpToSearchedMessage(msg);
+                }}
+                style={{
+                  padding: '10px 8px',
+                  marginBottom: 8,
+                  backgroundColor: 'var(--sidebar-search-bg)',
+                  borderRadius: 12,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {/* Аватар 38x38 */}
+                <div style={{ position: 'relative', width: 38, height: 38, marginRight: 10, flexShrink: 0 }}>
+                  <div
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 19,
+                      backgroundColor: getAvatarColor(msg.senderId),
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#FFFFFF',
+                      fontWeight: 'bold',
+                      fontSize: 15,
+                      overflow: 'hidden',
+                      position: 'relative',
+                    }}
+                  >
+                    <span>{authorName.charAt(0).toUpperCase()}</span>
+                    {authorAvatar && (
+                      <img
+                        src={authorAvatar}
+                        alt=""
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0, marginRight: 5 }}>
+                  <div
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: 14.5,
+                      fontWeight: 600,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {authorName}
+                  </div>
+                  <div
+                    style={{
+                      color: 'var(--text-muted)',
+                      fontSize: 13,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {msg.text || (msg.attachments && msg.attachments.length > 0 ? 'Attachment' : '')}
+                  </div>
+                </div>
+
+                <div style={{ color: 'var(--text-muted)', fontSize: 11.5, alignSelf: 'flex-start', marginTop: 2, flexShrink: 0 }}>
+                  {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </>
+    )}
+  </div>
+)}
       </div>
 
       {/* КОНТЕКСТНОЕ МЕНЮ ЧАТА */}
@@ -998,7 +1180,6 @@ else if (deltaX < 0 && currentIndex > 0) {
               zIndex: 1001,
             }}
           >
-            {/* 1. PIN / UNPIN */}
             <ContextRow
               icon={mdiPinOutline}
               rotate={45}
@@ -1009,7 +1190,6 @@ else if (deltaX < 0 && currentIndex > 0) {
               }}
             />
 
-            {/* 2. MUTE / UNMUTE NOTIFICATIONS */}
             <ContextRow
               icon={chatContextMenu.chat.isMuted ? mdiBellOutline : mdiBellOffOutline}
               text={chatContextMenu.chat.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
@@ -1019,7 +1199,6 @@ else if (deltaX < 0 && currentIndex > 0) {
               }}
             />
 
-            {/* 3. ADD TO FOLDER */}
             <div
               style={{ position: 'relative' }}
               onMouseEnter={() => setIsFolderSubmenuOpen(true)}
@@ -1066,7 +1245,6 @@ else if (deltaX < 0 && currentIndex > 0) {
               )}
             </div>
 
-            {/* 4. BLOCK / UNBLOCK USER */}
             {!chatContextMenu.chat.isGroup && (
               <ContextRow
                 icon={mdiBlockHelper}
@@ -1080,7 +1258,6 @@ else if (deltaX < 0 && currentIndex > 0) {
 
             <div style={{ height: 1, backgroundColor: 'var(--context-menu-border)', margin: '4px 0' }} />
 
-            {/* 5. CLEAR HISTORY */}
             <ContextRow
               icon={mdiBroom}
               text="Clear History"
@@ -1090,7 +1267,6 @@ else if (deltaX < 0 && currentIndex > 0) {
               }}
             />
 
-            {/* 6. DELETE CHAT */}
             <ContextRow
               icon={mdiDeleteOutline}
               text="Delete Chat"
@@ -1146,7 +1322,6 @@ else if (deltaX < 0 && currentIndex > 0) {
         </div>
       )}
 
-      {/* ДИАЛОГ СОЗДАНИЯ И РЕДАКТИРОВАНИЯ */}
       <CreateFolderDialog />
     </div>
   );

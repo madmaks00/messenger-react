@@ -48,7 +48,7 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
   </svg>
 );
 
-// 🟢 Конвертер цвета: превращает WPF #AARRGGBB в CSS rgba()
+// 🟢 WPF #AARRGGBB -> CSS rgba()
 function wpfColorToCss(colorStr: string | null | undefined): string {
   if (!colorStr) return 'transparent';
   const clean = colorStr.trim();
@@ -66,34 +66,56 @@ function wpfColorToCss(colorStr: string | null | undefined): string {
   return clean;
 }
 
-// 🟢 Устраняет ошибку 431: понимает JPEG с "9j/" и без ведущего слэша
+// 🟢 CSS rgba() / hex -> WPF #AARRGGBB (чтобы C# ColorConverter не выбрасывал Exception)
+function cssColorToWpfHex(css: string | null | undefined): string {
+  if (!css || css === 'transparent' || css === 'rgba(0, 0, 0, 0)') return '#00000000';
+  const trimmed = css.trim();
+
+  if (trimmed.startsWith('#')) {
+    if (trimmed.length === 7) return `#FF${trimmed.substring(1).toUpperCase()}`;
+    if (trimmed.length === 9) return trimmed.toUpperCase();
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('rgba')) {
+    const m = trimmed.match(/rgba\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d\.]+)\s*\)/);
+    if (m) {
+      const r = parseInt(m[1]).toString(16).padStart(2, '0');
+      const g = parseInt(m[2]).toString(16).padStart(2, '0');
+      const b = parseInt(m[3]).toString(16).padStart(2, '0');
+      const a = Math.round(parseFloat(m[4]) * 255).toString(16).padStart(2, '0');
+      return `#${a}${r}${g}${b}`.toUpperCase();
+    }
+  }
+
+  if (trimmed.startsWith('rgb')) {
+    const m = trimmed.match(/rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
+    if (m) {
+      const r = parseInt(m[1]).toString(16).padStart(2, '0');
+      const g = parseInt(m[2]).toString(16).padStart(2, '0');
+      const b = parseInt(m[3]).toString(16).padStart(2, '0');
+      return `#FF${r}${g}${b}`.toUpperCase();
+    }
+  }
+
+  return trimmed;
+}
+
 function formatBase64DataUrl(base64: string | null | undefined): string {
   if (!base64) return '';
   const trimmed = base64.trim();
   if (trimmed.startsWith('data:image/') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed;
   }
-  // JPEG (начинается с 9j/ или /9j/)
   if (trimmed.startsWith('9j/') || trimmed.startsWith('/9j/') || trimmed.startsWith('9j') || trimmed.startsWith('/9j')) {
     return `data:image/jpeg;base64,${trimmed}`;
   }
-  // PNG
   if (trimmed.startsWith('iVBORw0K') || trimmed.startsWith('iVBOR')) {
     return `data:image/png;base64,${trimmed}`;
   }
-  // GIF
-  if (trimmed.startsWith('R0lGOD')) {
-    return `data:image/gif;base64,${trimmed}`;
-  }
-  // WebP
-  if (trimmed.startsWith('UklGR')) {
-    return `data:image/webp;base64,${trimmed}`;
-  }
-  // Универсальный fallback
   return `data:image/jpeg;base64,${trimmed}`;
 }
 
-// 🟢 Очищает префикс data:image/... перед сохранением для C# WPF Convert.FromBase64String
 function stripDataUrlPrefix(urlOrBase64: string | null | undefined): string | null {
   if (!urlOrBase64) return null;
   return urlOrBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, '').trim();
@@ -246,6 +268,9 @@ export const NotesCanvas: React.FC = () => {
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const clipboardRef = useRef<ChildElementDto | null>(null);
 
+  const previousNoteIdRef = useRef<number | null | undefined>(null);
+  const lastLocalSaveRef = useRef<string | null>(null);
+
   const historyRef = useRef<{
     past: CanvasState[];
     present: CanvasState;
@@ -286,7 +311,7 @@ export const NotesCanvas: React.FC = () => {
     syncStateFromPresent(next);
   }, []);
 
-  // 🟢 Отрисовка мазков с корректным парсингом цвета
+  // Отрисовка мазков
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -298,7 +323,7 @@ export const NotesCanvas: React.FC = () => {
     strokes.forEach((stroke) => {
       if (stroke.points.length < 2) return;
       ctx.beginPath();
-      ctx.strokeStyle = wpfColorToCss(stroke.color); // Преобразуем цвет в валидный для Canvas
+      ctx.strokeStyle = wpfColorToCss(stroke.color);
       ctx.lineWidth = stroke.width;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -311,9 +336,18 @@ export const NotesCanvas: React.FC = () => {
     });
   }, [strokes]);
 
-  // 🟢 Загрузка холста с распаковкой Base64 и нормализацией цветов WPF
+  // 🟢 Загрузка холста из inkData (отслеживает изменения в реальном времени)
   useEffect(() => {
+    if (selectedNote?.id !== previousNoteIdRef.current) {
+      previousNoteIdRef.current = selectedNote?.id;
+      lastLocalSaveRef.current = null;
+    }
+
     if (selectedNote?.inkData) {
+      if (lastLocalSaveRef.current && selectedNote.inkData === lastLocalSaveRef.current) {
+        return;
+      }
+
       try {
         let jsonStr = selectedNote.inkData;
 
@@ -355,8 +389,8 @@ export const NotesCanvas: React.FC = () => {
           backgroundHex: wpfColorToCss(el.backgroundHex || el.BackgroundHex || '#00000000'),
           isBold: Boolean(el.isBold ?? el.IsBold),
           isItalic: Boolean(el.isItalic ?? el.IsItalic),
-          pointsData: el.pointsData || el.PointsData,
-          base64Data: el.base64Data || el.Base64Data, // Сохраняем сырой Base64
+          pointsData: el.pointsData || el.PointsData || '',
+          base64Data: el.base64Data || el.Base64Data,
         }));
 
         const initialState: CanvasState = {
@@ -381,8 +415,9 @@ export const NotesCanvas: React.FC = () => {
         future: [],
       };
     }
-  }, [selectedNote?.id]);
+  }, [selectedNote?.id, selectedNote?.inkData]);
 
+  // Горячие клавиши
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'TEXTAREA' || (e.target as HTMLElement)?.tagName === 'INPUT') {
@@ -437,6 +472,7 @@ export const NotesCanvas: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedId, elements, undo, redo, pushSnapshot]);
 
+  // 🟢 Создание фигур с точным расчетом pointsData
   const handleMouseDown = (e: React.MouseEvent) => {
     setContextMenu(null);
     setActiveSubmenu(null);
@@ -457,6 +493,7 @@ export const NotesCanvas: React.FC = () => {
       let shapeTypeName = 'Rectangle';
       let w = 150;
       let h = 80;
+      let pointsStr = '';
 
       switch (selectedShape) {
         case NoteShapeType.Square:
@@ -473,16 +510,19 @@ export const NotesCanvas: React.FC = () => {
           shapeTypeName = 'Polygon';
           w = 100;
           h = 100;
+          pointsStr = '50,0;0,100;100,100'; // 👈 Добавили для WPF
           break;
         case NoteShapeType.Line:
           shapeTypeName = 'Line';
           w = 120;
           h = 80;
+          pointsStr = '0,0;120,80'; // 👈 Добавили для WPF
           break;
         case NoteShapeType.Polyline:
           shapeTypeName = 'Polyline';
           w = 150;
           h = 50;
+          pointsStr = '0,0;50,50;100,0;150,50'; // 👈 Добавили для WPF
           break;
       }
 
@@ -501,6 +541,7 @@ export const NotesCanvas: React.FC = () => {
         fontSize: 16,
         foregroundHex: '#FFFFFFFF',
         backgroundHex: '#00000000',
+        pointsData: pointsStr,
       };
 
       const nextElements = [...elements, newEl];
@@ -722,11 +763,11 @@ export const NotesCanvas: React.FC = () => {
     };
   };
 
-  // 🟢 Сохранение: формирует пакет для C# WPF и ASP.NET Core
+  // 🟢 Сохранение: цвета конвертируются в #AARRGGBB, чтобы C# WPF не падал!
   const handleSave = () => {
     const pkg = {
       Strokes: historyRef.current.present.strokes.map((s) => ({
-        Color: s.color,
+        Color: cssColorToWpfHex(s.color),
         Width: s.width,
         Points: s.points.map((p) => ({ X: p.x, Y: p.y })),
       })),
@@ -738,28 +779,32 @@ export const NotesCanvas: React.FC = () => {
         Top: el.top,
         Width: el.width,
         Height: el.height,
-        FillHex: el.fillHex,
-        StrokeHex: el.strokeHex,
+        FillHex: cssColorToWpfHex(el.fillHex),
+        StrokeHex: cssColorToWpfHex(el.strokeHex),
         StrokeThickness: el.strokeThickness,
-        Text: el.text,
-        FontSize: el.fontSize,
-        ForegroundHex: el.foregroundHex,
-        BackgroundHex: el.backgroundHex,
+        Text: el.text || '',
+        FontSize: el.fontSize || 16,
+        ForegroundHex: cssColorToWpfHex(el.foregroundHex),
+        BackgroundHex: cssColorToWpfHex(el.backgroundHex),
         IsBold: el.isBold,
         IsItalic: el.isItalic,
-        Base64Data: stripDataUrlPrefix(el.base64Data), // Очищаем для C# WPF Convert.FromBase64String
+        PointsData: el.pointsData || '',
+        Base64Data: stripDataUrlPrefix(el.base64Data),
       })),
       elements: historyRef.current.present.elements,
       BackgroundType: historyRef.current.present.bgType,
-      BackgroundColorHex: historyRef.current.present.bgColor,
+      BackgroundColorHex: cssColorToWpfHex(historyRef.current.present.bgColor),
       BackgroundImageBase64: stripDataUrlPrefix(historyRef.current.present.bgImage),
     };
 
     const jsonStr = JSON.stringify(pkg);
     const base64Str = btoa(unescape(encodeURIComponent(jsonStr)));
+
+    lastLocalSaveRef.current = base64Str;
     saveCurrentNoteInkData(base64Str);
   };
 
+  // 🟢 Загрузка картинок с сохранением естественных пропорций
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -769,23 +814,36 @@ export const NotesCanvas: React.FC = () => {
       const dataUrl = evt.target?.result as string;
       const rawBase64 = stripDataUrlPrefix(dataUrl);
 
-      const newImg: ChildElementDto = {
-        id: `img_${Date.now()}`,
-        elementType: 'Image',
-        left: 80 - panOffset.x,
-        top: 80 - panOffset.y,
-        width: 320,
-        height: 220,
-        fillHex: '#00000000',
-        strokeHex: '#00000000',
-        strokeThickness: 0,
-        base64Data: rawBase64 || '',
+      const tempImg = new Image();
+      tempImg.onload = () => {
+        let w = tempImg.naturalWidth || 300;
+        let h = tempImg.naturalHeight || 200;
+
+        if (w > 400) {
+          h = Math.round((h * 400) / w);
+          w = 400;
+        }
+
+        const newImg: ChildElementDto = {
+          id: `img_${Date.now()}`,
+          elementType: 'Image',
+          left: 80 - panOffset.x,
+          top: 80 - panOffset.y,
+          width: w,
+          height: h,
+          fillHex: '#00000000',
+          strokeHex: '#00000000',
+          strokeThickness: 0,
+          base64Data: rawBase64 || '',
+        };
+
+        const nextElements = [...elements, newImg];
+        setElements(nextElements);
+        setSelectedId(newImg.id);
+        pushSnapshot({ ...historyRef.current.present, elements: nextElements });
+        setNoteTool('Select');
       };
-      const nextElements = [...elements, newImg];
-      setElements(nextElements);
-      setSelectedId(newImg.id);
-      pushSnapshot({ ...historyRef.current.present, elements: nextElements });
-      setNoteTool('Select');
+      tempImg.src = dataUrl;
     };
     reader.readAsDataURL(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -974,7 +1032,6 @@ export const NotesCanvas: React.FC = () => {
                 boxSizing: 'border-box',
               }}
             >
-              {/* 🟢 РЕНДЕР КАРТИНКИ ЧЕРЕЗ formatBase64DataUrl (устраняет HTTP 431) */}
               {el.elementType === 'Image' && el.base64Data && (
                 <img
                   src={formatBase64DataUrl(el.base64Data)}
@@ -988,12 +1045,15 @@ export const NotesCanvas: React.FC = () => {
                 />
               )}
 
-              {/* РЕНДЕР ТЕКСТА */}
+              {/* 🟢 Управляемый TextArea: текст синхронизируется на лету */}
               {el.elementType === 'TextBox' && (
                 <textarea
-                  defaultValue={el.text}
+                  value={el.text || ''}
                   onChange={(e) => {
-                    el.text = e.target.value;
+                    const val = e.target.value;
+                    setElements((prev) =>
+                      prev.map((item) => (item.id === el.id ? { ...item, text: val } : item))
+                    );
                   }}
                   onBlur={() => pushSnapshot({ ...historyRef.current.present, elements })}
                   style={{
@@ -1490,7 +1550,7 @@ export const NotesCanvas: React.FC = () => {
         </div>
       )}
 
-      {/* Поповер выбора цвета кастомной кисти */}
+      {/* Выбор кастомного цвета */}
       {isColorPickerOpen && (
         <div
           style={{
@@ -1548,7 +1608,7 @@ export const NotesCanvas: React.FC = () => {
         </div>
       )}
 
-      {/* КОНТЕКСТНОЕ МЕНЮ (1 в 1 с WPF) */}
+      {/* КОНТЕКСТНОЕ МЕНЮ */}
       {contextMenu && (
         <div
           onMouseDown={(e) => e.stopPropagation()}

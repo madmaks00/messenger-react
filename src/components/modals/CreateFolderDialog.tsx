@@ -281,6 +281,73 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
       }}
     >
       <style>{`
+        /* Кнопка закрытия (круглый эллипс) */
+        .btn-close {
+          width: 28px !important;
+          height: 28px !important;
+          padding: 0 !important;
+          border-radius: 50% !important;
+          background-color: transparent !important;
+          color: #7D8494 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          cursor: pointer !important;
+          border: none !important;
+          outline: none !important;
+          transition: background-color 0.15s ease, color 0.15s ease !important;
+        }
+        .btn-close:hover {
+          background-color: rgba(255, 255, 255, 0.08) !important;
+          color: #FFFFFF !important;
+        }
+        .btn-close:active {
+          background-color: rgba(255, 255, 255, 0.16) !important;
+        }
+
+        /* Кнопка Cancel */
+        .btn-cancel {
+          height: 36px;
+          padding: 0 16px;
+          background-color: transparent !important;
+          border: none;
+          border-radius: 8px;
+          color: #7D8494 !important;
+          font-weight: 500;
+          font-size: 13.5px;
+          cursor: pointer;
+          outline: none;
+          transition: background-color 0.15s ease, color 0.15s ease !important;
+        }
+        .btn-cancel:hover {
+          background-color: rgba(255, 255, 255, 0.08) !important;
+          color: #FFFFFF !important;
+        }
+        .btn-cancel:active {
+          background-color: rgba(255, 255, 255, 0.14) !important;
+        }
+
+        /* Кнопка Create / Save (PrimaryActionButtonStyle) */
+        .btn-create {
+          height: 36px;
+          padding: 0 22px;
+          background-color: #1E9BEB !important;
+          border: none;
+          border-radius: 8px;
+          color: #FFFFFF !important;
+          font-weight: 600;
+          font-size: 13.5px;
+          cursor: pointer;
+          outline: none;
+          transition: opacity 0.15s ease !important;
+        }
+        .btn-create:hover {
+          opacity: 0.9 !important;
+        }
+        .btn-create:active {
+          opacity: 0.8 !important;
+        }
+
         .wpf-color-cell {
           width: 40px;
           height: 40px;
@@ -362,47 +429,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
         .wpf-icon-cell svg {
           transition: fill 0.15s ease;
         }
-
-        .wpf-dialog-cancel-btn {
-          background: transparent;
-          border: none;
-          color: #94A3B8;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          padding: 8px 16px;
-          border-radius: 6px;
-          outline: none;
-          transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
-        }
-        .wpf-dialog-cancel-btn:hover {
-          background-color: rgba(255, 255, 255, 0.08);
-          color: #FFFFFF;
-        }
-        .wpf-dialog-cancel-btn:active {
-          transform: scale(0.96);
-          background-color: rgba(255, 255, 255, 0.14);
-        }
-
-        .wpf-dialog-confirm-btn {
-          background: transparent;
-          border: none;
-          font-size: 14px;
-          font-weight: bold;
-          cursor: pointer;
-          padding: 8px 18px;
-          border-radius: 6px;
-          outline: none;
-          transition: background-color 0.15s ease, filter 0.15s ease, transform 0.1s ease;
-        }
-        .wpf-dialog-confirm-btn:hover {
-          background-color: rgba(255, 255, 255, 0.08);
-          filter: brightness(1.25);
-        }
-        .wpf-dialog-confirm-btn:active {
-          transform: scale(0.96);
-          background-color: rgba(255, 255, 255, 0.14);
-        }
       `}</style>
 
       {/* Карточка окна */}
@@ -422,17 +448,38 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           position: 'relative',
         }}
       >
-        <h3
+        {/* Шапка с названием и круглым крестиком */}
+        <div
           style={{
-            margin: '0 0 15px 0',
-            color: '#FFFFFF',
-            fontSize: 18,
-            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 15,
             flexShrink: 0,
           }}
         >
-          {currentTitle}
-        </h3>
+          <h3
+            style={{
+              margin: 0,
+              color: '#FFFFFF',
+              fontSize: 18,
+              fontWeight: 'bold',
+            }}
+          >
+            {currentTitle}
+          </h3>
+
+          <button
+            type="button"
+            onClick={handleClose}
+            className="btn-close"
+            title="Close"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+            </svg>
+          </button>
+        </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <div
@@ -542,19 +589,18 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
             </div>
           </div>
 
-          {/* Кнопки Cancel / Save */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 5, flexShrink: 0 }}>
+          {/* Кнопки Cancel / Create (Save) */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 10, flexShrink: 0 }}>
             <button
               type="button"
               onClick={handleClose}
-              className="wpf-dialog-cancel-btn"
+              className="btn-cancel"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="wpf-dialog-confirm-btn"
-              style={{ color: currentColor }}
+              className="btn-create"
             >
               {currentConfirmText}
             </button>

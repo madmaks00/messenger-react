@@ -4,6 +4,7 @@ import {
   IUserSearchResult,
   IAttachment,
   ISelectableChat,
+  MessageHelper,
 } from '../types/models';
 import { LastMessageType } from '../types/enums';
 import { apiClient } from '../services/apiClient';
@@ -30,6 +31,9 @@ interface ChatState {
   isScrolledToBottom: boolean;
   unreadCountInActiveChat: number;
 
+  currentUserName: string;
+  currentUserAvatar: string | null;
+
   isCurrentChatJoined: boolean;
   isBlockedByMe: boolean;
   isBlockedByThem: boolean;
@@ -41,6 +45,7 @@ interface ChatState {
   isSelectionMode: boolean;
   selectedCount: number;
 
+  ensureMyProfileLoadedAsync: () => Promise<void>;
   selectChatUser: (target: IUserSearchResult | null) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   ensureMessageLoadedAsync: (messageId: number) => Promise<IMessage | null>;
@@ -56,9 +61,12 @@ interface ChatState {
   toggleSelectMessage: (msg: IMessage) => void;
   clearSelection: () => void;
   forwardMessages: (messages: IMessage[]) => void;
+
   startSearch: () => void;
   exitSearch: () => void;
-  setChatSearchText: (query: string) => void;
+  onChatSearchTextChanged: (query: string) => void;
+  jumpToSearchedMessage: (targetMsg: IMessage) => Promise<void>;
+
   markAsRead: () => Promise<void>;
   trackVisiblePosts: (serverIds: number[]) => void;
   sendTyping: (text?: string) => void;
@@ -70,6 +78,7 @@ const alreadyTrackedPostIds = new Set<number>();
 let activeChatTypingTimer: ReturnType<typeof setTimeout> | null = null;
 let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let deltaSyncInterval: ReturnType<typeof setInterval> | null = null;
+let chatSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function computeCanWriteMessages(
   target: IUserSearchResult | null,
@@ -96,6 +105,27 @@ function computeCanWriteMessages(
   return true;
 }
 
+function resolveSessionUser(): { name: string; avatar: string | null } {
+  try {
+    const raw =
+      localStorage.getItem('user_session_data') ||
+      localStorage.getItem('current_user') ||
+      localStorage.getItem('user');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const name = parsed.nickName || parsed.nickname || parsed.username || parsed.name || '';
+      const avatar = parsed.avatarPath || parsed.avatar || null;
+      return { name, avatar };
+    }
+  } catch {}
+
+  const anySession = userSession as any;
+  return {
+    name: anySession?.nickName || anySession?.username || '',
+    avatar: anySession?.avatarPath || null,
+  };
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   selectedChatUser: null,
   currentChatMessages: [],
@@ -111,6 +141,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isScrolledToBottom: true,
   unreadCountInActiveChat: 0,
 
+  currentUserName: resolveSessionUser().name,
+  currentUserAvatar: resolveSessionUser().avatar,
+
   isCurrentChatJoined: true,
   isBlockedByMe: false,
   isBlockedByThem: false,
@@ -121,6 +154,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   isSelectionMode: false,
   selectedCount: 0,
+
+  // 🟢 1 в 1 с ChatViewModel.cs: EnsureMyProfileLoadedAsync()
+  ensureMyProfileLoadedAsync: async () => {
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+    if (currentUserId <= 0) return;
+
+    const { name: localName, avatar: localAvatar } = resolveSessionUser();
+    if (localName && localName !== 'Me') {
+      set({ currentUserName: localName, currentUserAvatar: localAvatar });
+    }
+
+    try {
+      const res = await apiClient.get<any>(`api/Users/${currentUserId}`).catch(() => apiClient.get<any>(`api/User/${currentUserId}`));
+      if (res && res.data) {
+        const u = res.data;
+        const freshName = u.nickName || u.username || localName || 'User';
+        const freshAvatar = u.avatarPath || u.avatar || localAvatar;
+        set({ currentUserName: freshName, currentUserAvatar: freshAvatar });
+      }
+    } catch (e) {
+      console.warn('[ChatStore] Ошибка загрузки собственного профиля:', e);
+    }
+  },
 
   syncPermissionsWithInput: () => {
     const s = get();
@@ -188,12 +246,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     alreadyTrackedPostIds.clear();
+    await get().ensureMyProfileLoadedAsync();
 
     const targetUserId = target.isGroup ? null : Number(target.id ?? (target as any).userId ?? 0);
     const groupId = target.isGroup ? Number(target.id ?? (target as any).groupId ?? 0) : null;
     const targetId = target.isGroup ? (groupId ?? 0) : (targetUserId ?? 0);
 
-    // 🟢 1 в 1 с WPF: берем актуальный статус онлайна из существующего элемента сайдбара
     const existingSidebarChat = useSidebarChatsStore.getState().allChats.find((c) =>
       !c.isGroup && Number(c.userId || c.id) === targetId
     );
@@ -217,6 +275,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const isJoined = !normalizedTarget.isGroup || true;
     const canWrite = computeCanWriteMessages(normalizedTarget, false, false, isJoined, true, currentUserId);
+
+    if (get().isChatSearchMode) {
+      get().exitSearch();
+    }
 
     set({
       selectedChatUser: normalizedTarget,
@@ -258,14 +320,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await get().markAsRead();
       await get().triggerDeltaSync();
 
-      // 🟢 Фоновый интервал: синхронизирует дельту сообщений И статусы онлайна 1 в 1 с WPF
       if (deltaSyncInterval) clearInterval(deltaSyncInterval);
       deltaSyncInterval = setInterval(() => {
         get().triggerDeltaSync();
         useSidebarChatsStore.getState().syncOnlineStatuses();
       }, 3500);
 
-      // Свежий профиль из API
       if (!normalizedTarget.isGroup && targetUserId && !normalizedTarget.isSecretChat) {
         apiClient
           .get<any>(`api/Users/${targetUserId}`)
@@ -301,7 +361,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .catch(() => {});
       }
 
-      // Доотправка офлайн-сообщений
       chatService.syncUnsentMessagesAsync(signalRService).then((sent) => {
         if (sent > 0) {
           chatService
@@ -385,9 +444,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return null;
   },
 
-  // 🟢 ПОЛНАЯ ОТПРАВКА: с поддержкой E2EE шифрования секретных чатов + обычных сообщений
   sendMessage: async (text, attachments, editingMessage, replies) => {
-    const { selectedChatUser } = get();
+    const { selectedChatUser, currentUserName, currentUserAvatar } = get();
     if (!selectedChatUser) return;
 
     if (editingMessage) {
@@ -406,7 +464,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingDebounceTimer = null;
     }
 
-    // 🟢 ВЕТКА 1: СЕКРЕТНЫЙ ЧАТ (E2EE)
     if (isSecret) {
       const secretChatId = selectedChatUser.secretChatId!;
       const replySender = replies[0]?.senderName || null;
@@ -438,6 +495,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         senderId: currentUserId,
         receiverId: selectedChatUser.id,
         secretChatId,
+        senderName: currentUserName,
+        senderAvatar: currentUserAvatar,
         text,
         timestamp: new Date().toISOString(),
         isMyMessage: true,
@@ -474,13 +533,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // 🟢 ВЕТКА 2: ОБЫЧНЫЙ ЧАТ И ГРУППА
     const replyIds = replies.map((r) => r.serverId || r.id).filter(Boolean).join(',');
 
     const newMsg: IMessage = {
       id: localTempId,
       serverId: 0,
       senderId: currentUserId,
+      senderName: currentUserName,
+      senderAvatar: currentUserAvatar,
       receiverId: selectedChatUser.isGroup ? null : selectedChatUser.id,
       groupId: selectedChatUser.isGroup ? selectedChatUser.id : null,
       text,
@@ -628,29 +688,162 @@ export const useChatStore = create<ChatState>((set, get) => ({
     eventBus.emit('OpenConfirmDialogMessage' as any, { messages });
   },
 
-  startSearch: () => set({ isChatSearchMode: true, chatSearchText: '' }),
-  exitSearch: () => set({ isChatSearchMode: false, chatSearchText: '', chatSearchResults: [] }),
+  startSearch: () => {
+    const { selectedChatUser, isChatSearchMode } = get();
+    if (!selectedChatUser) return;
 
-  setChatSearchText: (query) => {
+    if (isChatSearchMode) {
+      get().exitSearch();
+      return;
+    }
+
+    get().ensureMyProfileLoadedAsync();
+
+    set({
+      isChatSearchMode: true,
+      chatSearchText: '',
+      chatSearchResults: [],
+      isChatSearching: false,
+    });
+
+    eventBus.emit('FocusSearchBoxMessage', undefined);
+  },
+
+  exitSearch: () => {
+    set({
+      isChatSearchMode: false,
+      chatSearchText: '',
+      chatSearchResults: [],
+      isChatSearching: false,
+    });
+
+    eventBus.emit('EndSearchBoxMessage', undefined);
+  },
+
+  // 🟢 1 в 1 с ChatViewModel.cs: OnChatSearchTextChanged(string value)
+  onChatSearchTextChanged: (query: string) => {
+    if (chatSearchDebounceTimer) {
+      clearTimeout(chatSearchDebounceTimer);
+      chatSearchDebounceTimer = null;
+    }
+
     set({ chatSearchText: query });
-    if (!query.trim()) {
+
+    const { isChatSearchMode, selectedChatUser } = get();
+    if (!isChatSearchMode || !selectedChatUser || !query.trim()) {
       set({ chatSearchResults: [], isChatSearching: false });
       return;
     }
 
-    const { selectedChatUser } = get();
-    if (!selectedChatUser) return;
-
+    const searchVal = query.trim();
     set({ isChatSearching: true });
-    const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
-    const otherUserId = !selectedChatUser.isGroup ? selectedChatUser.id : null;
 
-    chatService
-      .searchMessagesAsync(query.trim(), groupId, otherUserId)
-      .then((results) => {
-        set({ chatSearchResults: results || [], isChatSearching: false });
-      })
-      .catch(() => set({ isChatSearching: false }));
+    chatSearchDebounceTimer = setTimeout(async () => {
+      try {
+        const currentUserId = Number(
+          userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+        );
+
+        await get().ensureMyProfileLoadedAsync();
+        const { currentUserName, currentUserAvatar } = get();
+
+        const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
+        const otherUserId = !selectedChatUser.isGroup ? selectedChatUser.id : null;
+
+        // 1. Полнотекстовый поиск по API
+        let serverResults = await chatService.searchMessagesAsync(searchVal, groupId, otherUserId);
+
+        // 2. Фолбэк на локальную базу данных
+        let results: IMessage[] = [];
+        if (serverResults && serverResults.length > 0) {
+          results = serverResults;
+        } else {
+          results = await chatService.searchLocalMessagesAsync(
+            searchVal,
+            currentUserId,
+            otherUserId,
+            groupId,
+            50
+          );
+        }
+
+        // 🟢 КРИТИЧЕСКИЙ ФИЛЬТР: ИСКЛЮЧАЕМ СЛУЖЕБНЫЕ ЛОГИ ЗВОНКОВ (_CALL:...) ИЗ ПОИСКА
+        results = results.filter((msg) => !msg.isCallMessage && !MessageHelper.isCallMessage(msg));
+
+        // 🟢 ДЕДУПЛИКАЦИЯ
+        const seen = new Set<string>();
+        const uniqueResults: IMessage[] = [];
+
+        for (const msg of results) {
+          const key = msg.serverId > 0 ? `s_${msg.serverId}` : `l_${msg.id}_${msg.timestamp}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueResults.push(msg);
+          }
+        }
+
+        // 🟢 3. ОБОГАЩЕНИЕ АВАТАРОК И ИМЕН (ВМЕСТО "Me" ВЫВОДИТСЯ РЕАЛЬНОЕ ИМЯ И АВАТАР)
+        const myActualName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'You';
+        const myActualAvatar = currentUserAvatar || resolveSessionUser().avatar;
+
+        for (const msg of uniqueResults) {
+          msg.isMyMessage = msg.senderId === currentUserId;
+          msg.senderName = msg.isMyMessage ? myActualName : selectedChatUser.nickName;
+          msg.senderAvatar = msg.isMyMessage
+            ? myActualAvatar
+            : selectedChatUser.avatarPath || (selectedChatUser as any).avatar;
+        }
+
+        set({
+          chatSearchResults: uniqueResults,
+          isChatSearching: false,
+        });
+      } catch (err) {
+        console.error('[ChatStore ERROR] Ошибка при поиске по сообщениям чата:', err);
+        set({ isChatSearching: false });
+      }
+    }, 250);
+  },
+
+  // 🟢 1 В 1 С WPF ChatViewModel.cs: JumpToSearchedMessage(Message targetMsg)
+  jumpToSearchedMessage: async (targetMsg: IMessage) => {
+    if (!targetMsg) return;
+
+    const targetServerId = Number(targetMsg.serverId || 0);
+    const targetLocalId = Number(targetMsg.id || 0);
+    const targetId = targetServerId > 0 ? targetServerId : targetLocalId;
+
+    let isLoaded = get().currentChatMessages.some(
+      (m) =>
+        (targetServerId > 0 && Number(m.serverId) === targetServerId) ||
+        (targetLocalId > 0 && Number(m.id) === targetLocalId) ||
+        (targetMsg.text && m.text === targetMsg.text && Math.abs(new Date(m.timestamp).getTime() - new Date(targetMsg.timestamp).getTime()) < 3000)
+    );
+
+    // До 10 пачек диапазонной подгрузки истории (1 в 1 с C# for (short i = 0; i < 10; i++))
+    if (!isLoaded) {
+      for (let i = 0; i < 10; i++) {
+        await get().loadOlderMessages();
+        isLoaded = get().currentChatMessages.some(
+          (m) =>
+            (targetServerId > 0 && Number(m.serverId) === targetServerId) ||
+            (targetLocalId > 0 && Number(m.id) === targetLocalId) ||
+            (targetMsg.text && m.text === targetMsg.text && Math.abs(new Date(m.timestamp).getTime() - new Date(targetMsg.timestamp).getTime()) < 3000)
+        );
+        if (isLoaded) break;
+      }
+    }
+
+    // Отправляем полный контекст сообщения для 100% попадания в лейаут
+    setTimeout(() => {
+      eventBus.emit('ScrollToMessageRequestMessage' as any, {
+        messageId: targetId,
+        localId: targetLocalId,
+        serverId: targetServerId,
+        text: targetMsg.text,
+        timestamp: targetMsg.timestamp,
+      });
+    }, 60);
   },
 
   markAsRead: async () => {
@@ -720,7 +913,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 }));
 
-// ================= СЛУШАТЕЛИ EVENTBUS (1 В 1 С ChatViewModel.cs) =================
+// ================= СЛУШАТЕЛИ EVENTBUS =================
 
 eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   const target = data?.target || data;
@@ -729,13 +922,28 @@ eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   }
 });
 
-// 🟢 1. Статус онлайна (UserStatusChanged)
+eventBus.on('ChatSearchQueryChangedMessage', ({ query }) => {
+  if (useChatStore.getState().isChatSearchMode) {
+    useChatStore.getState().onChatSearchTextChanged(query);
+  }
+});
+
+eventBus.on('EndSearchBoxMessage', () => {
+  if (useChatStore.getState().isChatSearchMode) {
+    useChatStore.setState({
+      isChatSearchMode: false,
+      chatSearchText: '',
+      chatSearchResults: [],
+      isChatSearching: false,
+    });
+  }
+});
+
 eventBus.on(
   'UserStatusChangedMessage' as any,
   ({ userId, isOnline, lastSeen }: { userId: number; isOnline: boolean; lastSeen: string }) => {
     const { selectedChatUser } = useChatStore.getState();
     if (selectedChatUser && !selectedChatUser.isGroup && Number(selectedChatUser.id) === Number(userId)) {
-      console.log(`[ChatStore 🔄] Обновление статуса собеседника: isOnline=${isOnline}`);
       useChatStore.setState({
         selectedChatUser: {
           ...selectedChatUser,
@@ -747,7 +955,6 @@ eventBus.on(
   }
 );
 
-// 🟢 2. Тайпинг (UserTypingMessage)
 eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
   const { selectedChatUser } = useChatStore.getState();
   if (!selectedChatUser) return;
@@ -779,14 +986,18 @@ eventBus.on('MessageInputTextChangedMessage' as any, ({ text }: { text: string }
   useChatStore.getState().sendTyping(text);
 });
 
-// 🟢 3. Входящее сообщение в реальном времени (ReceiveMessage)
 eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   const currentUserId = Number(
     userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
   );
-  const { selectedChatUser } = useChatStore.getState();
+  const { selectedChatUser, currentUserName, currentUserAvatar } = useChatStore.getState();
   const isMy = Number(incoming.senderId) === Number(currentUserId);
   incoming.isMyMessage = isMy;
+
+  if (isMy) {
+    incoming.senderName = currentUserName;
+    incoming.senderAvatar = currentUserAvatar;
+  }
 
   const activeChatId = selectedChatUser
     ? Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? 0)
@@ -854,7 +1065,6 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   }
 });
 
-// 🟢 4. Статус прочтения сообщений собеседником (синие галочки)
 eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; maxReadId: number }) => {
   const { selectedChatUser } = useChatStore.getState();
   const currentUserId = Number(
@@ -874,7 +1084,6 @@ eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; m
   }
 });
 
-// 🟢 5. Редактирование сообщений в реальном времени (MessageEditedMessage)
 eventBus.on('MessageEditedMessage' as any, ({ serverId, newText, attachments }: any) => {
   useChatStore.setState((state) => ({
     currentChatMessages: state.currentChatMessages.map((m) =>
@@ -900,7 +1109,6 @@ eventBus.on('MessageEditedMessage' as any, ({ serverId, newText, attachments }: 
   }));
 });
 
-// 🟢 6. Удаление сообщений в реальном времени (MessageDeletedMessage)
 eventBus.on('MessageDeletedMessage' as any, ({ serverId, isForAll }: { serverId: number; isForAll: boolean }) => {
   useChatStore.setState((state) => ({
     currentChatMessages: isForAll
@@ -914,7 +1122,6 @@ eventBus.on('MessageDeletedMessage' as any, ({ serverId, isForAll }: { serverId:
   }));
 });
 
-// 🟢 7. Закрепление сообщений в реальном времени (MessagePinnedMessage)
 eventBus.on('MessagePinnedMessage' as any, ({ serverMessageId, isPinned }: { serverMessageId: number; isPinned: boolean }) => {
   useChatStore.setState((state) => {
     const updatedMessages = state.currentChatMessages.map((m) =>
@@ -935,7 +1142,6 @@ eventBus.on('MessagePinnedMessage' as any, ({ serverMessageId, isPinned }: { ser
   });
 });
 
-// 🟢 8. Обновление счётчика просмотров постов в каналах
 eventBus.on('MessageViewsUpdatedMessage' as any, ({ serverMessageId, viewsCount }: { serverMessageId: number; viewsCount: number }) => {
   useChatStore.setState((state) => ({
     currentChatMessages: state.currentChatMessages.map((m) =>
@@ -944,7 +1150,6 @@ eventBus.on('MessageViewsUpdatedMessage' as any, ({ serverMessageId, viewsCount 
   }));
 });
 
-// 🟢 9. Изменение статуса блокировки пользователя в реальном времени
 eventBus.on('BlockStatusChangedMessage' as any, ({ blockerId, isBlocked }: { blockerId: number; isBlocked: boolean }) => {
   const { selectedChatUser } = useChatStore.getState();
   if (selectedChatUser && !selectedChatUser.isGroup && Number(selectedChatUser.id) === Number(blockerId)) {
@@ -956,7 +1161,6 @@ eventBus.on('BlockStatusChangedMessage' as any, ({ blockerId, isBlocked }: { blo
   }
 });
 
-// 🟢 10. Очистка активных сообщений
 eventBus.on('ClearActiveChatMessagesMessage' as any, () => {
   useChatStore.setState({
     currentChatMessages: [],
@@ -966,7 +1170,6 @@ eventBus.on('ClearActiveChatMessagesMessage' as any, () => {
   });
 });
 
-// 🟢 11. Обновление истории при Delta Sync
 eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
   const { selectedChatUser } = useChatStore.getState();
   if (selectedChatUser) {
@@ -986,7 +1189,6 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
   }
 });
 
-// 🟢 12. Серверный таймер синхронизации дельты
 eventBus.on('SyncTimerMessage' as any, () => {
   useChatStore.getState().triggerDeltaSync();
 });

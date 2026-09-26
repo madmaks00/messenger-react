@@ -19,8 +19,6 @@ import {
   mdiShareOutline,
   mdiMessageTextOutline,
   mdiBullhornOutline,
-  mdiLockCheck,
-  mdiCheck,
   mdiChevronDown,
 } from '@mdi/js';
 
@@ -89,6 +87,8 @@ export const ChatWorkspaceView: React.FC = () => {
     selectedCount,
     pinnedMessages = [],
     isChatSearchMode,
+    startSearch,
+    exitSearch,
     togglePinMessage,
     deleteMessage,
     toggleSelectMessage,
@@ -104,21 +104,21 @@ export const ChatWorkspaceView: React.FC = () => {
   const [isPinnedPopupOpen, setIsPinnedPopupOpen] = useState(false);
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
   const isAtBottomRef = useRef(true);
+  const isScrollingToTargetRef = useRef(false);
   const animFrameRef = useRef<number | null>(null);
 
-  // 🟢 1 В 1 С WPF: ЯКОРНОЕ ПОЗИЦИОНИРОВАНИЕ (anchorMsgId + anchorRelativeOffset)
-  const isLoadingHistoryRef = useRef(false); // Аналог SmoothScrollViewerHelper.IsLoadingHistory
+  const isLoadingHistoryRef = useRef(false);
   const pendingAnchorRef = useRef<{ anchorMsgId: number; anchorRelativeOffset: number } | null>(null);
   const prevLastMessageIdRef = useRef<number | null>(null);
   const prevChatIdRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef<number>(0);
 
-  // Закрытие попапов при клике вовне
   useEffect(() => {
     const handleOutside = () => {
       setIsPinnedPopupOpen(false);
@@ -128,7 +128,6 @@ export const ChatWorkspaceView: React.FC = () => {
     return () => document.removeEventListener('click', handleOutside);
   }, []);
 
-  // ================= РАСЧЕТ ВЫСОТЫ И ЛЕЙАУТА (1 В 1 С TelegramVirtualizingPanel.cs) =================
   const { layoutItems, totalContentHeight } = useMemo(() => {
     const msgs = currentChatMessages || [];
     if (msgs.length === 0) return { layoutItems: [], totalContentHeight: 0 };
@@ -150,10 +149,9 @@ export const ChatWorkspaceView: React.FC = () => {
 
       if (!result) return { layoutItems: [], totalContentHeight: 0 };
 
-      const items = (result as any).items || (result as any).layoutItems || [];
+      const items = Array.isArray(result) ? result : (result as any).items || (result as any).layoutItems || [];
       const lastItem = items.length > 0 ? items[items.length - 1] : null;
 
-      // 🟢 В WPF: TotalContentHeight = last.YOffset + last.TotalHeight + 82.0;
       const exactTotalHeight = lastItem ? Math.ceil(lastItem.yOffset + lastItem.totalHeight + 82.0) : 0;
 
       return {
@@ -166,7 +164,9 @@ export const ChatWorkspaceView: React.FC = () => {
     }
   }, [currentChatMessages, selectedChatUser]);
 
-  // Бинарный поиск видимых элементов
+  const layoutItemsRef = useRef(layoutItems);
+  layoutItemsRef.current = layoutItems;
+
   const visibleItems = useMemo(() => {
     const items = layoutItems || [];
     if (items.length === 0 || viewportHeight <= 0) return [];
@@ -193,26 +193,26 @@ export const ChatWorkspaceView: React.FC = () => {
     return items.slice(firstIndex, lastIndex + 1);
   }, [layoutItems, scrollTop, viewportHeight]);
 
-  // ================= V-SYNC ПЛАВНЫЙ СКРОЛЛ =================
+  // 🟢 1 в 1 с WPF ScrollToOffsetAnimated (Duration: 240ms, CubicEase Out)
   const scrollToOffsetAnimated = useCallback((targetOffset: number, onCompleted?: () => void) => {
     if (!scrollRef.current) return;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
 
     let startOffset = scrollRef.current.scrollTop;
-    const distance = targetOffset - startOffset;
+    const distance = Math.abs(targetOffset - startOffset);
 
-    if (Math.abs(distance) < 5) {
+    if (distance < 3) {
       scrollRef.current.scrollTop = targetOffset;
       onCompleted?.();
       return;
     }
 
-    if (Math.abs(distance) > 700) {
-      startOffset = targetOffset - 500 * Math.sign(distance);
+    if (distance > 800) {
+      startOffset = startOffset > targetOffset ? targetOffset + 400 : Math.max(0, targetOffset - 400);
       scrollRef.current.scrollTop = startOffset;
     }
 
-    const durationMs = 200.0;
+    const durationMs = 240.0;
     const startTime = performance.now();
 
     const frame = (now: number) => {
@@ -244,7 +244,6 @@ export const ChatWorkspaceView: React.FC = () => {
     });
   }, [scrollToOffsetAnimated]);
 
-  // 🟢 1. АВТОСКРОЛЛ В САМЫЙ НИЗ ТОЛЬКО ПРИ ПЕРВОНАЧАЛЬНОМ ОТКРЫТИИ ЧАТА
   useLayoutEffect(() => {
     if (!scrollRef.current || !selectedChatUser) return;
 
@@ -263,17 +262,14 @@ export const ChatWorkspaceView: React.FC = () => {
     }
   }, [selectedChatUser?.id, isHistoryLoading, totalContentHeight, currentChatMessages]);
 
-  // 🟢 2. БЕСШОВНОЕ ВОССТАНОВЛЕНИЕ СКРОЛЛА (1 в 1 с WPF RefreshCanvasLayoutAsync)
   useLayoutEffect(() => {
     if (pendingAnchorRef.current && scrollRef.current && layoutItems.length > 0) {
       const { anchorMsgId, anchorRelativeOffset } = pendingAnchorRef.current;
       pendingAnchorRef.current = null;
 
-      // Ищем сообщение-якорь в пересчитанном лейауте
       const anchorItem = layoutItems.find((m) => m.id === anchorMsgId || (m.serverId > 0 && m.serverId === anchorMsgId));
 
       if (anchorItem) {
-        // Выставляем скролл ТОЧНО на новую позицию якоря со старым смещением
         const targetOffset = Math.max(0, anchorItem.yOffset + anchorRelativeOffset);
         scrollRef.current.scrollTop = targetOffset;
         setScrollTop(targetOffset);
@@ -281,7 +277,6 @@ export const ChatWorkspaceView: React.FC = () => {
     }
   }, [layoutItems]);
 
-  // 🟢 3. СКРОЛЛ ВНИЗ ТОЛЬКО ПРИ ДОБАВЛЕНИИ В КОНЕЦ (1 в 1 с WPF isAddedAtBottom)
   useEffect(() => {
     if (currentChatMessages.length === 0) {
       prevLastMessageIdRef.current = null;
@@ -291,16 +286,13 @@ export const ChatWorkspaceView: React.FC = () => {
     const lastMsg = currentChatMessages[currentChatMessages.length - 1];
     const lastMsgId = lastMsg.id || lastMsg.serverId;
 
-    // В WPF: bool isAddedAtBottom = e.NewStartingIndex >= Count - 1;
     const isAddedAtBottom = prevLastMessageIdRef.current !== null && lastMsgId !== prevLastMessageIdRef.current;
     prevLastMessageIdRef.current = lastMsgId;
 
-    // ⛔ Если идет подгрузка старых сообщений наверх — НИКОГДА НЕ СКРОЛЛИМ ВНИЗ!
-    if (isLoadingHistoryRef.current || pendingAnchorRef.current !== null) {
+    if (isLoadingHistoryRef.current || pendingAnchorRef.current !== null || isScrollingToTargetRef.current) {
       return;
     }
 
-    // 🟢 В WPF: bool shouldScroll = isAddedAtBottom && (_isAtBottom || isMyMessage);
     if (isAddedAtBottom) {
       const isMy = lastMsg.isMyMessage;
       if (isAtBottomRef.current || isMy) {
@@ -309,10 +301,10 @@ export const ChatWorkspaceView: React.FC = () => {
     }
   }, [currentChatMessages, scrollToBottom]);
 
-  // 🟢 4. ПОДГРУЗКА СТАРОЙ ИСТОРИИ (1 в 1 с WPF LoadOlderHistoryAsync)
   const handleLoadOlderHistory = async () => {
     if (
       isLoadingHistoryRef.current ||
+      isScrollingToTargetRef.current ||
       !scrollRef.current ||
       !selectedChatUser ||
       currentChatMessages.length === 0 ||
@@ -325,8 +317,6 @@ export const ChatWorkspaceView: React.FC = () => {
 
     try {
       const currentScrollOffset = scrollRef.current.scrollTop;
-
-      // 1. В WPF: long anchorMsgId = FastChatPanel.GetFirstVisibleMessageId(currentScrollOffset);
       const firstVisible = layoutItems.find((m) => m.yOffset + m.totalHeight >= currentScrollOffset) || layoutItems[0];
       if (!firstVisible) {
         isLoadingHistoryRef.current = false;
@@ -336,7 +326,6 @@ export const ChatWorkspaceView: React.FC = () => {
       const anchorMsgId = firstVisible.id || (firstVisible as any).serverId;
       const anchorRelativeOffset = currentScrollOffset - firstVisible.yOffset;
 
-      // 2. В WPF: var oldMessages = await vm.GetOlderMessagesDataAsync();
       const oldestTime = currentChatMessages[0].timestamp;
       const older = await chatService.getLocalMessagesAsync(
         userSession.userId,
@@ -347,7 +336,6 @@ export const ChatWorkspaceView: React.FC = () => {
         oldestTime
       );
 
-      // 3. В WPF: vm.CurrentChatMessages.Insert(0, msg); await RefreshCanvasLayoutAsync(anchorMsgId, anchorRelativeOffset);
       if (older && older.length > 0) {
         pendingAnchorRef.current = {
           anchorMsgId,
@@ -367,7 +355,6 @@ export const ChatWorkspaceView: React.FC = () => {
     }
   };
 
-  // 🟢 5. ОБРАБОТЧИК СКРОЛЛА (1 в 1 с WPF ChatScrollViewer_ScrollChanged)
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const currentScroll = target.scrollTop;
@@ -375,6 +362,10 @@ export const ChatWorkspaceView: React.FC = () => {
     lastScrollTopRef.current = currentScroll;
 
     setScrollTop(currentScroll);
+
+    if (isScrollingToTargetRef.current) {
+      return;
+    }
 
     const distanceFromBottom = target.scrollHeight - currentScroll - target.clientHeight;
     const atBottom = distanceFromBottom < 25;
@@ -386,18 +377,16 @@ export const ChatWorkspaceView: React.FC = () => {
       markAsRead();
     }
 
-    // 🟢 В WPF: if (e.VerticalChange < 0 && scrollViewer.VerticalOffset < 50 && !IsLoadingHistory)
     if (verticalChange < 0 && currentScroll < 80 && !isLoadingHistoryRef.current && !isHistoryLoading) {
       handleLoadOlderHistory();
     }
   };
 
-  // Сохранение положения при изменении размера окна
   useEffect(() => {
     const handleResize = () => {
       if (scrollRef.current) {
         setViewportHeight(scrollRef.current.clientHeight);
-        if (isAtBottomRef.current) {
+        if (isAtBottomRef.current && !isScrollingToTargetRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
       }
@@ -407,20 +396,97 @@ export const ChatWorkspaceView: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // 🟢 1 В 1 С WPF ChatWorkspaceView.xaml.cs: ScrollToMessageRequestMessage
   useEffect(() => {
-    const unbind = eventBus.on('ScrollToMessageRequestMessage' as any, (data: any) => {
-      const msgId = data?.messageId;
-      if (!msgId || !layoutItems) return;
-      const target = layoutItems.find((m) => m.id === msgId || m.serverId === msgId);
-      if (target && scrollRef.current) {
-        const centered = target.yOffset - viewportHeight / 2 + (target.totalHeight || 40) / 2;
-        scrollToOffsetAnimated(Math.max(0, centered));
+    const unbind = eventBus.on('ScrollToMessageRequestMessage' as any, async (payload: any) => {
+      const msgId = Number(payload?.messageId ?? payload?.serverId ?? payload?.localId ?? 0);
+      const pLocalId = Number(payload?.localId ?? 0);
+      const pServerId = Number(payload?.serverId ?? 0);
+      const pText = payload?.text;
+      const pTime = payload?.timestamp ? new Date(payload.timestamp).getTime() : 0;
+
+      const msgs = useChatStore.getState().currentChatMessages || [];
+
+      let msgIndex = msgs.findIndex((m) => {
+        const mLocalId = Number(m.id || 0);
+        const mServerId = Number(m.serverId || 0);
+
+        if (pServerId > 0 && mServerId > 0 && mServerId === pServerId) return true;
+        if (pLocalId > 0 && mLocalId > 0 && mLocalId === pLocalId) return true;
+        if (msgId > 0 && (mLocalId === msgId || (mServerId > 0 && mServerId === msgId))) return true;
+
+        if (pText && m.text === pText && pTime > 0) {
+          const mTime = new Date(m.timestamp).getTime();
+          if (Math.abs(mTime - pTime) < 5000) return true;
+        }
+
+        return false;
+      });
+
+      if (msgIndex === -1 && msgId > 0) {
+        await useChatStore.getState().ensureMessageLoadedAsync(msgId);
+        const updatedMsgs = useChatStore.getState().currentChatMessages || [];
+        msgIndex = updatedMsgs.findIndex((m) =>
+          (Number(m.serverId) > 0 && Number(m.serverId) === msgId) || Number(m.id) === msgId
+        );
       }
+
+      if (msgIndex === -1) {
+        console.warn('[ChatWorkspaceView] Сообщение не найдено в памяти диалога:', payload);
+        return;
+      }
+
+      const targetMsg = (useChatStore.getState().currentChatMessages || [])[msgIndex];
+      if (!targetMsg) return;
+
+      const targetLocalId = Number(targetMsg.id);
+      const targetServerId = Number(targetMsg.serverId);
+
+      const currentLayout = layoutItemsRef.current || layoutItems || [];
+      let targetLayout = currentLayout[msgIndex] || null;
+
+      if (!targetLayout || Number(targetLayout.id) !== targetLocalId) {
+        targetLayout = currentLayout.find((item: any) =>
+          Number(item.id) === targetLocalId ||
+          (targetServerId > 0 && Number(item.serverId) === targetServerId) ||
+          (item.sourceMessage && (Number(item.sourceMessage.id) === targetLocalId || Number(item.sourceMessage.serverId) === targetServerId))
+        ) || currentLayout[msgIndex];
+      }
+
+      if (!targetLayout || !scrollRef.current) return;
+
+      isScrollingToTargetRef.current = true;
+      isAtBottomRef.current = false;
+      setShowScrollBottomBtn(true);
+
+      const targetY = Number(targetLayout.yOffset ?? targetLayout.top ?? 0);
+      const itemHeight = Number(targetLayout.totalHeight ?? targetLayout.height ?? 40);
+      const viewportH = scrollRef.current.clientHeight || viewportHeight || 600;
+
+      // 🟢 1 в 1 с WPF: centeredTargetY = targetY - (viewportHeight / 2.0) + (msgHeight / 2.0)
+      const centered = targetY - (viewportH / 2.0) + (itemHeight / 2.0);
+      const maxScroll = Math.max(0, scrollRef.current.scrollHeight - viewportH);
+      const finalOffset = Math.max(0, Math.min(centered, maxScroll));
+
+      // 🟢 Подсветка сообщения (1 в 1 с FastChatPanel.HighlightMessage(targetMsg.Id))
+      const highlightId = targetLocalId || targetServerId;
+
+      scrollToOffsetAnimated(finalOffset, () => {
+        setHighlightedMessageId(highlightId);
+
+        setTimeout(() => {
+          isScrollingToTargetRef.current = false;
+        }, 120);
+
+        setTimeout(() => {
+          setHighlightedMessageId((curr) => (curr === highlightId ? null : curr));
+        }, 1400);
+      });
     });
+
     return () => unbind();
   }, [layoutItems, viewportHeight, scrollToOffsetAnimated]);
 
-  // ================= ЗАГЛУШКА: ЧАТ НЕ ВЫБРАН =================
   if (!selectedChatUser) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: PALETTE.bgChat }}>
@@ -453,11 +519,8 @@ export const ChatWorkspaceView: React.FC = () => {
     (selectedChatUser as any)?.avatar ||
     (selectedChatUser as any)?.Avatar ||
     (selectedChatUser as any)?.AvatarPath ||
-    (selectedChatUser as any)?.avatarUrl ||
-    (selectedChatUser as any)?.photo ||
     currentSidebarChat?.avatarPath ||
-    (currentSidebarChat as any)?.avatar ||
-    (currentSidebarChat as any)?.Avatar;
+    (currentSidebarChat as any)?.avatar;
 
   const avatarSrc = normalizeAvatarUrl(avatarRaw) || (typeof avatarRaw === 'string' && avatarRaw ? avatarRaw : null);
   const displayName = selectedChatUser?.nickName || currentSidebarChat?.nickName || (selectedChatUser as any)?.groupName || 'Chat';
@@ -585,24 +648,23 @@ export const ChatWorkspaceView: React.FC = () => {
                 </div>
 
                 <div style={{ fontSize: 12.5, lineHeight: 1.2, display: 'flex', alignItems: 'center', gap: 4 }}>
-  {selectedChatUser.isTyping ? (
-    <span style={{ color: PALETTE.accent, fontWeight: 600 }}>typing...</span>
-  ) : selectedChatUser.isGroup && !selectedChatUser.isChannel ? (
-    <>
-      <span style={{ color: selectedChatUser.onlineCount ? PALETTE.accent : PALETTE.textMuted, fontWeight: 600 }}>
-        {selectedChatUser.onlineCount || 0} online
-      </span>
-      <span style={{ color: PALETTE.textMuted }}>• {selectedChatUser.memberCount || 1} members</span>
-    </>
-  ) : selectedChatUser.isChannel ? (
-    <span style={{ color: PALETTE.textMuted }}>{selectedChatUser.memberCount || 1} subscribers</span>
-  ) : selectedChatUser.isSecretChat ? null : (
-    /* 🟢 1 в 1 с ChatSubtitleConverter.cs и PersonalStatusText в XAML */
-    <span style={{ color: selectedChatUser.isOnline ? PALETTE.accent : PALETTE.textMuted }}>
-      {isBlockedByThem ? 'last seen a long time ago' : formatChatSubtitle(selectedChatUser as any)}
-    </span>
-  )}
-</div>
+                  {selectedChatUser.isTyping ? (
+                    <span style={{ color: PALETTE.accent, fontWeight: 600 }}>typing...</span>
+                  ) : selectedChatUser.isGroup && !selectedChatUser.isChannel ? (
+                    <>
+                      <span style={{ color: selectedChatUser.onlineCount ? PALETTE.accent : PALETTE.textMuted, fontWeight: 600 }}>
+                        {selectedChatUser.onlineCount || 0} online
+                      </span>
+                      <span style={{ color: PALETTE.textMuted }}>• {selectedChatUser.memberCount || 1} members</span>
+                    </>
+                  ) : selectedChatUser.isChannel ? (
+                    <span style={{ color: PALETTE.textMuted }}>{selectedChatUser.memberCount || 1} subscribers</span>
+                  ) : selectedChatUser.isSecretChat ? null : (
+                    <span style={{ color: selectedChatUser.isOnline ? PALETTE.accent : PALETTE.textMuted }}>
+                      {isBlockedByThem ? 'last seen a long time ago' : formatChatSubtitle(selectedChatUser as any)}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -701,15 +763,16 @@ export const ChatWorkspaceView: React.FC = () => {
                 )}
               </div>
 
+              {/* 🟢 КНОПКА ПОИСКА В ШАПКЕ */}
               <HeaderIconButton
                 isActive={isChatSearchMode}
                 title="Search"
                 onClick={() => {
-                  const store = useChatStore.getState() as any;
-                  if (typeof store.startChatSearch === 'function') store.startChatSearch();
-                  else if (typeof store.enterSearch === 'function') store.enterSearch();
-                  else if (typeof store.setIsChatSearchMode === 'function') store.setIsChatSearchMode(true);
-                  eventBus.emit('FocusSearchBoxMessage' as any, undefined);
+                  if (isChatSearchMode) {
+                    exitSearch();
+                  } else {
+                    startSearch();
+                  }
                 }}
               >
                 <MdiIcon path={mdiMagnify} size={22} />
@@ -878,23 +941,31 @@ export const ChatWorkspaceView: React.FC = () => {
           }}
         >
           <div style={{ height: `${totalContentHeight}px`, position: 'relative', width: '100%' }}>
-            {(visibleItems || []).map((item) => (
-              <MessageItem
-                key={item.id || item.serverId}
-                model={item}
-                isSelectionMode={isSelectionMode}
-                onToggleSelect={toggleSelectMessage}
-                onReply={addReplyMessage}
-                onEdit={setEditMessage}
-                onPin={(msg) => togglePinMessage(msg, true)}
-                onDelete={(msg) => deleteMessage(msg, true)}
-                onForward={(msg) => forwardMessages([msg])}
-                onScrollToMessage={(id) => {
-                  const target = (layoutItems || []).find((m) => m.id === id || m.serverId === id);
-                  if (target) scrollToOffsetAnimated(target.yOffset - viewportHeight / 2);
-                }}
-              />
-            ))}
+            {(visibleItems || []).map((item) => {
+              const isMsgHighlighted = Boolean(
+                highlightedMessageId &&
+                (Number(item.id) === Number(highlightedMessageId) ||
+                  (Number(item.serverId) > 0 && Number(item.serverId) === Number(highlightedMessageId)))
+              );
+
+              return (
+                <MessageItem
+                  key={item.id || item.serverId}
+                  model={item}
+                  isHighlighted={isMsgHighlighted}
+                  isSelectionMode={isSelectionMode}
+                  onToggleSelect={toggleSelectMessage}
+                  onReply={addReplyMessage}
+                  onEdit={setEditMessage}
+                  onPin={(msg) => togglePinMessage(msg, true)}
+                  onDelete={(msg) => deleteMessage(msg, true)}
+                  onForward={(msg) => forwardMessages([msg])}
+                  onScrollToMessage={(id) => {
+                    eventBus.emit('ScrollToMessageRequestMessage' as any, { messageId: id });
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
 
@@ -909,7 +980,6 @@ export const ChatWorkspaceView: React.FC = () => {
             pointerEvents: 'none',
           }}
         >
-          {/* 1. Эффект тумана */}
           <div
             style={{
               position: 'absolute',
@@ -923,7 +993,6 @@ export const ChatWorkspaceView: React.FC = () => {
             }}
           />
 
-          {/* 2. Кнопка спуска вниз */}
           <div
             style={{
               position: 'absolute',
@@ -957,7 +1026,6 @@ export const ChatWorkspaceView: React.FC = () => {
             </button>
           </div>
 
-          {/* 3. Модульный инпут */}
           <div
             style={{
               margin: '0 30px 20px 30px',

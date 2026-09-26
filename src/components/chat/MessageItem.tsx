@@ -9,6 +9,7 @@ import { userSession } from '../../services/userSession';
 
 interface MessageItemProps {
   model: IMessageLayoutModel;
+  isHighlighted?: boolean;
   isSelectionMode: boolean;
   onToggleSelect: (msg: IMessage) => void;
   onReply: (msg: IMessage) => void;
@@ -21,7 +22,7 @@ interface MessageItemProps {
 
 // 🟢 Цвета 1 в 1 из DefaultDark.xaml
 const PALETTE = {
-  myBubbleBg: '#16699B',       // MyBubbleBg (скрин 3 и 4)
+  myBubbleBg: '#16699B',       // MyBubbleBg
   otherBubbleBg: '#1C212D',    // OtherBubbleBg
   tgCheckmark: '#80BFFF',      // TgCheckmark
   authorName: '#5E92CE',       // MessageAuthorNameBrush
@@ -31,8 +32,13 @@ const PALETTE = {
   contextMenuHover: '#232A3B', // ChatMenuItemHighlightBrush
   accent: '#1E9BEB',           // AppAccentBrush
   destructive: '#FF3B30',      // MembersMenuDestructiveActionTextBrush
-  mediaStatusPillBg: 'rgba(0, 0, 0, 0.47)', // MediaStatusPillBgBrush (#77000000)
+  mediaStatusPillBg: 'rgba(0, 0, 0, 0.47)', // MediaStatusPillBgBrush
   selectionBg: '#1A5E92CE',    // MessageSelectionBackgroundBrush
+
+  // WPF Call Colors
+  callSummaryTitle: '#FFFFFF',
+  callSummaryDetails: '#A0B0C0',
+  callSummaryIcon: 'rgba(255, 255, 255, 0.25)',
 };
 
 const ICONS = {
@@ -49,6 +55,8 @@ const ICONS = {
   phone: 'M6.62,10.79C8.06,13.62 10.38,15.94 13.21,17.38L15.41,15.18C15.69,14.9 16.08,14.82 16.43,14.93C17.55,15.3 18.75,15.5 20,15.5A1,1 0 0,1 21,16.5V20A1,1 0 0,1 20,21A17,17 0 0,1 3,4A1,1 0 0,1 4,3H7.5A1,1 0 0,1 8.5,4C8.5,5.25 8.7,6.45 9.07,7.57C9.18,7.92 9.1,8.31 8.82,8.59L6.62,10.79Z',
   play: 'M8,5.14V19.14L19,12.14L8,5.14Z',
   arrowDown: 'M11,4H13V12L16.5,8.5L17.92,9.92L12,15.84L6.08,9.92L7.5,8.5L11,12V4Z',
+  arrowTopRight: 'M5,17.59L15.59,7H9V5H19V15H17V8.41L6.41,19L5,17.59Z',
+  arrowBottomLeft: 'M19,6.41L8.41,17H15V19H5V9H7V15.59L17.59,5L19,6.41Z',
 };
 
 const SvgIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
@@ -70,6 +78,7 @@ const SvgIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
 
 export const MessageItem: React.FC<MessageItemProps> = ({
   model,
+  isHighlighted = false,
   isSelectionMode,
   onToggleSelect,
   onReply,
@@ -81,12 +90,44 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 }) => {
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
 
-  // 🟢 Строгое определение "Мое сообщение" (проверка ID из сессии и флага модели)
   const currentUserId = Number(userSession.userId);
   const senderId = Number(model.senderId);
   const isMy = model.isMyMessage || (currentUserId > 0 && senderId === currentUserId);
-
   const timeFormatted = new Date(model.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const rawText = String(model.text || '');
+  const isCall = Boolean(
+    model.isCallMessage || rawText.includes('_CALL:') || rawText.includes('CALL:')
+  );
+
+  let callTitle = model.callTitle;
+  let callTimeAndDuration = model.callTimeAndDuration;
+  let callArrowColor = model.callArrowColor || '#4CAF50';
+  let isOut = isMy;
+
+  if (isCall && (!callTitle || callTitle === 'Call' || callTitle === 'Звонок')) {
+    const callIdx = rawText.indexOf('CALL:');
+    const clean = callIdx !== -1 ? rawText.slice(callIdx) : rawText;
+    const parts = clean.split(':');
+    const status = (parts[1] || '').toUpperCase();
+    const durationSec = parseInt(parts[2] || '0', 10);
+    const isMissed = status === 'CANCELED' || status === 'MISSED' || status === 'DECLINED';
+
+    if (isMissed) {
+      callTitle = isMy ? 'Cancelled call' : 'Missed call';
+      callArrowColor = '#FF4B4B';
+    } else {
+      callTitle = isMy ? 'Outgoing call' : 'Incoming call';
+      callArrowColor = '#4CAF50';
+    }
+
+    if (durationSec > 0) {
+      const durStr = durationSec < 60 ? `${durationSec} seconds` : `${Math.floor(durationSec / 60)} min ${durationSec % 60} sec`;
+      callTimeAndDuration = `${timeFormatted}, ${durStr}`;
+    } else {
+      callTimeAndDuration = timeFormatted;
+    }
+  }
 
   useEffect(() => {
     const handleClose = () => setContextMenuPos(null);
@@ -94,28 +135,31 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     return () => window.removeEventListener('click', handleClose);
   }, []);
 
-  // 🟢 Отступы строго по Triggers из WPF ChatWorkspaceView.xaml
   const getBubblePadding = () => {
-  if (model.isMediaOnly) return '0px';
-  if (model.isDeletedForMe) return '6px 48px 12px 12px';
-  if (model.isChannel) return model.isEdited ? '0px 130px 12px 12px' : '0px 85px 12px 12px';
+    if (model.isMediaOnly) return '0px';
+    if (model.isDeletedForMe) return '6px 48px 12px 12px';
+    if (model.isChannel) return model.isEdited ? '0px 130px 12px 12px' : '0px 85px 12px 12px';
 
-  if (isMy) {
-    if (model.isEdited) return '7px 125px 12px 12px';
-    // 7px сверху, 70px справа, 12px снизу, 12px слева
-    return '7px 70px 12px 12px';
-  } else {
-    if (model.isEdited) return '7px 100px 12px 12px';
-    // 7px сверху, 50px справа, 12px снизу, 12px слева
-    return '7px 50px 12px 12px';
-  }
-};
+    if (isMy) {
+      if (model.isEdited) return '7px 125px 12px 12px';
+      return '7px 70px 12px 12px';
+    } else {
+      if (model.isEdited) return '7px 100px 12px 12px';
+      return '7px 50px 12px 12px';
+    }
+  };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setContextMenuPos({ x: e.clientX, y: e.clientY });
   };
+
+  const bubbleRadius = model.isMediaOnly
+    ? '16px'
+    : isMy
+    ? '16px 16px 2px 16px'
+    : '16px 16px 16px 2px';
 
   return (
     <div
@@ -126,18 +170,40 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         top: `${model.yOffset}px`,
         left: 0,
         right: 0,
-        height: `${model.totalHeight}px`,
+        height: `${model.totalHeight || 60}px`,
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: isMy ? 'flex-end' : 'flex-start',
-        padding: '0 15px', // 15px отступ контейнера StackPanel Margin="15,0"
+        padding: '0 15px',
         boxSizing: 'border-box',
         backgroundColor: model.isSelected ? PALETTE.selectionBg : 'transparent',
         cursor: isSelectionMode ? 'pointer' : 'default',
         userSelect: 'none',
       }}
     >
-      {/* 1. ЧЕКБОКС ВЫБОРА (WPF Margin="10,0,15,8") */}
+      {/* 🟢 CSS-анимация: 1 в 1 с TelegramVirtualizingPanel.cs (1300ms, KeyFrames 0 -> 0.4 -> 0.4 -> 0) */}
+      <style>{`
+        @keyframes wpfMessageHighlightPulse {
+          0% {
+            opacity: 0;
+          }
+          15.38% {
+            opacity: 0.4;
+          }
+          50% {
+            opacity: 0.4;
+          }
+          100% {
+            opacity: 0;
+          }
+        }
+        .wpf-message-highlight-pulse {
+          animation: wpfMessageHighlightPulse 1300ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
+          will-change: opacity;
+        }
+      `}</style>
+
+      {/* 1. ЧЕКБОКС ВЫБОРА */}
       {isSelectionMode && (
         <div
           onClick={(e) => {
@@ -165,7 +231,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         </div>
       )}
 
-      {/* 2. АВАТАР В ГРУППЕ (SenderAvatarUI, 34x34) */}
+      {/* 2. АВАТАР В ГРУППЕ */}
       {!isMy && model.isGroupMessage && !model.isDeletedForMe && (
         <div
           style={{
@@ -198,10 +264,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         </div>
       )}
 
-      {/* 3. КОНТЕЙНЕР БАБЛА С ХВОСТИКОМ (BubbleGrid, MaxWidth="500") */}
+      {/* 3. КОНТЕЙНЕР БАБЛА */}
       <div style={{ position: 'relative', maxWidth: '500px', display: 'flex', overflow: 'visible' }}>
         
-        {/* 🟢 ХВОСТИК МОЕГО СООБЩЕНИЯ (M 0,8 L 8,8 L 0,0 Z, Margin="0,0,-7,0") */}
+        {/* Базовый хвостик моего сообщения */}
         {isMy && !model.isMediaOnly && (
           <svg
             width="8"
@@ -220,7 +286,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           </svg>
         )}
 
-        {/* 🟢 ХВОСТИК ЧУЖОГО СООБЩЕНИЯ (M 8,8 L 0,8 L 8,0 Z, Margin="-7,0,0,0") */}
+        {/* Базовый хвостик чужого сообщения */}
         {!isMy && !model.isMediaOnly && (
           <svg
             width="8"
@@ -239,40 +305,35 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           </svg>
         )}
 
-        {/* САМ БАБЛ */}
+        {/* БАБЛ (Bubble) */}
         <div
           style={{
             position: 'relative',
             backgroundColor: model.isMediaOnly ? 'transparent' : isMy ? PALETTE.myBubbleBg : PALETTE.otherBubbleBg,
-            borderRadius: model.isMediaOnly
-              ? 16
-              : isMy
-              ? '16px 16px 2px 16px'
-              : '16px 16px 16px 2px',
+            borderRadius: bubbleRadius,
             boxSizing: 'border-box',
             overflow: 'visible',
-            // 🟢 Вычитаем ровно 1px (под наш новый gap = 1.0)
-            minHeight: model.isMediaOnly ? undefined : `${model.totalHeight - 1}px`,
+            minHeight: isCall ? '54px' : model.isMediaOnly ? undefined : `${Math.max(34, (model.totalHeight || 0) - 1)}px`,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
           }}
         >
-          {/* Иконка закрепа (MessagePinIcon) */}
+          {/* Закреп */}
           {model.isPinned && (
             <div style={{ position: 'absolute', top: 5, right: 10, transform: 'rotate(45deg)', zIndex: 10 }}>
               <SvgIcon path={ICONS.pin} size={14} color={PALETTE.tgCheckmark} />
             </div>
           )}
 
-          {/* Имя автора в группе / канале (SenderNameBorder) */}
+          {/* Имя автора в группе */}
           {!isMy && (model.isGroupMessage || model.isChannel) && !model.isForwarded && !model.isDeletedForMe && (
             <div style={{ padding: '6px 12px 2px 12px', fontSize: 14, fontWeight: 600, color: PALETTE.authorName, cursor: 'pointer' }}>
               {model.senderName}
             </div>
           )}
 
-          {/* Переслано из (ForwardedHeaderBorder) */}
+          {/* Переслано */}
           {model.isForwarded && (
             <div style={{ padding: '6px 10px 2px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 13, color: PALETTE.tgCheckmark, fontWeight: 600 }}>Forwarded from</span>
@@ -281,7 +342,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
-          {/* 🟢 ЦИТАТА (RepliedMessagesControl 1 в 1 как на скриншоте 4) */}
+          {/* Цитаты */}
           {model.repliedMessages && model.repliedMessages.length > 0 && (
             <div style={{ margin: '6px 10px 0 10px' }}>
               {model.repliedMessages.map((rep: any, idx: number) => (
@@ -311,56 +372,26 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
-          {/* 🟢 МЕДИА И GIF (1 в 1 со скриншотом 4) */}
+          {/* Медиа */}
           {model.previewMedia && model.previewMedia.length > 0 && (
             <div style={{ width: model.mediaWidth, height: model.mediaHeight, position: 'relative', borderRadius: 16, overflow: 'hidden' }}>
               <MediaAlbumGrid media={model.previewMedia} mediaWidth={model.mediaWidth} mediaHeight={model.mediaHeight} />
-
-              {/* Плашка GIF в левом верхнем углу */}
               {model.isSilentVideo && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 6,
-                    left: 6,
-                    background: 'rgba(0, 0, 0, 0.5)',
-                    borderRadius: 4,
-                    padding: '2px 5px',
-                    color: '#FFFFFF',
-                    fontSize: 10.5,
-                    fontWeight: 'bold',
-                    zIndex: 2,
-                  }}
-                >
+                <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 5px', color: '#FFFFFF', fontSize: 10.5, fontWeight: 'bold', zIndex: 2 }}>
                   GIF
                 </div>
               )}
             </div>
           )}
 
-          {/* ГОЛОСОВЫЕ СООБЩЕНИЯ (VoicesControl) */}
+          {/* Голосовые */}
           {model.voices && model.voices.length > 0 && (
             <div style={{ padding: '4px 8px', minWidth: 240, maxWidth: 280, height: 44, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 19,
-                  backgroundColor: PALETTE.accent,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  cursor: 'pointer',
-                }}
-              >
+              <div style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: PALETTE.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
                 <SvgIcon path={ICONS.play} size={20} color="#FFFFFF" style={{ marginLeft: 2 }} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <VoiceWaveform
-                  waveform={model.voices[0].waveform || undefined} // 👈 добавьте || undefined
-                  durationSeconds={model.voices[0].durationSeconds || 1}
-                />
+                <VoiceWaveform waveform={model.voices[0].waveform || undefined} durationSeconds={model.voices[0].durationSeconds || 1} />
                 <div style={{ fontSize: 11.5, color: '#FFFFFF', opacity: 0.7, marginTop: 1 }}>
                   {model.voices[0].fileSizeStr || '0:01'}
                 </div>
@@ -368,23 +399,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
-          {/* ДОКУМЕНТЫ (DocumentsControl) */}
+          {/* Документы */}
           {model.documents && model.documents.length > 0 && (
             <div style={{ padding: '6px 10px 0 10px' }}>
               {model.documents.map((doc: IAttachment, idx: number) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '2px 0 6px 0', cursor: 'pointer' }}>
-                  <div
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 22,
-                      backgroundColor: PALETTE.authorName,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
+                  <div style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: PALETTE.authorName, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <SvgIcon path={ICONS.arrowDown} size={22} color="#FFFFFF" />
                   </div>
                   <div style={{ minWidth: 0 }}>
@@ -398,26 +418,79 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
-          {/* ТЕКСТ СООБЩЕНИЯ (BubbleTextBody) */}
-          {model.text && (
+          {/* Текст сообщения */}
+          {model.text && !isCall && (
             <div style={{ padding: getBubblePadding(), boxSizing: 'border-box' }}>
               <LightweightChatTextBox text={model.text} isDeleted={model.isDeletedForMe} fontSize={15} lineHeight={20} />
             </div>
           )}
 
-          {/* ЗВОНКИ (CallBubble) */}
-          {model.isCallMessage && (
-            <div style={{ width: 210, height: 54, padding: '6px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: '#FFFFFF' }}>{model.callTitle}</div>
-                <div style={{ fontSize: 13, color: '#A0B0C0', marginTop: 2 }}>{model.callTimeAndDuration}</div>
+          {/* Карточка звонка */}
+          {isCall && (
+            <div
+              style={{
+                width: 210,
+                height: 54,
+                margin: '2px 4px 4px 4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                boxSizing: 'border-box',
+                userSelect: 'none',
+              }}
+            >
+              <div
+                style={{
+                  margin: '6px 0 6px 8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  minWidth: 0,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 600,
+                    color: PALETTE.callSummaryTitle,
+                    marginBottom: 3,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {callTitle}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <SvgIcon
+                    path={isOut ? ICONS.arrowTopRight : ICONS.arrowBottomLeft}
+                    size={16}
+                    color={callArrowColor}
+                    style={{ marginRight: 4 }}
+                  />
+
+                  <span
+                    style={{
+                      fontSize: 14,
+                      color: PALETTE.callSummaryDetails,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {callTimeAndDuration}
+                  </span>
+                </div>
               </div>
-              <SvgIcon path={ICONS.phone} size={30} color="rgba(255,255,255,0.4)" />
+
+              <SvgIcon
+                path={ICONS.phone}
+                size={32}
+                color={PALETTE.callSummaryIcon}
+                style={{ marginRight: 12 }}
+              />
             </div>
           )}
 
-          {/* 4. ВРЕМЯ И СТАТУС (StatusPill 1 в 1 с WPF) */}
-          {!model.isCallMessage && (
+          {/* Время и статус */}
+          {!isCall && (
             <div
               style={{
                 position: 'absolute',
@@ -442,7 +515,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               )}
               <span style={{ fontSize: 11, color: '#FFFFFF', opacity: 0.85 }}>{timeFormatted}</span>
 
-              {/* 🟢 Статус отправки (Часы 🕒 / Одна галочка ✓ / Две галочки ✓✓) */}
               {isMy && !model.isDeletedForMe && (
                 <div style={{ display: 'flex', alignItems: 'center', marginLeft: 2 }}>
                   {!model.isSentToServer ? (
@@ -457,9 +529,68 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
         </div>
+
+        {/* 🟢 ЕДИНЫЙ КОМПОЗИТНЫЙ СЛОЙ ПОДСВЕТКИ (БАБЛ + ХВОСТИК) БЕЗ ДВОЙНОГО НАЛОЖЕНИЯ И ШВОВ */}
+        {isHighlighted && (
+          <div
+            className="wpf-message-highlight-pulse"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              zIndex: 20,
+              display: 'flex',
+              overflow: 'visible',
+            }}
+          >
+            {/* Хвостик подсветки моего сообщения (100% сплошной белый, без внутренней прозрачности) */}
+            {isMy && !model.isMediaOnly && (
+              <svg
+                width="8"
+                height="8"
+                viewBox="0 0 8 8"
+                style={{
+                  position: 'absolute',
+                  right: -7,
+                  bottom: 0,
+                  display: 'block',
+                }}
+              >
+                <path d="M 0,8 L 8,8 L 0,0 Z" fill="#FFFFFF" />
+              </svg>
+            )}
+
+            {/* Хвостик подсветки чужого сообщения (100% сплошной белый, без внутренней прозрачности) */}
+            {!isMy && !model.isMediaOnly && (
+              <svg
+                width="8"
+                height="8"
+                viewBox="0 0 8 8"
+                style={{
+                  position: 'absolute',
+                  left: -7,
+                  bottom: 0,
+                  display: 'block',
+                }}
+              >
+                <path d="M 8,8 L 0,8 L 8,0 Z" fill="#FFFFFF" />
+              </svg>
+            )}
+
+            {/* Тело подсветки бабла (100% сплошной белый, без внутренней прозрачности) */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: bubbleRadius,
+                backgroundColor: '#FFFFFF',
+              }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* 5. КОНТЕКСТНОЕ МЕНЮ (MessageContextMenu) */}
+      {/* 5. КОНТЕКСТНОЕ МЕНЮ */}
       {contextMenuPos && (
         <div
           onClick={(e) => e.stopPropagation()}
@@ -477,7 +608,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           }}
         >
           <ContextMenuItem icon={ICONS.reply} text="Reply" onClick={() => { onReply(model.sourceMessage); setContextMenuPos(null); }} />
-          {isMy && !model.isDeletedForMe && !model.isCallMessage && (
+          {isMy && !model.isDeletedForMe && !isCall && (
             <ContextMenuItem icon={ICONS.pencil} text="Edit" onClick={() => { onEdit(model.sourceMessage); setContextMenuPos(null); }} />
           )}
           {!model.isDeletedForMe && (
@@ -488,7 +619,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               onClick={() => { onPin(model.sourceMessage); setContextMenuPos(null); }}
             />
           )}
-          {model.text && (
+          {model.text && !isCall && (
             <ContextMenuItem
               icon={ICONS.copy}
               text="Copy Text"

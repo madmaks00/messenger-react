@@ -1,71 +1,43 @@
-:root {
-  /* ================= ОСНОВНЫЕ АКЦЕНТЫ (ResourceDictionary) ================= */
-  --app-accent: #1E9BEB;
-  --tg-accent: #00AFF4;
-  --accent-muted: #155B8A;
-  --text-muted: #7D8494;
-  --text-primary: #FFFFFF;
-
-  /* ================= ТРИ ГЛАВНЫЕ КОЛОНКИ ================= */
-  --bg-nav: #0F1319;        /* Колонка 1: Ультра-узкая навигация (66px) */
-  --bg-list: #161A23;       /* Колонка 2: Сайдбар (340px) */
-  --bg-chat: #11141B;       /* Колонка 3: Область сообщений */
-  --divider-color: #1E232F;  /* Разделительные линии */
-
-  /* ================= ПОИСК И СПИСКИ В САЙДБАРЕ ================= */
-  --sidebar-search-bg: #1C212D;
-  --sidebar-search-focus-bg: #232836;
-  --sidebar-search-text: #FFFFFF;
-  --chat-item-hover: #1C212D;
-  --chat-item-active: #232836;
-
-  /* ================= АККАУНТЫ (Sidebar Accounts) ================= */
-  --accounts-active-bg: rgba(30, 155, 235, 0.1);     /* #1A1E9BEB */
-  --accounts-active-border: rgba(30, 155, 235, 0.2); /* #331E9BEB */
-
-  /* ================= ИГРЫ (Sidebar Games) ================= */
-  --game-tile-bg: #161A23;
-  --game-tile-border: #2A303C;
-  --game-tile-hover-bg: #1C212D;
-  --game-tile-hover-border: #3B4456;
-  --game-tile-badge-bg: rgba(30, 155, 235, 0.1);    /* #1A1E9BEB */
-
-  /* ================= ЗАДАЧИ И ЗАМЕТКИ ================= */
-  --item-count-badge-bg: #2A303C;
-  --action-edit-icon: #3B82F6;
-  --action-delete-icon: #EF4444;
-
-  /* ================= КОНТЕКСТНЫЕ МЕНЮ И ДИАЛОГИ ================= */
-  --context-menu-bg: #1C212D;
-  --context-menu-border: #2A303C;
-  --context-menu-hover: #232A3B;
-  --destructive-action: #FF3B30;
-  --overlay-backdrop: rgba(0, 0, 0, 0.5); /* #80000000 */
+/* 🟢 1. Глобальный сброс и принудительный Segoe UI для абсолютно всех тегов */
+*, *::before, *::after {
+  box-sizing: border-box;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
 }
 
-/* Сброс и базовые шрифты MainWindow WPF */
+/* 🟢 2. Настройки окна: субпиксельный рендеринг ClearType (как в WPF DirectWrite) */
 html, body, #root {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: var(--bg-chat);
-  color: var(--text-primary);
+  background-color: var(--bg-chat, #11141B);
+  color: var(--text-primary, #FFFFFF);
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
   user-select: none;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+
+  /* Включаем Windows ClearType вместо мыльного web-antialiased */
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  -moz-osx-font-smoothing: auto !important;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.15px; /* Плотность символов в стиле WPF */
 }
 
-/* ================= СКРОЛЛБАР ИЗ App.xaml (Width="4", Opacity 0 -> 1 при наведении) ================= */
+/* 🟢 3. Поля ввода и кнопки принудительно наследуют шрифт и сглаживание */
+input, button, textarea, select {
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  letter-spacing: -0.15px;
+}
+
+/* ================= СКРОЛЛБАР ИЗ App.xaml (Width="4", плавное появление при ховере) ================= */
 .wpf-scroll-viewer {
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.3s ease;
+  transition: scrollbar-color 0.25s ease;
 }
 
 .wpf-scroll-viewer:hover {
@@ -87,15 +59,15 @@ html, body, #root {
 }
 
 .wpf-scroll-viewer:hover::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3); /* #4DFFFFFF */
+  background: rgba(255, 255, 255, 0.3); /* #4DFFFFFF в покое */
 }
 
 .wpf-scroll-viewer::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4); /* #66FFFFFF */
+  background: rgba(255, 255, 255, 0.4); /* #66FFFFFF при наведении */
 }
 
 .wpf-scroll-viewer::-webkit-scrollbar-thumb:active {
-  background: rgba(255, 255, 255, 0.6); /* #99FFFFFF */
+  background: rgba(255, 255, 255, 0.6); /* #99FFFFFF при зажатии */
 }
 
 /* Градиент историй StoryGradient из App.xaml */
@@ -103,50 +75,33 @@ html, body, #root {
   background: linear-gradient(135deg, #8A2387 0%, #E94057 50%, #F27121 100%);
 }
 
-/* 🟢 Цвет и размер текста подсказки "Search Chat" 1 в 1 с WPF Material Design */
+/* 🟢 Плейсхолдер поиска (1 в 1 с WPF Material Design) */
 .wpf-search-input::placeholder {
   color: #8E95A5 !important;
-  opacity: 1 !important; /* Убирает встроенное затемнение Chrome */
+  opacity: 1 !important;
   font-size: 14.5px !important;
-  input[type="search"]::-webkit-search-decoration,
+}
+
+input[type="search"]::-webkit-search-decoration,
 input[type="search"]::-webkit-search-cancel-button,
 input[type="search"]::-webkit-search-results-button,
 input[type="search"]::-webkit-search-results-decoration {
   display: none !important;
   -webkit-appearance: none !important;
 }
-}
 
-/* 🟢 ПОДСКАЗКА ПОЛЯ ВВОДА (1 в 1 с WPF: белый цвет + 56% прозрачность, как у SmartHint) */
-.wpf-message-input::placeholder {
-  color: rgba(255, 255, 255, 0.56) !important;
-  opacity: 1 !important;
-  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
-  font-size: 14px !important;
-}
-
-/* Вендорные префиксы */
-.wpf-message-input::-webkit-input-placeholder {
-  color: rgba(255, 255, 255, 0.56) !important;
-  opacity: 1 !important;
-  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
-  font-size: 14px !important;
-}
-
-.wpf-message-input::-moz-placeholder {
-  color: rgba(255, 255, 255, 0.56) !important;
-  opacity: 1 !important;
-  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
-  font-size: 14px !important;
-}
-
+/* 🟢 Плейсхолдер ввода сообщения (белый цвет с прозрачностью 56%) */
+.wpf-message-input::placeholder,
+.wpf-message-input::-webkit-input-placeholder,
+.wpf-message-input::-moz-placeholder,
 .wpf-message-input:-ms-input-placeholder {
   color: rgba(255, 255, 255, 0.56) !important;
   opacity: 1 !important;
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
   font-size: 14px !important;
 }
-/* 🟢 СТИЛЬ ССЫЛОК AuthLinkButtonStyle ИЗ WPF */
+
+/* 🟢 Стиль ссылок AuthLinkButtonStyle из WPF */
 .wpf-link-button {
   position: relative;
   display: inline-flex;

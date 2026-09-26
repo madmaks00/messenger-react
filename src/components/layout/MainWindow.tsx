@@ -6,7 +6,7 @@ import { MessageInputUserControl } from '../chat/MessageInputUserControl';
 import { ProfileView } from '../profile/ProfileView';
 import { PhotoViewerView } from '../media/PhotoViewerView';
 import { VideoViewerView } from '../media/VideoViewerView';
-import { CallModal } from '../modals/CallModal';
+import CallModal from '../modals/CallWindow';
 import { LoginView } from '../auth/LoginView';
 
 import { useNavigationStore } from '../../stores/navigationStore';

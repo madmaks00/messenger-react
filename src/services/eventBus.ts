@@ -20,11 +20,18 @@ export type AppEvents = {
   CancelEmailVerificationMessage: void;
   UserProfileUpdatedMessage: { user: IUser };
   StoryDeletedMessage: { storyId: number; userId: number };
+
   // Chat Navigation & Selection
   SelectChatUserMessage: { target: IUserSearchResult | null };
   SwitchTabMessage: { tab: MainTab };
   ClearActiveChatMessagesMessage: { deleteForAll?: boolean } | void;
   ClearMessageInputMessage: void;
+
+  // Search & Navigation Pipeline (1 in 1 с WPF Messenger)
+  FocusSearchBoxMessage: void;
+  EndSearchBoxMessage: void;
+  ChatSearchQueryChangedMessage: { query: string };
+  ScrollToMessageRequestMessage: { messageId: number };
 
   // Realtime Messages & Sidebar
   ReceiveMessage: IMessage;

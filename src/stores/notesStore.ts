@@ -50,6 +50,9 @@ export interface NotesState {
 
   saveCurrentNoteInkData: (serializedJson: string, thumbnailBase64?: string) => Promise<void>;
   sendNoteMessage: (text: string, filesToUpload?: File[]) => Promise<void>;
+
+  handleRemoteNoteUpdated: (noteId: number) => Promise<void>;
+  handleRemoteNoteDeleted: (noteId: number) => void;
 }
 
 const userProfileCache = new Map<number, IUser>();
@@ -333,7 +336,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     }
   },
 
-  // 🟢 Отправка с дублированием свойств в PascalCase для MessagePack
   sendNoteMessage: async (text, filesToUpload = []) => {
     const { selectedNote, currentChatMessages } = get();
     if (!selectedNote || !selectedNote.id) return;
@@ -382,7 +384,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     set({ currentChatMessages: [...currentChatMessages, newMsg] });
 
     try {
-      // 1. Загрузка бинарников на сервер
       const uploadedDtos: any[] = [];
       for (const file of filesToUpload) {
         const dtos = await NotesService.uploadAttachmentAsync(file, file.name);
@@ -391,7 +392,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         }
       }
 
-      // 🟢 2. Передача свойств в PascalCase, чтобы MessagePack в C# связал свойства Url, FileName, Type
       const signalRAttachments = uploadedDtos.map((dto: any) => ({
         Type: dto.type ?? dto.Type ?? 0,
         FileName: dto.fileName ?? dto.FileName ?? '',
@@ -409,7 +409,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         url: dto.url ?? dto.Url ?? '',
       }));
 
-      // 3. Отправка через SignalR
       const serverId = await signalRService.sendMessageAsync(
         null,
         null,
@@ -422,7 +421,6 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         signalRAttachments as any
       );
 
-      // 4. Обновление сообщения постоянными URL
       if (serverId > 0) {
         const finalAttachments: IAttachment[] = uploadedDtos.map((dto, idx) => {
           const rawUrl = dto.url || dto.Url || '';
@@ -461,8 +459,76 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       console.error('[NotesStore ERROR] Ошибка отправки сообщения в заметку:', err);
     }
   },
+
+  // 🟢 1. ОБНОВЛЕНИЕ ЗАМЕТКИ С ДРУГОГО УСТРОЙСТВА В РЕАЛЬНОМ ВРЕМЕНИ
+  handleRemoteNoteUpdated: async (noteId: number) => {
+    try {
+      const res = await apiClient.get<INote[]>('api/Notes');
+      const remoteNotes = res.data || [];
+      const currentSelected = get().selectedNote;
+
+      const freshNote = remoteNotes.find((n) => n.id === noteId);
+
+      set((state) => ({
+        myNotes: remoteNotes.map((n) => ({
+          ...n,
+          isSelected: n.id === (currentSelected?.id ?? null),
+        })),
+        // Если у нас открыта именно эта заметка, подтягиваем свежие данные (включая inkData холста)
+        selectedNote:
+          currentSelected && currentSelected.id === noteId && freshNote
+            ? { ...freshNote, isSelected: true }
+            : state.selectedNote,
+      }));
+    } catch (e) {
+      console.error('[NotesStore] Ошибка обработки Remote NoteUpdated:', e);
+    }
+  },
+
+  // 🟢 2. УДАЛЕНИЕ ЗАМЕТКИ С ДРУГОГО УСТРОЙСТВА
+  handleRemoteNoteDeleted: (noteId: number) => {
+    const { myNotes, selectedNote } = get();
+    const updated = myNotes.filter((n) => n.id !== noteId);
+    const isSelectedDeleted = selectedNote?.id === noteId;
+
+    set({
+      myNotes: updated,
+      selectedNote: isSelectedDeleted ? (updated[0] || null) : selectedNote,
+      currentChatMessages: isSelectedDeleted ? [] : get().currentChatMessages,
+    });
+
+    if (isSelectedDeleted && updated[0]) {
+      void get().selectNote(updated[0]);
+    }
+  },
 }));
 
+// ================= ПОДПИСКИ НА СОБЫТИЯ SIGNALR =================
+
+// 🟢 Обработка обновления заметки
+eventBus.on('NoteUpdated' as any, (noteId: number) => {
+  void useNotesStore.getState().handleRemoteNoteUpdated(Number(noteId));
+});
+
+// 🟢 Обработка удаления заметки
+eventBus.on('NoteDeleted' as any, (noteId: number) => {
+  const id = Number(noteId);
+  const { myNotes, selectedNote } = useNotesStore.getState();
+  const updated = myNotes.filter((n) => n.id !== id);
+  const isSelectedDeleted = selectedNote?.id === id;
+
+  useNotesStore.setState({
+    myNotes: updated,
+    selectedNote: isSelectedDeleted ? (updated[0] || null) : selectedNote,
+    currentChatMessages: isSelectedDeleted ? [] : useNotesStore.getState().currentChatMessages,
+  });
+
+  if (isSelectedDeleted && updated[0]) {
+    void useNotesStore.getState().selectNote(updated[0]);
+  }
+});
+
+// 🟢 Обработка входящих сообщений заметки
 eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
   const { selectedNote, currentChatMessages } = useNotesStore.getState();
   if (incoming.noteId && selectedNote && Number(incoming.noteId) === Number(selectedNote.id)) {

@@ -10,21 +10,19 @@ import {
   ICachedSecretChat,
   ICachedGroupDetail,
   ICachedBlockStatus,
+  MessageHelper,
 } from '../types/models';
 import { AttachmentDto, ChunkUploadStatusDto } from '../types/dtos';
 import { AttachmentType } from '../types/enums';
 
-// Размер чанка: 512 КБ (как в C# ChunkSize = 512 * 1024)
 const CHUNK_SIZE = 512 * 1024;
-
 const LINK_REGEX = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)|(\/[a-zA-Z0-9_\-]{3,})/i;
 
-// Хелпер вычисления SHA-256 через нативный браузерный Web Crypto API
 async function computeSha256(data: ArrayBuffer | Uint8Array | string): Promise<string> {
   const buffer: BufferSource = typeof data === 'string'
-  ? new TextEncoder().encode(data)
-  : (data as unknown as BufferSource);
-const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    ? new TextEncoder().encode(data)
+    : (data as unknown as BufferSource);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
@@ -76,8 +74,6 @@ export interface IChatService {
 }
 
 export class ChatService implements IChatService {
-  //#region Пофайловая загрузка чанками (Resumable Chunked Upload)
-
   public async uploadAttachmentsAsync(files: File[]): Promise<AttachmentDto[] | null> {
     if (!files || files.length === 0) return null;
 
@@ -108,7 +104,6 @@ export class ChatService implements IChatService {
 
     const uploadId = await computeSha256(`${fileHash}_${totalFileSize}_${totalChunks}`);
 
-    // Проверка статуса уже загруженных частей (Resume)
     const alreadyUploaded = new Set<number>();
     try {
       const statusUrl = `api/Messages/upload-status?uploadId=${uploadId}&fileHash=${fileHash}&totalChunks=${totalChunks}&fileName=${encodeURIComponent(fileName)}`;
@@ -121,9 +116,7 @@ export class ChatService implements IChatService {
           statusRes.data.uploadedChunks.forEach((c) => alreadyUploaded.add(c));
         }
       }
-    } catch {
-      // Игнорируем ошибку получения статуса, начинаем с нуля
-    }
+    } catch {}
 
     let finalAttachment: AttachmentDto | null = null;
 
@@ -161,15 +154,10 @@ export class ChatService implements IChatService {
     return finalAttachment;
   }
 
-  //#endregion
-
-  //#region Дельта и синхронизация
-
   public async syncDeltaAsync(userId: number): Promise<number> {
     try {
       const db = getLocalDatabase(userId);
 
-      // 1. Ищем максимальный ServerId в локальной базе через индекс
       let lastId = 0;
       try {
         const lastMsg = await db.messages.orderBy('serverId').last();
@@ -179,7 +167,6 @@ export class ChatService implements IChatService {
         lastId = all.reduce((max, m) => Math.max(max, m.serverId || 0), 0);
       }
 
-      // 2. Ищем время последней синхронизации (дефолт: -7 дней)
       const syncState = await db.syncStates.get('LastDeltaSyncUtc');
       let lastSyncUtcString = syncState?.value;
       if (!lastSyncUtcString) {
@@ -199,7 +186,6 @@ export class ChatService implements IChatService {
       for (const msg of deltaMessages) {
         const serverId = msg.id || msg.serverId;
 
-        // Если удалено на сервере — удаляем локально
         if (msg.isDeleted) {
           await db.messages.where('serverId').equals(serverId).delete();
           processedCount++;
@@ -247,7 +233,6 @@ export class ChatService implements IChatService {
           });
           processedCount++;
         } else {
-          // 🟢 ВАЖНО: не передаем id: 0, чтобы Dexie сам корректно генерировал автоинкрементный id!
           await db.messages.add({
             serverId,
             senderId: msg.senderId,
@@ -276,7 +261,6 @@ export class ChatService implements IChatService {
 
       await db.syncStates.put({ key: 'LastDeltaSyncUtc', value: new Date().toISOString() });
 
-      // 🟢 Если пришли новые сообщения — шлем сигнал обновить открытый чат (как в WPF)
       if (processedCount > 0) {
         eventBus.emit('ActiveChatRefreshRequestedMessage' as any, undefined);
       }
@@ -340,10 +324,6 @@ export class ChatService implements IChatService {
 
     return sentCount;
   }
-
-  //#endregion
-
-  //#region Работа с историей и чатами через HTTP
 
   public async getChatsAsync(): Promise<IChatListItem[]> {
     try {
@@ -458,6 +438,7 @@ export class ChatService implements IChatService {
     }
   }
 
+  // 🟢 ПОИСК СООБЩЕНИЙ ЧЕРЕЗ API С ОТСЕЧЕНИЕМ СЛУЖЕБНЫХ ЗВОНКОВ
   public async searchMessagesAsync(query: string, groupId?: number | null, otherUserId?: number | null): Promise<IMessage[]> {
     if (!query || query.trim().length === 0) return [];
 
@@ -469,37 +450,40 @@ export class ChatService implements IChatService {
       const res = await apiClient.get<any[]>(url);
       if (!res.data) return [];
 
-      return res.data.map((msg) => ({
-        id: 0,
-        serverId: msg.id,
-        senderId: msg.senderId,
-        receiverId: msg.receiverId,
-        groupId: msg.groupId,
-        isMyMessage: msg.senderId === userSession.userId,
-        isSentToServer: true,
-        text: msg.text,
-        isRead: msg.isRead,
-        timestamp: new Date(msg.timestamp).toISOString(),
-        isDeleted: false,
-        isDeletedForMe: false,
-        isPinned: msg.isPinned,
-        viewsCount: msg.viewsCount || 1,
-        attachments: (msg.attachments || []).map((a: any, idx: number) => ({
-          id: idx + 1,
-          messageId: 0,
-          type: a.type,
-          fileName: a.fileName,
-          fileSizeStr: a.fileSizeStr,
-          fileSizeBytes: 0,
-          url: UrlHelper.normalize(a.url, BASE_SERVER_URL),
-          thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, BASE_SERVER_URL),
-          fileHash: a.fileHash,
-          hasAudio: a.hasAudio,
-          width: a.width,
-          height: a.height,
-          durationSeconds: a.durationSeconds,
-        })),
-      }));
+      return res.data
+        .map((msg) => ({
+          id: 0,
+          serverId: msg.id,
+          senderId: msg.senderId,
+          receiverId: msg.receiverId,
+          groupId: msg.groupId,
+          isMyMessage: msg.senderId === userSession.userId,
+          isSentToServer: true,
+          text: msg.text,
+          isRead: msg.isRead,
+          timestamp: new Date(msg.timestamp).toISOString(),
+          isDeleted: false,
+          isDeletedForMe: false,
+          isPinned: msg.isPinned,
+          viewsCount: msg.viewsCount || 1,
+          attachments: (msg.attachments || []).map((a: any, idx: number) => ({
+            id: idx + 1,
+            messageId: 0,
+            type: a.type,
+            fileName: a.fileName,
+            fileSizeStr: a.fileSizeStr,
+            fileSizeBytes: 0,
+            url: UrlHelper.normalize(a.url, BASE_SERVER_URL),
+            thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, BASE_SERVER_URL),
+            fileHash: a.fileHash,
+            hasAudio: a.hasAudio,
+            width: a.width,
+            height: a.height,
+            durationSeconds: a.durationSeconds,
+          })),
+        }))
+        // 🟢 ИСКЛЮЧАЕМ ЗВОНКИ ИЗ РЕЗУЛЬТАТОВ ПОИСКА
+        .filter((m) => !MessageHelper.isCallMessage(m));
     } catch (ex) {
       console.error('[ChatService ERROR] Ошибка FTS поиска:', ex);
       return [];
@@ -534,10 +518,6 @@ export class ChatService implements IChatService {
       return false;
     }
   }
-
-  //#endregion
-
-  //#region Локальные CRUD операции (IndexedDB)
 
   public async getLocalMessagesAsync(
     currentUserId: number,
@@ -622,6 +602,7 @@ export class ChatService implements IChatService {
     return msg || null;
   }
 
+  // 🟢 ЛОКАЛЬНЫЙ ПОИСК С ОТСЕЧЕНИЕМ СЛУЖЕБНЫХ СООБЩЕНИЙ ЗВОНКОВ
   public async searchLocalMessagesAsync(
     query: string,
     currentUserId: number,
@@ -635,6 +616,9 @@ export class ChatService implements IChatService {
     const result = await db.messages
       .filter((m) => {
         if (!m.text || !m.text.toLowerCase().includes(lower)) return false;
+        // 🟢 ИСКЛЮЧАЕМ ЗВОНКИ
+        if (MessageHelper.isCallMessage(m)) return false;
+
         if (groupId && groupId > 0) return m.groupId === groupId;
         if (otherUserId && otherUserId > 0) {
           return (
@@ -683,10 +667,10 @@ export class ChatService implements IChatService {
 
     if (target && target.id) {
       await (db.messages.update as any)(target.id, {
-  text: newText,
-  editedAt: editedAt || new Date().toISOString(),
-  attachments: attachments || [],
-});
+        text: newText,
+        editedAt: editedAt || new Date().toISOString(),
+        attachments: attachments || [],
+      });
     }
   }
 
@@ -764,10 +748,6 @@ export class ChatService implements IChatService {
     await db.messages.update(localId, updates);
   }
 
-  //#endregion
-
-  //#region Общие медиа, ссылки и пины
-
   public async getSharedMediaMessagesAsync(currentUserId: number, targetUserId: number): Promise<IMessage[]> {
     const db = getLocalDatabase(currentUserId);
     const list = await db.messages
@@ -819,10 +799,6 @@ export class ChatService implements IChatService {
 
     return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
-
-  //#endregion
-
-  //#region Кеш секретных чатов, групп и блокировок в Dexie
 
   public async getCachedSecretChatAsync(secretChatId: string): Promise<ICachedSecretChat | null> {
     const db = getLocalDatabase(userSession.userId);
@@ -893,10 +869,6 @@ export class ChatService implements IChatService {
     return new Set(blocked.map((b) => b.targetUserId));
   }
 
-  //#endregion
-
-  //#region Сайдбар и очистка
-
   public async getLastMessageForChatAsync(
     currentUserId: number,
     userId?: number | null,
@@ -966,8 +938,6 @@ export class ChatService implements IChatService {
       if (m.id) await db.messages.delete(m.id);
     }
   }
-
-  //#endregion
 }
 
 export const chatService = new ChatService();
