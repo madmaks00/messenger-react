@@ -4,6 +4,7 @@ import { AttachmentType } from '../types/enums';
 import { voiceRecordingService } from '../services/voiceRecording.service';
 import { eventBus } from '../services/eventBus';
 import { useChatStore } from './chatStore';
+import { mediaDimensionsCache } from '../utils/mediaDimensionsCache';
 
 interface MessageInputState {
   newMessageText: string;
@@ -116,8 +117,11 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       if (file.size > maxFileSize) continue;
 
       let type = AttachmentType.Document;
-      let width = (file as any).width || 0;
-      let height = (file as any).height || 0;
+      
+      // 🟢 Берем реальные размеры, считанные из файла, либо из кэша
+      const cached = mediaDimensionsCache.get(file.name);
+      let width = Number((file as any).width || cached?.width || 0);
+      let height = Number((file as any).height || cached?.height || 0);
       let durationSeconds = 0;
       let hasAudio = false;
 
@@ -151,7 +155,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         fileSizeBytes: file.size,
         url: objectUrl,
         localImagePath: objectUrl,
-        rawFile: file, // 🟢 СОХРАНЯЕМ ИСХОДНЫЙ ФАЙЛ
+        rawFile: file,
         hasAudio,
         width,
         height,
@@ -197,7 +201,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       fileSizeBytes: result.file.size,
       url,
       localImagePath: url,
-      rawFile: result.file, // 🟢 СОХРАНЯЕМ ГОЛОСОВОЙ ФАЙЛ
+      rawFile: result.file,
       waveform: result.waveform,
       durationSeconds: result.durationSeconds,
       hasAudio: true,

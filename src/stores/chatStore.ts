@@ -214,18 +214,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const count = await chatService.syncDeltaAsync(currentUserId);
       if (count > 0) {
-        const { selectedChatUser } = get();
+        const { selectedChatUser, currentChatMessages } = get();
         if (selectedChatUser) {
           const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
           const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
           const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
+
+          // 🟢 ИСПРАВЛЕНИЕ: берем не жесткие 30, а текущую длину сообщений, чтобы не отрезать верхние сообщения диалога
+          const takeCount = Math.max(30, currentChatMessages.length);
 
           const updated = await chatService.getLocalMessagesAsync(
             currentUserId,
             targetUserId,
             groupId,
             secretChatId,
-            30
+            takeCount
           );
           set({ currentChatMessages: updated });
         }
@@ -1256,7 +1259,7 @@ eventBus.on('ClearActiveChatMessagesMessage' as any, () => {
 });
 
 eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
-  const { selectedChatUser } = useChatStore.getState();
+  const { selectedChatUser, currentChatMessages } = useChatStore.getState();
   if (selectedChatUser) {
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
@@ -1265,8 +1268,11 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
     const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
     const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
 
+    // 🟢 ИСПРАВЛЕНИЕ: сохраняем всю текущую длину списка сообщений
+    const takeCount = Math.max(30, currentChatMessages.length);
+
     const [messages, pinned] = await Promise.all([
-      chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30),
+      chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, takeCount),
       chatService.getLocalPinnedMessagesAsync(currentUserId, targetUserId, groupId, secretChatId),
     ]);
 

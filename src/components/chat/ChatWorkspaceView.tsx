@@ -141,12 +141,6 @@ export const ChatWorkspaceView: React.FC = () => {
       0
     );
 
-    console.log('[PROFILE_DEBUG] Извлеченные ID из selectedChatUser:', {
-      targetGroupId,
-      targetUserId,
-      isGroup: selectedChatUser.isGroup,
-    });
-
     if (selectedChatUser.isGroup && targetGroupId > 0) {
       void openGroupProfile({
         ...selectedChatUser,
@@ -154,7 +148,6 @@ export const ChatWorkspaceView: React.FC = () => {
         groupId: targetGroupId,
       });
     } else if (!selectedChatUser.isGroup && targetUserId > 0) {
-      // 🟢 Spread ставим ПЕРВЫМ, чтобы не перетирать ключи (устраняет TS2783), и убираем лишний profileTab (устраняет TS2353)
       useNavigationStore.setState({
         isProfileOpen: true,
         isOwnProfile: false,
@@ -170,8 +163,6 @@ export const ChatWorkspaceView: React.FC = () => {
       });
 
       void (openUserProfile as any)(targetUserId, selectedChatUser);
-    } else {
-      console.error('[PROFILE_DEBUG] ❌ targetUserId равен 0! Нечего открывать:', selectedChatUser);
     }
   }, [selectedChatUser, openGroupProfile, openUserProfile]);
 
@@ -256,6 +247,12 @@ export const ChatWorkspaceView: React.FC = () => {
     let startOffset = scrollRef.current.scrollTop;
     const distance = Math.abs(targetOffset - startOffset);
 
+    console.log('%c[SCROLL_ANIM] 🚀 Запуск анимации скролла:', 'color: #38bdf8; font-weight: bold;', {
+      startOffset: Math.round(startOffset),
+      targetOffset: Math.round(targetOffset),
+      distance: Math.round(distance),
+    });
+
     if (distance < 3) {
       scrollRef.current.scrollTop = targetOffset;
       onCompleted?.();
@@ -263,7 +260,12 @@ export const ChatWorkspaceView: React.FC = () => {
     }
 
     if (distance > 800) {
+      const oldStart = startOffset;
       startOffset = startOffset > targetOffset ? targetOffset + 400 : Math.max(0, targetOffset - 400);
+      console.warn('[SCROLL_ANIM] ⚠️ Дистанция > 800px! Мгновенный перескок startOffset:', {
+        было: Math.round(oldStart),
+        стало: Math.round(startOffset),
+      });
       scrollRef.current.scrollTop = startOffset;
     }
 
@@ -284,6 +286,7 @@ export const ChatWorkspaceView: React.FC = () => {
       } else {
         animFrameRef.current = null;
         if (scrollRef.current) scrollRef.current.scrollTop = targetOffset;
+        console.log('[SCROLL_ANIM] ✅ Анимация завершена на offset:', Math.round(targetOffset));
         onCompleted?.();
       }
     };
@@ -293,6 +296,12 @@ export const ChatWorkspaceView: React.FC = () => {
   const scrollToBottom = useCallback(() => {
     if (!scrollRef.current) return;
     const maxScroll = Math.max(0, scrollRef.current.scrollHeight - scrollRef.current.clientHeight);
+    console.log('%c[SCROLL_TRIGGER] ⬇️ Вызов scrollToBottom():', 'color: #a855f7; font-weight: bold;', {
+      scrollHeight: scrollRef.current.scrollHeight,
+      clientHeight: scrollRef.current.clientHeight,
+      maxScroll,
+      currentScrollTop: scrollRef.current.scrollTop,
+    });
     scrollToOffsetAnimated(maxScroll, () => {
       isAtBottomRef.current = true;
       setShowScrollBottomBtn(false);
@@ -306,6 +315,7 @@ export const ChatWorkspaceView: React.FC = () => {
     const chatChanged = chatId !== prevChatIdRef.current;
 
     if (chatChanged && !isHistoryLoading && totalContentHeight > 0 && currentChatMessages.length > 0) {
+      console.log('[SCROLL_CHAT_SWITCH] Переключение чата -> скролл в самый низ');
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       setScrollTop(scrollRef.current.scrollHeight);
       isAtBottomRef.current = true;
@@ -332,25 +342,63 @@ export const ChatWorkspaceView: React.FC = () => {
     }
   }, [layoutItems]);
 
+  const prevTotalHeightRef = useRef(totalContentHeight);
+  // 🟢 1 в 1 с ChatScrollViewer_SizeChanged в ChatWorkspaceView.xaml.cs
+  useLayoutEffect(() => {
+    if (!scrollRef.current) return;
+    const heightDiff = totalContentHeight - prevTotalHeightRef.current;
+    prevTotalHeightRef.current = totalContentHeight;
+
+    if (heightDiff === 0) return;
+
+    // Если пользователь был внизу чата — удерживаем скролл строго у нижнего края при ЛЮБОМ изменении высоты
+    if (isAtBottomRef.current && !isScrollingToTargetRef.current) {
+      const maxScroll = Math.max(0, scrollRef.current.scrollHeight - scrollRef.current.clientHeight);
+      scrollRef.current.scrollTop = maxScroll;
+      setScrollTop(maxScroll);
+    }
+  }, [totalContentHeight]);
+
+  const prevMessagesLengthRef = useRef(currentChatMessages.length);
+  const prevLastMessageKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (currentChatMessages.length === 0) {
-      prevLastMessageIdRef.current = null;
+      prevLastMessageKeyRef.current = null;
+      prevMessagesLengthRef.current = 0;
       return;
     }
 
-    const lastMsg = currentChatMessages[currentChatMessages.length - 1];
-    const lastMsgId = lastMsg.id || lastMsg.serverId;
+    const isCountIncreased = currentChatMessages.length > prevMessagesLengthRef.current;
+    const oldCount = prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = currentChatMessages.length;
 
-    const isAddedAtBottom = prevLastMessageIdRef.current !== null && lastMsgId !== prevLastMessageIdRef.current;
-    prevLastMessageIdRef.current = lastMsgId;
+    const lastMsg = currentChatMessages[currentChatMessages.length - 1];
+    const lastMsgKey = String(lastMsg.id || lastMsg.serverId || lastMsg.timestamp);
+
+    const isDifferentLastMsg = prevLastMessageKeyRef.current !== null && lastMsgKey !== prevLastMessageKeyRef.current;
+    const oldKey = prevLastMessageKeyRef.current;
+    prevLastMessageKeyRef.current = lastMsgKey;
+
+    console.log('%c[SCROLL_COLLECTION] 📦 Проверка эффекта сообщений:', 'color: #10b981;', {
+      oldCount,
+      newCount: currentChatMessages.length,
+      isCountIncreased,
+      oldKey,
+      newKey: lastMsgKey,
+      isDifferentLastMsg,
+      isMy: lastMsg.isMyMessage,
+      isAtBottom: isAtBottomRef.current,
+    });
 
     if (isLoadingHistoryRef.current || pendingAnchorRef.current !== null || isScrollingToTargetRef.current) {
       return;
     }
 
-    if (isAddedAtBottom) {
+    if (isCountIncreased && isDifferentLastMsg) {
       const isMy = lastMsg.isMyMessage;
       if (isAtBottomRef.current || isMy) {
+        console.log('[SCROLL_COLLECTION] 👉 Вызываем scrollToBottom() для нового сообщения');
         scrollToBottom();
       }
     }
@@ -652,7 +700,6 @@ export const ChatWorkspaceView: React.FC = () => {
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            {/* КЛИК ПО ШАПКЕ: Открывает профиль собеседника / группы */}
             <div
               onClick={handleOpenCurrentChatProfile}
               style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', minWidth: 0, flex: 1 }}
@@ -816,7 +863,6 @@ export const ChatWorkspaceView: React.FC = () => {
                 )}
               </div>
 
-              {/* КНОПКА ПОИСКА В ШАПКЕ */}
               <HeaderIconButton
                 isActive={isChatSearchMode}
                 title="Search"
