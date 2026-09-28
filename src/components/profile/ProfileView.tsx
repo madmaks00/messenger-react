@@ -11,6 +11,7 @@ import { getAvatarColor, getFirstLetter } from './profileView.utils';
 import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
 import { useStoriesStore } from '../../stores/storiesStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 
 export interface ProfileViewProps {
   isOpen: boolean;
@@ -37,6 +38,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onCallUser,
   services = {},
 }) => {
+  // 🟢 Синхронизация с navigationStore: устраняет рассинхрон между пропсами и глобальным стором
+  const navStore = useNavigationStore();
+
+  const effectiveIsOpen = navStore.isProfileOpen ?? isOpen;
+  const effectiveIsGroupProfile = navStore.isProfileOpen ? navStore.isGroupProfile : isGroupProfile;
+  const rawIsOwn = navStore.isProfileOpen ? navStore.isOwnProfile : isOwnProfile;
+
+  // Кандидат на отображение
+  const candidateUser = (!rawIsOwn && navStore.profileUser) ? navStore.profileUser : (user || navStore.profileUser);
+
+  // Профиль является своим ТОЛЬКО если совпадает ID
+  const effectiveIsOwnProfile = Boolean(
+    rawIsOwn &&
+    candidateUser?.id &&
+    currentUserId &&
+    Number(candidateUser.id) === Number(currentUserId)
+  );
+
+  const effectiveUser = candidateUser;
+  const effectiveInitialTab = navStore.profileInitialTab || initialTab;
+
   const [isRendered, setIsRendered] = useState<boolean>(false);
   const [isClosing, setIsClosing] = useState<boolean>(false);
   const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,13 +70,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
     if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
     closeTimeoutRef.current = setTimeout(() => {
+      navStore.closeProfile();
       onClose();
       setIsClosing(false);
     }, 200);
-  }, [isClosing, onClose]);
+  }, [isClosing, onClose, navStore]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (effectiveIsOpen) {
       setIsClosing(false);
       const raf = requestAnimationFrame(() => {
         setIsRendered(true);
@@ -64,7 +87,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setIsRendered(false);
       setIsClosing(false);
     }
-  }, [isOpen]);
+  }, [effectiveIsOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -77,16 +100,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   }, [handleAnimateClose]);
 
   const vm = useProfileView(
-    isOpen,
-    user,
-    isOwnProfile,
-    isGroupProfile,
+    effectiveIsOpen,
+    effectiveUser,
+    effectiveIsOwnProfile,
+    effectiveIsGroupProfile,
     currentUserId,
     handleAnimateClose,
     services,
     onStartChat,
     onCallUser,
-    initialTab
+    effectiveInitialTab
   );
 
   const {
@@ -119,7 +142,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     return () => window.removeEventListener('click', handleGlobalClick);
   }, [setActiveContextMenu]);
 
-  if (!isOpen) return null;
+  if (!effectiveIsOpen) return null;
 
   const handleStartChatSafe = onStartChat || services.onStartChat || (() => {});
   const handleCallUserSafe = onCallUser || services.onCallUser || (() => {});
@@ -203,10 +226,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
         }}
       >
+        {/* 🟢 ЛЕВАЯ КОЛОНКА: передаём вычисленный effectiveIsOwnProfile, 
+            чтобы кнопки Edit Info и Settings сменились на Message, Call, Mute */}
         <ProfileLeftColumn
           vm={vm}
-          isOwnProfile={isOwnProfile}
-          isGroupProfile={isGroupProfile}
+          isOwnProfile={effectiveIsOwnProfile}
+          isGroupProfile={effectiveIsGroupProfile}
           onClose={handleAnimateClose}
           onStartChat={handleStartChatSafe}
           onCallUser={handleCallUserSafe}
@@ -230,7 +255,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {activeRightContainer === 'stories' && (
               <ProfileRightStories
                 vm={vm}
-                isOwnProfile={isOwnProfile}
+                isOwnProfile={effectiveIsOwnProfile}
                 onClose={handleAnimateClose}
                 onCreateNewStory={services.createNewStory || ((file) => { void useStoriesStore.getState().createNewStory(file); })}
                 onOpenStoryViewer={services.openStoryViewer || ((story) => { void useStoriesStore.getState().openStoryViewer(story); })}
@@ -280,9 +305,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <ProfileRightGroup
                 vm={vm}
                 onClose={handleAnimateClose}
-                onLeaveGroup={() => services.leaveGroup?.(user.id)}
-                onKickMember={(memberId) => services.kickMember?.(user.id, memberId)}
-                onUnbanMember={(memberId) => services.unbanMember?.(user.id, memberId)}
+                onLeaveGroup={() => services.leaveGroup?.(effectiveUser.id)}
+                onKickMember={(memberId) => services.kickMember?.(effectiveUser.id, memberId)}
+                onUnbanMember={(memberId) => services.unbanMember?.(effectiveUser.id, memberId)}
               />
             )}
           </div>
@@ -413,7 +438,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 const id = 'message' in activeContextMenu.item
                   ? ((activeContextMenu.item as any).message?.id ?? (activeContextMenu.item as IAttachment).messageId)
                   : (activeContextMenu.item as IMessage).id;
-                if (id) services.onJumpToMessage?.(id, user.id);
+                if (id) services.onJumpToMessage?.(id, effectiveUser.id);
               }
               setActiveContextMenu(null);
             }}

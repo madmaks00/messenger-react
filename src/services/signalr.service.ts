@@ -188,15 +188,18 @@ export class SignalRService {
           : rawDto.GroupId !== undefined
           ? Number(rawDto.GroupId)
           : null;
-          const noteId =
-  rawDto.noteId !== undefined
-    ? Number(rawDto.noteId)
-    : rawDto.NoteId !== undefined
-    ? Number(rawDto.NoteId)
-    : null;
+      const noteId =
+        rawDto.noteId !== undefined
+          ? Number(rawDto.noteId)
+          : rawDto.NoteId !== undefined
+          ? Number(rawDto.NoteId)
+          : null;
       const serverId = Number(rawDto.serverId ?? rawDto.ServerId ?? rawDto.id ?? rawDto.Id ?? 0);
       const text = String(rawDto.text ?? rawDto.Text ?? '');
+
+      // 🟢 ИСПРАВЛЕНИЕ: Читаем реальный статус из DTO сервера, а не принудительный true для своих сообщений
       const isRead = Boolean(rawDto.isRead ?? rawDto.IsRead ?? false);
+
       const replyToMessageIds = rawDto.replyToMessageIds ?? rawDto.ReplyToMessageIds ?? null;
       const rawAttachments = rawDto.attachments ?? rawDto.Attachments ?? [];
       const timestamp = rawDto.timestamp ?? rawDto.Timestamp ?? new Date().toISOString();
@@ -217,7 +220,7 @@ export class SignalRService {
         isMyMessage,
         isSentToServer: true,
         text,
-        isRead: isMyMessage || isRead,
+        isRead, // 🟢 ЧЕСТНЫЙ СТАТУС (для нового исходящего сообщения — строго false)
         timestamp: new Date(timestamp).toISOString(),
         isDeleted: false,
         isDeletedForMe: false,
@@ -255,14 +258,14 @@ export class SignalRService {
 
       eventBus.emit('ReceiveMessage', newMsg);
       if (!noteId) {
-  eventBus.emit('SidebarUpdateMessage', {
-    userId: isMyMessage ? receiverId : senderId,
-    groupId,
-    previewText: text || ((newMsg.attachments?.length ?? 0) > 0 ? 'Вложение' : ''),
-    incrementUnread: !isMyMessage,
-    messageType: LastMessageType.Text,
-  });
-}
+        eventBus.emit('SidebarUpdateMessage', {
+          userId: isMyMessage ? receiverId : senderId,
+          groupId,
+          previewText: text || ((newMsg.attachments?.length ?? 0) > 0 ? 'Вложение' : ''),
+          incrementUnread: !isMyMessage,
+          messageType: LastMessageType.Text,
+        });
+      }
     });
 
     // 🟢 2. СТАТУС ОНЛАЙНА
@@ -300,13 +303,15 @@ export class SignalRService {
     this.hubConnection.on('ReceiveSecretMessage', (senderId: number, secretChatId: string, ciphertext: string, nonce: string, tag: string, seq: number, timestamp: any) => {
       eventBus.emit('ReceiveSecretMessage' as any, { senderId, secretChatId, ciphertext, nonce, tag, seq, timestamp });
     });
-this.hubConnection.on('NoteUpdated', (noteId: number) => {
-  eventBus.emit('NoteUpdated' as any, Number(noteId));
-});
 
-this.hubConnection.on('NoteDeleted', (noteId: number) => {
-  eventBus.emit('NoteDeleted' as any, Number(noteId));
-});
+    this.hubConnection.on('NoteUpdated', (noteId: number) => {
+      eventBus.emit('NoteUpdated' as any, Number(noteId));
+    });
+
+    this.hubConnection.on('NoteDeleted', (noteId: number) => {
+      eventBus.emit('NoteDeleted' as any, Number(noteId));
+    });
+
     this.hubConnection.on('SecretChatDiscarded', (senderId: number, secretChatId: string) => {
       eventBus.emit('SecretChatDiscardedMessage' as any, { senderId, secretChatId });
     });
@@ -430,9 +435,8 @@ this.hubConnection.on('NoteDeleted', (noteId: number) => {
       eventBus.emit('TaskListDeleted', { listId: Number(listId) });
     });
 
-    // 🟢 8. СИНХРОНИЗАЦИЯ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ В РЕАЛЬНОМ ВРЕМЕНИ
+    // 🟢 8. СИНХРОНИЗАЦИЯ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ
     this.hubConnection.on('UserProfileUpdated', (rawUser: any) => {
-      console.log('⚡ [SignalR] Профиль пользователя обновлен на другом клиенте:', rawUser);
       if (!rawUser) return;
 
       const updatedUser: IUser = {
@@ -458,7 +462,6 @@ this.hubConnection.on('NoteDeleted', (noteId: number) => {
 
     // 🟢 9. СИНХРОНИЗАЦИЯ НАСТРОЕК ПРИВАТНОСТИ
     this.hubConnection.on('PrivacySettingsUpdated', (rawSettings: any) => {
-      console.log('⚡ [SignalR] Настройки приватности получены от сервера:', rawSettings);
       if (!rawSettings) return;
 
       const dto: PrivacySettingsDto = {
@@ -475,11 +478,8 @@ this.hubConnection.on('NoteDeleted', (noteId: number) => {
       eventBus.emit('PrivacySettingsUpdatedMessage', { settings: dto });
     });
 
-    // =========================================================================
-    // 🟢 10. ПАПКИ ЧАТОВ (СИНХРОНИЗАЦИЯ В РЕАЛЬНОМ ВРЕМЕНИ МЕЖДУ УСТРОЙСТВАМИ)
-    // =========================================================================
+    // 🟢 10. ПАПКИ ЧАТОВ
     this.hubConnection.on('ChatFolderCreated', (rawFolder: any) => {
-      console.log('⚡ [SignalR] Создана новая папка на другом устройстве:', rawFolder);
       if (!rawFolder) return;
 
       const folder: IChatFolder = {
@@ -505,7 +505,6 @@ this.hubConnection.on('NoteDeleted', (noteId: number) => {
     });
 
     this.hubConnection.on('ChatFolderUpdated', (rawFolder: any) => {
-      console.log('⚡ [SignalR] Папка обновлена на другом устройстве:', rawFolder);
       if (!rawFolder) return;
 
       const folderId = Number(rawFolder.id ?? rawFolder.Id);
@@ -529,7 +528,6 @@ this.hubConnection.on('NoteDeleted', (noteId: number) => {
         customFolders: updatedCustom,
       });
 
-      // Если в текущий момент выбрана именно эта папка — обновляем фильтр в сайдбаре
       if (selectedFolderId === folderId) {
         useSidebarChatsStore.getState().selectFolder(folderId, false);
       }
@@ -537,7 +535,6 @@ this.hubConnection.on('NoteDeleted', (noteId: number) => {
 
     this.hubConnection.on('ChatFolderDeleted', (deletedFolderId: any) => {
       const id = Number(deletedFolderId);
-      console.log('⚡ [SignalR] Папка удалена на другом устройстве:', id);
 
       const { chatFolders, customFolders, selectedFolderId, selectFolder } = useChatFolderStore.getState();
 
@@ -558,7 +555,6 @@ this.hubConnection.on('NoteDeleted', (noteId: number) => {
     });
 
     this.hubConnection.on('ChatFoldersOrderUpdated', (rawOrders: any[]) => {
-      console.log('⚡ [SignalR] Порядок папок изменен на другом устройстве:', rawOrders);
       if (!Array.isArray(rawOrders)) return;
 
       const orderMap = new Map<number, number>(
@@ -597,8 +593,6 @@ this.hubConnection.on('NoteDeleted', (noteId: number) => {
         const tUid = targetUserId ? Number(targetUserId) : null;
         const tGid = targetGroupId ? Number(targetGroupId) : null;
         const added = Boolean(isAdded);
-
-        console.log(`⚡ [SignalR] Чат переключен в папке ${fId}: User=${tUid}, Group=${tGid}, Added=${added}`);
 
         const isGroup = Boolean(tGid && tGid > 0);
         const chatId = isGroup ? tGid! : (tUid ?? 0);

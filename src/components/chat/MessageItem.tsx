@@ -6,6 +6,8 @@ import { VoiceWaveform } from './VoiceWaveform';
 import { MediaAlbumGrid } from './MediaAlbumGrid';
 import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 import { userSession } from '../../services/userSession';
+import { AsyncChatLayoutEngine } from '../../utils/chatLayoutEngine';
+import { useChatStore } from '../../stores/chatStore';
 
 interface MessageItemProps {
   model: IMessageLayoutModel;
@@ -44,7 +46,7 @@ const PALETTE = {
 const ICONS = {
   check: 'M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z',
   checkAll: 'M0.41,13.41L6,19L7.41,17.58L1.83,12M22.24,5.58L11.66,16.17L7.5,12L6.07,13.41L11.66,19L23.66,7M18,7L16.59,5.58L10.24,11.93L11.66,13.34L18,7Z',
-  clock: 'M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z',
+  clock: 'M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z',
   pin: 'M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z',
   reply: 'M10,9V5L3,12L10,19V14.9C15,14.9 18.5,16.5 21,20C20,15 17,10 10,9Z',
   pencil: 'M14.06,9L15,9.94L5.92,19H5V18.08L14.06,9M17.66,3C17.41,3 17.15,3.1 16.96,3.29L15.13,5.12L18.88,8.87L20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18.17,3.09 17.92,3 17.66,3M14.06,6.19L3,17.25V21H6.75L17.81,9.94L14.06,6.19Z',
@@ -181,7 +183,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         userSelect: 'none',
       }}
     >
-      {/* 🟢 CSS-анимация: 1 в 1 с TelegramVirtualizingPanel.cs (1300ms, KeyFrames 0 -> 0.4 -> 0.4 -> 0) */}
       <style>{`
         @keyframes wpfMessageHighlightPulse {
           0% {
@@ -375,7 +376,44 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           {/* Медиа */}
           {model.previewMedia && model.previewMedia.length > 0 && (
             <div style={{ width: model.mediaWidth, height: model.mediaHeight, position: 'relative', borderRadius: 16, overflow: 'hidden' }}>
-              <MediaAlbumGrid media={model.previewMedia} mediaWidth={model.mediaWidth} mediaHeight={model.mediaHeight} />
+              <MediaAlbumGrid
+                media={model.previewMedia}
+                mediaWidth={model.mediaWidth}
+                mediaHeight={model.mediaHeight}
+                onImageDimensionsLoaded={(att, naturalWidth, naturalHeight) => {
+                  console.log('%c[MESSAGE_ITEM] 🔔 onImageDimensionsLoaded сработал:', 'color: #f472b6; font-weight: bold;', {
+                    msgId: model.id,
+                    serverId: model.serverId,
+                    mediaCount: model.previewMedia.length,
+                    naturalWidth,
+                    naturalHeight,
+                    currentMediaWidth: model.mediaWidth,
+                    currentMediaHeight: model.mediaHeight,
+                  });
+
+                  // 🟢 1 в 1 с CheckAndUpdateImageDimensionsFromElement из ChatWorkspaceView.xaml.cs
+                  if (model.previewMedia && model.previewMedia.length === 1 && naturalWidth > 0 && naturalHeight > 0) {
+                    const dims = AsyncChatLayoutEngine.calculateMediaDimensionsFromPixels(naturalWidth, naturalHeight);
+                    const diffW = Math.abs(model.mediaWidth - dims.width);
+                    const diffH = Math.abs(model.mediaHeight - dims.height);
+
+                    console.log('[MESSAGE_ITEM] Сравнение размеров:', {
+                      рассчитано: `${dims.width}x${dims.height}`,
+                      былоВМодели: `${model.mediaWidth}x${model.mediaHeight}`,
+                      разница: { diffW, diffH },
+                      нужноЛиОбновлять: diffW > 2 || diffH > 2,
+                    });
+
+                    if (diffW > 2 || diffH > 2) {
+                      useChatStore.getState().updateAttachmentDimensions(
+                        Number(model.id || model.serverId || 0),
+                        naturalWidth,
+                        naturalHeight
+                      );
+                    }
+                  }
+                }}
+              />
               {model.isSilentVideo && (
                 <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 5px', color: '#FFFFFF', fontSize: 10.5, fontWeight: 'bold', zIndex: 2 }}>
                   GIF
@@ -530,7 +568,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           )}
         </div>
 
-        {/* 🟢 ЕДИНЫЙ КОМПОЗИТНЫЙ СЛОЙ ПОДСВЕТКИ (БАБЛ + ХВОСТИК) БЕЗ ДВОЙНОГО НАЛОЖЕНИЯ И ШВОВ */}
+        {/* 🟢 ЕДИНЫЙ КОМПОЗИТНЫЙ СЛОЙ ПОДСВЕТКИ (БАБЛ + ХВОСТИК) */}
         {isHighlighted && (
           <div
             className="wpf-message-highlight-pulse"
@@ -543,7 +581,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               overflow: 'visible',
             }}
           >
-            {/* Хвостик подсветки моего сообщения (100% сплошной белый, без внутренней прозрачности) */}
             {isMy && !model.isMediaOnly && (
               <svg
                 width="8"
@@ -560,7 +597,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               </svg>
             )}
 
-            {/* Хвостик подсветки чужого сообщения (100% сплошной белый, без внутренней прозрачности) */}
             {!isMy && !model.isMediaOnly && (
               <svg
                 width="8"
@@ -577,7 +613,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               </svg>
             )}
 
-            {/* Тело подсветки бабла (100% сплошной белый, без внутренней прозрачности) */}
             <div
               style={{
                 position: 'absolute',

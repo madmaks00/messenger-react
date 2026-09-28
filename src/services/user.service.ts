@@ -28,7 +28,6 @@ export interface IUserService {
 }
 
 export class UserService implements IUserService {
-  // Централизованный кэш профилей (аналог ConcurrentDictionary<int, User> в C#)
   private readonly userCache = new Map<number, IUser>();
 
   public async searchUsersAsync(query: string): Promise<IUserSearchResult[]> {
@@ -66,22 +65,34 @@ export class UserService implements IUserService {
     return null;
   }
 
+  // Поддержка обоих маршрутов бэкенда: api/Users/{id} и api/User/{id}
   public async getUserProfileAsync(userId: number): Promise<IUser | null> {
-    if (userId <= 0) return null;
+    const targetId = Number(userId || 0);
+    if (targetId <= 0) return null;
 
-    if (this.userCache.has(userId)) {
-      return this.userCache.get(userId)!;
+    if (this.userCache.has(targetId)) {
+      return this.userCache.get(targetId)!;
     }
 
     try {
-      const response = await apiClient.get<IUser>(`api/User/${userId}`);
-      const user = response.data;
-      if (user) {
-        this.cacheUserProfile(user);
-        return user;
+      let response;
+      try {
+        response = await apiClient.get<IUser>(`api/Users/${targetId}`);
+      } catch {
+        response = await apiClient.get<IUser>(`api/User/${targetId}`);
+      }
+
+      const user = response?.data;
+      if (user && (user.id > 0 || (user as any).userId > 0)) {
+        const normalizedUser: IUser = {
+          ...user,
+          id: Number(user.id || (user as any).userId),
+        };
+        this.cacheUserProfile(normalizedUser);
+        return normalizedUser;
       }
     } catch (ex) {
-      console.error(`[UserService ERROR] Ошибка получения профиля ID ${userId}:`, ex);
+      console.error(`[UserService ERROR] Ошибка получения профиля ID ${targetId}:`, ex);
     }
     return null;
   }
@@ -252,23 +263,23 @@ export class UserService implements IUserService {
     }
   }
 
-  public async getBlacklistAsync(): Promise<IUser[] | null> {
+  public async getBlacklistAsync(): Promise<IUser[]> {
     try {
       const response = await apiClient.get<IUser[]>('api/User/blacklist');
-      return response.data;
+      return response.data || [];
     } catch (ex) {
       console.error('[UserService ERROR] Сбой загрузки черного списка:', ex);
-      return null;
+      return [];
     }
   }
 
-  public async getDevicesAsync(): Promise<DeviceSessionDto[] | null> {
+  public async getDevicesAsync(): Promise<DeviceSessionDto[]> {
     try {
       const response = await apiClient.get<DeviceSessionDto[]>('api/User/devices');
-      return response.data;
+      return response.data || [];
     } catch (ex) {
       console.error('[UserService ERROR] Сбой загрузки сессий:', ex);
-      return null;
+      return [];
     }
   }
 

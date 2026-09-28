@@ -2,6 +2,7 @@ import { IMessageLayoutModel } from '../types/layout';
 import { IMessage, IAttachment } from '../types/models';
 import { AttachmentType } from '../types/enums';
 import { MediaFormatHelper } from './mediaFormatHelper';
+import { mediaDimensionsCache } from './mediaDimensionsCache';
 
 function formatWpfCallDuration(seconds: number): string {
   if (seconds <= 0) return '';
@@ -18,7 +19,9 @@ export class AsyncChatLayoutEngine {
     origWidth: number,
     origHeight: number
   ): { width: number; height: number } {
-    if (origWidth <= 0 || origHeight <= 0) return { width: 340.0, height: 240.0 };
+    if (origWidth <= 0 || origHeight <= 0) {
+      return { width: 340.0, height: 240.0 };
+    }
 
     const aspectRatio = origWidth / origHeight;
     const maxWidth = 380.0;
@@ -45,7 +48,10 @@ export class AsyncChatLayoutEngine {
       }
     }
 
-    return { width: Math.round(targetWidth), height: Math.round(targetHeight) };
+    const finalW = Math.round(targetWidth);
+    const finalH = Math.round(targetHeight);
+
+    return { width: finalW, height: finalH };
   }
 
   public static calculateAlbumDimensions(mediaCount: number): { width: number; height: number } {
@@ -98,7 +104,6 @@ export class AsyncChatLayoutEngine {
         m.isCallMessage || rawText.includes('_CALL:') || rawText.includes('CALL:')
       );
 
-      // 🟢 1 в 1 с MessageLayoutModel из WPF C#
       let callTitle = 'Call';
       let callTimeAndDuration = '';
       let callArrowKind: 'in' | 'out' | 'missed' = isMy ? 'out' : 'in';
@@ -130,6 +135,26 @@ export class AsyncChatLayoutEngine {
 
       const isMediaOnly =
         mediaAttachments.length > 0 && !m.text && documentAttachments.length === 0 && audioAttachments.length === 0;
+
+      let initialMediaWidth = 340.0;
+      let initialMediaHeight = 240.0;
+
+      if (mediaAttachments.length === 1) {
+        const first = mediaAttachments[0];
+        const cached = mediaDimensionsCache.get(first.url) || mediaDimensionsCache.get(first.fileName);
+        const w = Number(first.width || 0) > 0 ? Number(first.width) : (cached?.width || 0);
+        const h = Number(first.height || 0) > 0 ? Number(first.height) : (cached?.height || 0);
+
+        if (w > 0 && h > 0) {
+          const dims = this.calculateMediaDimensionsFromPixels(w, h);
+          initialMediaWidth = dims.width;
+          initialMediaHeight = dims.height;
+        }
+      } else if (mediaAttachments.length > 1) {
+        const dims = this.calculateAlbumDimensions(mediaAttachments.length);
+        initialMediaWidth = dims.width;
+        initialMediaHeight = dims.height;
+      }
 
       return {
         id: m.id || 0,
@@ -170,8 +195,8 @@ export class AsyncChatLayoutEngine {
         isSilentVideo: mediaAttachments.length === 1 && Boolean(mediaAttachments[0].isSilentVideo),
         yOffset: 0,
         totalHeight: 0,
-        mediaWidth: 340,
-        mediaHeight: 240,
+        mediaWidth: initialMediaWidth,
+        mediaHeight: initialMediaHeight,
         sourceMessage: m,
       };
     });
@@ -193,7 +218,6 @@ export class AsyncChatLayoutEngine {
       let bubbleHeight = 0;
 
       if (msg.isCallMessage) {
-        // 54px высота самого блока + 6px (отступы Margin="4,2,4,4") = 60px
         bubbleHeight = snap(61.0);
         if (msg.isForwarded && !msg.isDeletedForMe) bubbleHeight += snap(45.0);
       } else if (msg.isDeletedForMe) {
@@ -219,10 +243,18 @@ export class AsyncChatLayoutEngine {
         bubbleHeight = snap(textGridPaddingAndMargin + textContentHeight);
 
         if (hasMedia) {
-          let mediaTextGap = hasText ? 5.0 : 0.0;
+          const mediaTextGap = hasText ? 5.0 : 0.0;
           if (msg.previewMedia.length === 1) {
             const first = msg.previewMedia[0];
-            const dims = this.calculateMediaDimensionsFromPixels(first.width || 340, first.height || 240);
+            const cached = mediaDimensionsCache.get(first.url) || mediaDimensionsCache.get(first.fileName);
+            const origW = Number(first.width || 0) > 0 ? Number(first.width) : (cached?.width || 0);
+            const origH = Number(first.height || 0) > 0 ? Number(first.height) : (cached?.height || 0);
+
+            const dims = this.calculateMediaDimensionsFromPixels(
+              origW > 0 ? origW : 340,
+              origH > 0 ? origH : 240
+            );
+
             msg.mediaWidth = dims.width;
             msg.mediaHeight = dims.height;
             bubbleHeight += snap(dims.height + mediaTextGap);

@@ -18,6 +18,7 @@ export interface IAttachment {
   fileSizeStr: string;
   fileSizeBytes: number;
   url: string;
+  rawFile?: File;
   thumbnailUrl?: string | null;
   localImagePath?: string | null;
   localThumbnailPath?: string | null;
@@ -486,6 +487,8 @@ export interface IUserSearchResult {
   isSecretChat: boolean;
   secretChatId?: string | null;
   keyFingerprint?: string | null;
+  groupId?: number | null;
+  userId?: number | null;
 }
 
 // =========================================================================

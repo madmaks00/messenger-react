@@ -97,7 +97,6 @@ export const SidebarChatsView: React.FC = () => {
     saveFoldersOrderAsync,
   } = useChatFolderStore();
 
-  // 🟢 1 в 1 с WPF: Состояние поиска в активном диалоге
   const {
     isChatSearchMode,
     isChatSearching,
@@ -150,7 +149,6 @@ export const SidebarChatsView: React.FC = () => {
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
 
-  // 🟢 В WPF: поиск активен, если фокус в инпуте, если есть текст ИЛИ если включен режим поиска по чату
   const isSearchActive = isSearchInputFocused || searchText.length > 0 || isChatSearchMode;
   const hasFolders = chatFolders && chatFolders.length > 1;
 
@@ -159,7 +157,6 @@ export const SidebarChatsView: React.FC = () => {
     loadChats(true);
   }, [loadFoldersAsync, loadChats]);
 
-  // 🟢 1 в 1 с WPF: Перехват сигналов FocusSearchBoxMessage и EndSearchBoxMessage
   useEffect(() => {
     const unbindFocus = eventBus.on('FocusSearchBoxMessage', () => {
       setIsSearchInputFocused(true);
@@ -407,6 +404,23 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
+      {/* Стили для сброса нативного крестика поля поиска как в SearchInputUserControl */}
+      <style>{`
+        .wpf-search-input::-webkit-search-cancel-button,
+        .wpf-search-input::-webkit-search-decoration,
+        .wpf-search-input::-webkit-search-results-button,
+        .wpf-search-input::-webkit-search-results-decoration {
+          -webkit-appearance: none !important;
+          display: none !important;
+        }
+        .wpf-search-input::-ms-clear,
+        .wpf-search-input::-ms-reveal {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+      `}</style>
+
       {/* РЯД 0: ШАПКА "Chats" */}
       <SidebarHeaderUserControl
         title="Chats"
@@ -421,7 +435,7 @@ export const SidebarChatsView: React.FC = () => {
         }}
       />
 
-      {/* 🟢 РЯД 1: СТРОКА ПОИСКА (Высота 40px строго по SidebarSearchInputBorderStyle из WPF) */}
+      {/* 🟢 РЯД 1: СТРОКА ПОИСКА (1 в 1 как в задачах: высота 37px, цвет, радиус 9px и шрифт) */}
       <div
         style={{
           margin: hasFolders ? '0 6px 2px 6px' : '0 6px 8px 6px',
@@ -434,9 +448,9 @@ export const SidebarChatsView: React.FC = () => {
       >
         <div
           style={{
-            height: 40,
-            backgroundColor: 'var(--sidebar-search-bg)',
-            borderRadius: 12,
+            height: 37,
+            backgroundColor: 'var(--sidebar-search-bg, #1C212D)',
+            borderRadius: 9,
             display: 'flex',
             alignItems: 'center',
             padding: '0 12px',
@@ -460,6 +474,7 @@ export const SidebarChatsView: React.FC = () => {
             onBlur={() => setIsSearchInputFocused(false)}
             onChange={(e) => setSearchText(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && handleCloseSearch()}
+            className="wpf-search-input"
             style={{
               flex: 1,
               minWidth: 0,
@@ -469,9 +484,11 @@ export const SidebarChatsView: React.FC = () => {
               border: 'none',
               outline: 'none',
               color: '#FFFFFF',
-              fontSize: 14.5,
+              fontSize: 14,
+              fontFamily: "'Segoe UI', -apple-system, sans-serif",
               padding: 0,
               margin: 0,
+              boxSizing: 'border-box',
             }}
           />
 
@@ -899,7 +916,7 @@ export const SidebarChatsView: React.FC = () => {
         )}
       </div>
 
-      {/* ================= РЕЗУЛЬТАТЫ ПОИСКА (1 в 1 с WPF SearchResultsPanel) ================= */}
+      {/* ================= РЕЗУЛЬТАТЫ ПОИСКА ================= */}
       <div
         className="wpf-scroll-viewer"
         style={{
@@ -919,7 +936,7 @@ export const SidebarChatsView: React.FC = () => {
             : 'opacity 120ms ease-out, transform 120ms ease-in, visibility 0ms 120ms',
         }}
       >
-        {/* 🟢 БЛОК 1: НЕДАВНИЕ ПОИСКИ (Скрывается, если включен поиск по чату) */}
+        {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ */}
         {!isChatSearchMode && searchText.trim().length === 0 && (
           <div style={{ marginTop: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 5px' }}>
@@ -961,7 +978,7 @@ export const SidebarChatsView: React.FC = () => {
           </div>
         )}
 
-        {/* 🟢 БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК (Скрывается, если включен поиск по чату) */}
+        {/* БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК */}
         {!isChatSearchMode && searchText.trim().length > 0 && (
           <div style={{ marginTop: 6 }}>
             {isGlobalSearching ? (
@@ -1029,134 +1046,133 @@ export const SidebarChatsView: React.FC = () => {
           </div>
         )}
 
-        {/* 🟢 БЛОК 3: РЕЗУЛЬТАТЫ ПОИСКА В АКТИВНОМ ЧАТЕ */}
-{isChatSearchMode && (
-  <div style={{ marginTop: 6 }}>
-    {isChatSearching ? (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '80px 0' }}>
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            border: '3px solid rgba(255,255,255,0.1)',
-            borderTopColor: 'var(--app-accent)',
-            borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-            marginBottom: 15,
-          }}
-        />
-        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-        <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>Searching...</div>
-      </div>
-    ) : (
-      <>
-        {chatSearchResults.length > 0 && (
-          <div style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600, margin: '5px 0 15px 5px' }}>
-            Messages
-          </div>
-        )}
+        {/* БЛОК 3: РЕЗУЛЬТАТЫ ПОИСКА В АКТИВНОМ ЧАТЕ */}
+        {isChatSearchMode && (
+          <div style={{ marginTop: 6 }}>
+            {isChatSearching ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '80px 0' }}>
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    border: '3px solid rgba(255,255,255,0.1)',
+                    borderTopColor: 'var(--app-accent)',
+                    borderRadius: '50%',
+                    animation: 'spin 0.8s linear infinite',
+                    marginBottom: 15,
+                  }}
+                />
+                <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>Searching...</div>
+              </div>
+            ) : (
+              <>
+                {chatSearchResults.length > 0 && (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 14, fontWeight: 600, margin: '5px 0 15px 5px' }}>
+                    Messages
+                  </div>
+                )}
 
-        {chatSearchResults.length === 0 && searchText.trim().length > 0 ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: 14.5, textAlign: 'center', margin: '40px 0' }}>
-            No messages found
-          </div>
-        ) : (
-          chatSearchResults.map((msg: IMessage) => {
-            const authorName = msg.senderName || 'User';
-            const authorAvatar = normalizeAvatarUrl(msg.senderAvatar);
+                {chatSearchResults.length === 0 && searchText.trim().length > 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 14.5, textAlign: 'center', margin: '40px 0' }}>
+                    No messages found
+                  </div>
+                ) : (
+                  chatSearchResults.map((msg: IMessage) => {
+                    const authorName = msg.senderName || 'User';
+                    const authorAvatar = normalizeAvatarUrl(msg.senderAvatar);
 
-            return (
-              <div
-                key={msg.id || msg.serverId}
-                onClick={() => {
-                  jumpToSearchedMessage(msg);
-                }}
-                style={{
-                  padding: '10px 8px',
-                  marginBottom: 8,
-                  backgroundColor: 'var(--sidebar-search-bg)',
-                  borderRadius: 12,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  boxSizing: 'border-box',
-                }}
-              >
-                {/* Аватар 38x38 */}
-                <div style={{ position: 'relative', width: 38, height: 38, marginRight: 10, flexShrink: 0 }}>
-                  <div
-                    style={{
-                      width: 38,
-                      height: 38,
-                      borderRadius: 19,
-                      backgroundColor: getAvatarColor(msg.senderId),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#FFFFFF',
-                      fontWeight: 'bold',
-                      fontSize: 15,
-                      overflow: 'hidden',
-                      position: 'relative',
-                    }}
-                  >
-                    <span>{authorName.charAt(0).toUpperCase()}</span>
-                    {authorAvatar && (
-                      <img
-                        src={authorAvatar}
-                        alt=""
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
+                    return (
+                      <div
+                        key={msg.id || msg.serverId}
+                        onClick={() => {
+                          jumpToSearchedMessage(msg);
                         }}
                         style={{
-                          position: 'absolute',
-                          inset: 0,
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
+                          padding: '10px 8px',
+                          marginBottom: 8,
+                          backgroundColor: 'var(--sidebar-search-bg)',
+                          borderRadius: 12,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          boxSizing: 'border-box',
                         }}
-                      />
-                    )}
-                  </div>
-                </div>
+                      >
+                        <div style={{ position: 'relative', width: 38, height: 38, marginRight: 10, flexShrink: 0 }}>
+                          <div
+                            style={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: 19,
+                              backgroundColor: getAvatarColor(msg.senderId),
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#FFFFFF',
+                              fontWeight: 'bold',
+                              fontSize: 15,
+                              overflow: 'hidden',
+                              position: 'relative',
+                            }}
+                          >
+                            <span>{authorName.charAt(0).toUpperCase()}</span>
+                            {authorAvatar && (
+                              <img
+                                src={authorAvatar}
+                                alt=""
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  width: '100%',
+                                  height: '100%',
+                                  objectFit: 'cover',
+                                }}
+                              />
+                            )}
+                          </div>
+                        </div>
 
-                <div style={{ flex: 1, minWidth: 0, marginRight: 5 }}>
-                  <div
-                    style={{
-                      color: '#FFFFFF',
-                      fontSize: 14.5,
-                      fontWeight: 600,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {authorName}
-                  </div>
-                  <div
-                    style={{
-                      color: 'var(--text-muted)',
-                      fontSize: 13,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {msg.text || (msg.attachments && msg.attachments.length > 0 ? 'Attachment' : '')}
-                  </div>
-                </div>
+                        <div style={{ flex: 1, minWidth: 0, marginRight: 5 }}>
+                          <div
+                            style={{
+                              color: '#FFFFFF',
+                              fontSize: 14.5,
+                              fontWeight: 600,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {authorName}
+                          </div>
+                          <div
+                            style={{
+                              color: 'var(--text-muted)',
+                              fontSize: 13,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {msg.text || (msg.attachments && msg.attachments.length > 0 ? 'Attachment' : '')}
+                          </div>
+                        </div>
 
-                <div style={{ color: 'var(--text-muted)', fontSize: 11.5, alignSelf: 'flex-start', marginTop: 2, flexShrink: 0 }}>
-                  {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                </div>
-              </div>
-            );
-          })
+                        <div style={{ color: 'var(--text-muted)', fontSize: 11.5, alignSelf: 'flex-start', marginTop: 2, flexShrink: 0 }}>
+                          {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </>
+            )}
+          </div>
         )}
-      </>
-    )}
-  </div>
-)}
       </div>
 
       {/* КОНТЕКСТНОЕ МЕНЮ ЧАТА */}

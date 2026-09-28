@@ -31,6 +31,7 @@ import { userSession } from '../../services/userSession';
 import { SecurityService } from '../../services/security.service';
 import { eventBus } from '../../services/eventBus';
 import { useStoriesStore } from '../../stores/storiesStore';
+import { useNavigationStore } from '../../stores/navigationStore';
 
 export interface ProfileServices {
   getUserProfile: (userId: number) => Promise<IUser | null>;
@@ -87,18 +88,52 @@ export type RightContainerType = 'stories' | 'sharedMedia' | 'editProfile' | 'se
 export type SettingsSubPanelType = 'main' | 'privacy' | 'changePassword' | 'devices' | 'speakersCamera' | 'language' | 'blockedUsers' | 'passcodeSetup';
 
 export function useProfileView(
-  isOpen: boolean,
-  user: IUser,
-  isOwnProfile: boolean,
-  isGroupProfile: boolean,
-  currentUserId: number,
-  onClose: () => void,
+  isOpenProp: boolean,
+  userProp: IUser,
+  isOwnProfileProp: boolean,
+  isGroupProfileProp: boolean,
+  currentUserIdProp: number,
+  onCloseProp: () => void,
   customServices: Partial<ProfileServices> = {},
   onStartChatProp?: (userId: number) => void,
   onCallUserProp?: (user: any) => void,
-  initialTab: RightContainerType = 'stories'
+  initialTabProp: RightContainerType = 'stories'
 ) {
-  const effectiveUserId = currentUserId || (userSession as any)?.UserId || (userSession as any)?.userId || user?.id || 0;
+  // 🟢 Синхронизация с navigationStore: защита от некорректных пропсов
+  const navProfileUser = useNavigationStore((s) => s.profileUser);
+  const navIsOwnProfile = useNavigationStore((s) => s.isOwnProfile);
+  const navIsGroupProfile = useNavigationStore((s) => s.isGroupProfile);
+  const navIsOpen = useNavigationStore((s) => s.isProfileOpen);
+  const navInitialTab = useNavigationStore((s) => s.profileInitialTab);
+  const navCloseProfile = useNavigationStore((s) => s.closeProfile);
+
+  const effectiveUserId =
+    currentUserIdProp ||
+    Number((userSession as any)?.UserId || (userSession as any)?.userId || 0);
+
+  const isOpen = navIsOpen ?? isOpenProp;
+  const isGroupProfile = navIsGroupProfile ?? isGroupProfileProp;
+
+  // Если в store сказано isOwnProfile: false — верим стору!
+  const rawIsOwnProfile = navIsOwnProfile !== undefined ? navIsOwnProfile : isOwnProfileProp;
+
+  // Разрешаем целевого юзера
+  const candidateUser = (!rawIsOwnProfile && navProfileUser) ? navProfileUser : (userProp || navProfileUser);
+
+  // Профиль является своим ТОЛЬКО если совпадает ID
+  const isOwnProfile = Boolean(
+    rawIsOwnProfile &&
+    candidateUser?.id &&
+    effectiveUserId &&
+    Number(candidateUser.id) === Number(effectiveUserId)
+  );
+
+  const user = candidateUser;
+  const initialTab = navInitialTab || initialTabProp;
+  const onClose = () => {
+    navCloseProfile();
+    onCloseProp?.();
+  };
 
   const services: ProfileServices = {
     getUserProfile: customServices.getUserProfile || ((id) => (userService as any)?.getUserProfileAsync?.(id) || Promise.resolve(null)),
@@ -314,7 +349,7 @@ export function useProfileView(
         setIsObservedUserBlocked(blocks.blockedByMe);
       }
     } catch (e) {
-      console.error(e);
+      console.error('[useProfileView] Load profile error:', e);
     }
   }, []);
 
@@ -351,11 +386,10 @@ export function useProfileView(
         setBlackListCount(bans.length);
       }
     } catch (e) {
-      console.error(e);
+      console.error('[useProfileView] Load group error:', e);
     }
   }, []);
 
-  // 🟢 1:1 WPF: Активные истории своего профиля подписываются на myStories из useStoriesStore
   useEffect(() => {
     if (isOwnProfile) {
       setActiveStories(useStoriesStore.getState().myStories);
@@ -376,6 +410,16 @@ export function useProfileView(
     const isJustOpened = !prevIsOpenRef.current;
     const isDifferentUser = prevUserIdRef.current !== user?.id;
 
+    console.log('%c[PROFILE_DEBUG] useProfileView эффект сработал:', 'color: #d946ef; font-weight: bold;', {
+      isOpen,
+      isOwnProfile,
+      isGroupProfile,
+      userId: user?.id,
+      userNick: user?.nickName,
+      isJustOpened,
+      isDifferentUser,
+    });
+
     prevIsOpenRef.current = true;
     prevUserIdRef.current = user?.id ?? null;
 
@@ -386,6 +430,7 @@ export function useProfileView(
       setIsExpanded(isOwnProfile);
 
       if (isOwnProfile) {
+        console.warn('[PROFILE_DEBUG] useProfileView -> Ветка СВОЕГО профиля (Stories / Edit / Settings)');
         const targetTab = initialTab || 'stories';
         setActiveRightContainer(targetTab);
         if (targetTab === 'stories') {
@@ -394,14 +439,16 @@ export function useProfileView(
           setCurrentSettingsSubPanel('main');
         }
       } else if (isGroupProfile) {
+        console.log('[PROFILE_DEBUG] useProfileView -> Ветка ГРУППЫ');
         setActiveRightContainer(null);
         if (user?.id) void loadGroupDetails(user.id);
       } else {
+        console.log('[PROFILE_DEBUG] useProfileView -> Ветка ЧУЖОГО профиля (loadOtherUserProfile)');
         setActiveRightContainer(null);
         if (user?.id) void loadOtherUserProfile(user.id);
       }
     }
-  }, [isOpen, user, isOwnProfile, isGroupProfile, loadOwnProfileData, loadOtherUserProfile, loadGroupDetails]);
+  }, [isOpen, user, isOwnProfile, isGroupProfile, loadOwnProfileData, loadOtherUserProfile, loadGroupDetails, initialTab]);
 
   useEffect(() => {
     const unbindUser = eventBus.on('UserProfileUpdatedMessage', ({ user: updatedUser }) => {

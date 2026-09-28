@@ -14,7 +14,7 @@ import {
 } from '../types/models';
 import { AttachmentDto, ChunkUploadStatusDto } from '../types/dtos';
 import { AttachmentType } from '../types/enums';
-
+import { mediaDimensionsCache } from '../utils/mediaDimensionsCache';
 const CHUNK_SIZE = 512 * 1024;
 const LINK_REGEX = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)|(\/[a-zA-Z0-9_\-]{3,})/i;
 
@@ -154,6 +154,7 @@ export class ChatService implements IChatService {
     return finalAttachment;
   }
 
+  // 🟢 ДЕЛЬТА-СИНХРОНИЗАЦИЯ С ЗАЩИТОЙ ОТ ДУБЛИРОВАНИЯ
   public async syncDeltaAsync(userId: number): Promise<number> {
     try {
       const db = getLocalDatabase(userId);
@@ -200,27 +201,60 @@ export class ChatService implements IChatService {
         }
 
         const isMy = msg.senderId === userId;
-        const existing = await db.messages.where('serverId').equals(serverId).first();
 
-        const formattedAttachments: IAttachment[] = (msg.attachments || []).map((a: any, idx: number) => ({
-          id: idx + 1,
-          messageId: existing?.id || 0,
-          type: a.type as AttachmentType,
-          fileName: a.fileName,
-          fileSizeStr: a.fileSizeStr,
-          fileSizeBytes: a.fileSizeBytes || 0,
-          url: UrlHelper.normalize(a.url, BASE_SERVER_URL),
-          thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, BASE_SERVER_URL),
-          fileHash: a.fileHash,
-          hasAudio: a.hasAudio,
-          width: a.width,
-          height: a.height,
-          durationSeconds: a.durationSeconds,
-          waveform: a.waveform,
-        }));
+        // 🟢 Ищем существующее сообщение по serverId
+        let existing = await db.messages.where('serverId').equals(serverId).first();
+
+        // 🟢 ЕСЛИ НЕ НАЙДЕНО ПО SERVER_ID — ИЩЕМ ОПТИМИСТИЧНОЕ СООБЩЕНИЕ (serverId = 0) С ТЕМ ЖЕ ТЕКСТОМ И ВРЕМЕНЕМ
+        if (!existing && isMy) {
+          const msgTime = new Date(msg.timestamp).getTime();
+          existing = await db.messages
+            .filter(
+              (m) =>
+                (!m.serverId || m.serverId === 0 || !m.isSentToServer) &&
+                m.senderId === userId &&
+                m.text === msg.text &&
+                Math.abs(new Date(m.timestamp).getTime() - msgTime) < 15000
+            )
+            .first();
+        }
+
+        const formattedAttachments: IAttachment[] = (msg.attachments || []).map((a: any, idx: number) => {
+  const existingAtt = existing?.attachments?.[idx];
+  const cached = mediaDimensionsCache.get(a.url) || mediaDimensionsCache.get(a.fileName);
+
+  // 🟢 Если сервер прислал 0, но клиент уже замерил картинку — сохраняем реальные пиксели!
+  const resolvedWidth = a.width > 0 ? a.width : (existingAtt?.width && existingAtt.width > 0 ? existingAtt.width : (cached?.width || 0));
+  const resolvedHeight = a.height > 0 ? a.height : (existingAtt?.height && existingAtt.height > 0 ? existingAtt.height : (cached?.height || 0));
+
+  if (resolvedWidth > 0 && resolvedHeight > 0) {
+    mediaDimensionsCache.set(a.url, { width: resolvedWidth, height: resolvedHeight });
+    mediaDimensionsCache.set(a.fileName, { width: resolvedWidth, height: resolvedHeight });
+  }
+
+  return {
+    id: idx + 1,
+    messageId: existing?.id || 0,
+    type: a.type as AttachmentType,
+    fileName: a.fileName,
+    fileSizeStr: a.fileSizeStr,
+    fileSizeBytes: a.fileSizeBytes || 0,
+    url: UrlHelper.normalize(a.url, BASE_SERVER_URL),
+    thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, BASE_SERVER_URL),
+    fileHash: a.fileHash,
+    hasAudio: a.hasAudio,
+    width: resolvedWidth,
+    height: resolvedHeight,
+    durationSeconds: a.durationSeconds,
+    waveform: a.waveform,
+  };
+});
 
         if (existing && existing.id) {
+          // Обновляем найденную оптимистичную запись, проставляя serverId (БЕЗ ДУБЛИРОВАНИЯ)
           await (db.messages.update as any)(existing.id, {
+            serverId,
+            isSentToServer: true,
             text: msg.text,
             isPinned: msg.isPinned,
             isRead: msg.isRead,
@@ -438,7 +472,6 @@ export class ChatService implements IChatService {
     }
   }
 
-  // 🟢 ПОИСК СООБЩЕНИЙ ЧЕРЕЗ API С ОТСЕЧЕНИЕМ СЛУЖЕБНЫХ ЗВОНКОВ
   public async searchMessagesAsync(query: string, groupId?: number | null, otherUserId?: number | null): Promise<IMessage[]> {
     if (!query || query.trim().length === 0) return [];
 
@@ -482,7 +515,6 @@ export class ChatService implements IChatService {
             durationSeconds: a.durationSeconds,
           })),
         }))
-        // 🟢 ИСКЛЮЧАЕМ ЗВОНКИ ИЗ РЕЗУЛЬТАТОВ ПОИСКА
         .filter((m) => !MessageHelper.isCallMessage(m));
     } catch (ex) {
       console.error('[ChatService ERROR] Ошибка FTS поиска:', ex);
@@ -519,6 +551,7 @@ export class ChatService implements IChatService {
     }
   }
 
+  // 🟢 1 В 1 С WPF ChatService.cs: ДЕДУПЛИКАЦИЯ СООБЩЕНИЙ (.GroupBy(m => m.ServerId > 0 ? m.ServerId : m.Id))
   public async getLocalMessagesAsync(
     currentUserId: number,
     targetUserId?: number | null,
@@ -556,10 +589,29 @@ export class ChatService implements IChatService {
       list = list.filter((m) => new Date(m.timestamp).getTime() < beforeTime);
     }
 
-    return list
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, take)
-      .reverse();
+    // Сортируем от новых к старым
+    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    // 🟢 1 в 1 с WPF: устраняем дублирование между оптимистичной записью и записью сервера
+    const seenServerIds = new Set<number>();
+    const seenContentKeys = new Set<string>();
+    const deduplicated: IMessage[] = [];
+
+    for (const m of list) {
+      if (m.serverId && m.serverId > 0) {
+        if (seenServerIds.has(m.serverId)) continue;
+        seenServerIds.add(m.serverId);
+      }
+
+      // Ключ: отправитель + текст + округленное время (окно 4 секунды)
+      const contentKey = `${m.senderId}_${m.text || ''}_${Math.floor(new Date(m.timestamp).getTime() / 4000)}`;
+      if (seenContentKeys.has(contentKey)) continue;
+      seenContentKeys.add(contentKey);
+
+      deduplicated.push(m);
+    }
+
+    return deduplicated.slice(0, take).reverse();
   }
 
   public async getLocalPinnedMessagesAsync(
@@ -602,7 +654,6 @@ export class ChatService implements IChatService {
     return msg || null;
   }
 
-  // 🟢 ЛОКАЛЬНЫЙ ПОИСК С ОТСЕЧЕНИЕМ СЛУЖЕБНЫХ СООБЩЕНИЙ ЗВОНКОВ
   public async searchLocalMessagesAsync(
     query: string,
     currentUserId: number,
@@ -616,7 +667,6 @@ export class ChatService implements IChatService {
     const result = await db.messages
       .filter((m) => {
         if (!m.text || !m.text.toLowerCase().includes(lower)) return false;
-        // 🟢 ИСКЛЮЧАЕМ ЗВОНКИ
         if (MessageHelper.isCallMessage(m)) return false;
 
         if (groupId && groupId > 0) return m.groupId === groupId;
@@ -649,8 +699,12 @@ export class ChatService implements IChatService {
 
   public async saveMessageLocallyAsync(message: IMessage): Promise<void> {
     const db = getLocalDatabase(userSession.userId);
-    const id = await db.messages.add(message);
-    message.id = id;
+    if (message.id && message.id > 0) {
+      await db.messages.put(message);
+    } else {
+      const id = await db.messages.add(message);
+      message.id = id;
+    }
   }
 
   public async updateMessageLocallyAsync(
@@ -741,11 +795,24 @@ export class ChatService implements IChatService {
     }
   }
 
+  // 🟢 ОБНОВЛЕНИЕ СТАТУСА ОТПРАВКИ СООБЩЕНИЯ В ЛОКАЛЬНОЙ БАЗЕ
   public async markAsSentAsync(localId: number, serverId: number, _videoUrl?: string | null, text?: string | null): Promise<void> {
     const db = getLocalDatabase(userSession.userId);
     const updates: Partial<IMessage> = { serverId, isSentToServer: true };
     if (text) updates.text = text;
-    await db.messages.update(localId, updates);
+
+    if (localId > 0) {
+      try {
+        await db.messages.update(localId, updates);
+      } catch {}
+    }
+
+    if (text) {
+      const match = await db.messages.filter((m) => (!m.serverId || m.serverId === 0) && m.text === text).first();
+      if (match && match.id) {
+        await db.messages.update(match.id, updates);
+      }
+    }
   }
 
   public async getSharedMediaMessagesAsync(currentUserId: number, targetUserId: number): Promise<IMessage[]> {

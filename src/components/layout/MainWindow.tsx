@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NavigationRail } from './NavigationRail';
 import { SidebarChatsView } from '../sidebar/SidebarChatsView';
 import { ChatWorkspaceView } from '../chat/ChatWorkspaceView';
-import { MessageInputUserControl } from '../chat/MessageInputUserControl';
 import { ProfileView } from '../profile/ProfileView';
 import { PhotoViewerView } from '../media/PhotoViewerView';
 import { VideoViewerView } from '../media/VideoViewerView';
@@ -15,12 +14,11 @@ import { useChatStore } from '../../stores/chatStore';
 import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
 import { authService } from '../../services/auth.service';
 import { userService } from '../../services/user.service';
-import { chatService } from '../../services/chat.service';
+import { userSession } from '../../services/userSession';
 import { eventBus } from '../../services/eventBus';
 import { MainTab } from '../../types/enums';
 import { IAttachment } from '../../types/models';
 
-// Константы из MainWindow.xaml.cs
 const SPLITTER_WIDTH = 6;
 const MIN_EXPANDED_WIDTH = 180;
 const NAV_COLUMN_WIDTH = 66;
@@ -28,9 +26,19 @@ const MIN_CHAT_WORKSPACE_WIDTH = 430;
 const CHAT_PROPORTIONAL_THRESHOLD = 625;
 
 export const MainWindow: React.FC = () => {
-  const { currentTab, isProfileOpen, closeProfile } = useNavigationStore();
+  const {
+    currentTab,
+    isProfileOpen,
+    closeProfile,
+    profileUser,
+    isOwnProfile,
+    isGroupProfile,
+    profileInitialTab,
+    openUserProfile,
+    openGroupProfile,
+  } = useNavigationStore();
+
   const { currentUser, checkAuth } = useAuthStore();
-  const { selectedChatUser } = useChatStore();
   const { loadChats } = useSidebarChatsStore();
 
   // Состояние сплиттера
@@ -50,7 +58,6 @@ export const MainWindow: React.FC = () => {
     url: '',
   });
 
-  // 1. Инициализация входа в приложение
   useEffect(() => {
     checkAuth(authService, userService).then((isAuth) => {
       if (isAuth) {
@@ -59,7 +66,6 @@ export const MainWindow: React.FC = () => {
     });
   }, [checkAuth, loadChats]);
 
-  // 2. Регистрация глобальных сообщений EventBus (аналог WeakReferenceMessenger в MainWindow)
   useEffect(() => {
     const unbindPhoto = eventBus.on('OpenPhotoViewerMessage' as any, (data: any) => {
       if (data?.mediaList) {
@@ -78,13 +84,28 @@ export const MainWindow: React.FC = () => {
       }
     });
 
+    const unbindUserProfile = eventBus.on('OpenUserProfileRequestMessage' as any, (data: any) => {
+      const targetId = Number(data?.userId ?? data?.id ?? data);
+      if (targetId > 0) {
+        void openUserProfile(targetId);
+      }
+    });
+
+    const unbindGroupProfile = eventBus.on('OpenGroupProfileRequestMessage' as any, (data: any) => {
+      const group = data?.group || data?.selectedChatUser || data;
+      if (group) {
+        void openGroupProfile(group);
+      }
+    });
+
     return () => {
       unbindPhoto();
       unbindVideo();
+      unbindUserProfile();
+      unbindGroupProfile();
     };
-  }, []);
+  }, [openUserProfile, openGroupProfile]);
 
-  // 3. Автоматический расчет пропорций окна (Window_SizeChanged из C#)
   const handleWindowResize = useCallback(() => {
     if (isDraggingSplitter.current) return;
 
@@ -118,7 +139,6 @@ export const MainWindow: React.FC = () => {
     return () => window.removeEventListener('resize', handleWindowResize);
   }, [handleWindowResize]);
 
-  // 4. Перетаскивание сплиттера мышью (MainSplitter_DragDelta / MainSplitter_DragCompleted)
   const handleSplitterMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingSplitter.current = true;
@@ -138,7 +158,7 @@ export const MainWindow: React.FC = () => {
       }
     };
 
-    const handleMouseUp = (upEvent: MouseEvent) => {
+    const handleMouseUp = () => {
       isDraggingSplitter.current = false;
       const finalWidth = sidebarWidth;
 
@@ -157,7 +177,6 @@ export const MainWindow: React.FC = () => {
     window.addEventListener('mouseup', handleMouseUp);
   };
 
-  // Двойной клик по сплиттеру (MainSplitter_MouseDoubleClick)
   const handleSplitterDoubleClick = () => {
     if (isSidebarCollapsed) {
       setIsSidebarCollapsed(false);
@@ -168,10 +187,14 @@ export const MainWindow: React.FC = () => {
     }
   };
 
-  // Экран авторизации (LoginTransition)
   if (!currentUser) {
     return <LoginView />;
   }
+
+  // Защита от утечки текущего пользователя в карточку чужого профиля
+  const activeProfileUserData = isOwnProfile
+    ? (profileUser || currentUser)
+    : (profileUser || { id: 0, nickName: 'User' });
 
   return (
     <div
@@ -185,10 +208,8 @@ export const MainWindow: React.FC = () => {
         fontFamily: 'Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif',
       }}
     >
-      {/* КОЛОНКА 1: НАВИГАЦИОННАЯ ПАНЕЛЬ (66px) */}
       <NavigationRail />
 
-      {/* КОЛОНКА 2: САЙДБАР С КОНТЕНТОМ */}
       <div
         style={{
           width: isSidebarCollapsed ? 0 : sidebarWidth,
@@ -229,7 +250,6 @@ export const MainWindow: React.FC = () => {
         )}
       </div>
 
-      {/* СПЛИТТЕР (MainSplitter) */}
       <div
         onMouseDown={handleSplitterMouseDown}
         onDoubleClick={handleSplitterDoubleClick}
@@ -244,7 +264,6 @@ export const MainWindow: React.FC = () => {
           zIndex: 40,
         }}
       >
-        {/* Индикатор линии при наведении */}
         <div
           style={{
             position: 'absolute',
@@ -259,7 +278,6 @@ export const MainWindow: React.FC = () => {
         />
       </div>
 
-      {/* КОЛОНКА 3: РАБОЧАЯ ОБЛАСТЬ ЧАТА ИЛИ ДРУГИХ ВКЛАДОК */}
       <div
         style={{
           flex: 1,
@@ -283,18 +301,26 @@ export const MainWindow: React.FC = () => {
         )}
       </div>
 
-      {/* ================= ОВЕРЛЕИ И ДИАЛОГИ ================= */}
-      {/* 1. Карточка профиля */}
+      {/* КАРТОЧКА ПРОФИЛЯ */}
       {isProfileOpen && (
         <ProfileView
           isOpen={isProfileOpen}
-          user={currentUser}
-          isOwnProfile={true}
+          user={activeProfileUserData}
+          isOwnProfile={isOwnProfile}
+          isGroupProfile={isGroupProfile}
+          currentUserId={Number(currentUser?.id || userSession.userId || 0)}
+          initialTab={profileInitialTab || 'stories'}
           onClose={closeProfile}
+          onStartChat={(targetUserId) => {
+            closeProfile();
+            eventBus.emit('OpenChatRequestMessage' as any, { userId: targetUserId });
+          }}
+          onCallUser={(userToCall) => {
+            eventBus.emit('StartCallMessage' as any, { user: userToCall });
+          }}
         />
       )}
 
-      {/* 2. Просмотрщик фото */}
       <PhotoViewerView
         isOpen={photoViewer.isOpen}
         mediaList={photoViewer.list}
@@ -302,7 +328,6 @@ export const MainWindow: React.FC = () => {
         onClose={() => setPhotoViewer((prev) => ({ ...prev, isOpen: false }))}
       />
 
-      {/* 3. Просмотрщик видео */}
       <VideoViewerView
         isOpen={videoViewer.isOpen}
         videoUrl={videoViewer.url}
@@ -311,7 +336,6 @@ export const MainWindow: React.FC = () => {
         onClose={() => setVideoViewer((prev) => ({ ...prev, isOpen: false }))}
       />
 
-      {/* 4. Модалка звонка */}
       <CallModal />
     </div>
   );

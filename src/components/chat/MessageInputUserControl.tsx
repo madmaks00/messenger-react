@@ -13,7 +13,7 @@ import {
   mdiSend,
   mdiCheck,
 } from '@mdi/js';
-
+import { mediaDimensionsCache } from '../../utils/mediaDimensionsCache';
 import { useMessageInputStore } from '../../stores/messageInputStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useEmojiStore } from '../../stores/emojiStore';
@@ -134,10 +134,34 @@ export const MessageInputUserControl: React.FC = () => {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      addPendingAttachments(Array.from(e.target.files));
+      const fileList = Array.from(e.target.files);
       e.target.value = '';
+
+      for (const file of fileList) {
+        if (file.type.startsWith('image/')) {
+          await new Promise<void>((resolve) => {
+            const img = new Image();
+            const objectUrl = URL.createObjectURL(file);
+            img.onload = () => {
+              (file as any).width = img.naturalWidth;
+              (file as any).height = img.naturalHeight;
+              
+              // 🟢 Сохраняем в синглтон-кэш и НЕ вызываем revokeObjectURL преждевременно
+              mediaDimensionsCache.set(file.name, { width: img.naturalWidth, height: img.naturalHeight });
+              mediaDimensionsCache.set(objectUrl, { width: img.naturalWidth, height: img.naturalHeight });
+              resolve();
+            };
+            img.onerror = () => {
+              resolve();
+            };
+            img.src = objectUrl;
+          });
+        }
+      }
+
+      addPendingAttachments(fileList);
     }
   };
 

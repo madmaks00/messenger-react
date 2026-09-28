@@ -7,7 +7,8 @@ import {
   MessageHelper,
 } from '../types/models';
 import { LastMessageType } from '../types/enums';
-import { apiClient } from '../services/apiClient';
+import { apiClient, BASE_SERVER_URL } from '../services/apiClient';
+import { UrlHelper } from '../utils/helpers';
 import { chatService } from '../services/chat.service';
 import { signalRService } from '../services/signalr.service';
 import { secretChatCrypto } from '../services/secretChatCrypto.service';
@@ -15,6 +16,9 @@ import { userSession } from '../services/userSession';
 import { eventBus } from '../services/eventBus';
 import { useSidebarChatsStore } from './sidebarChatsStore';
 import { useMessageInputStore } from './messageInputStore';
+import { mediaCacheService } from '../services/mediaCache.service';
+import { mediaDimensionsCache } from '../utils/mediaDimensionsCache';
+import { getLocalDatabase } from '../db/localDb';
 
 interface ChatState {
   selectedChatUser: IUserSearchResult | null;
@@ -72,6 +76,7 @@ interface ChatState {
   sendTyping: (text?: string) => void;
   syncPermissionsWithInput: () => void;
   triggerDeltaSync: () => Promise<void>;
+  updateAttachmentDimensions: (messageId: number, width: number, height: number) => void;
 }
 
 const alreadyTrackedPostIds = new Set<number>();
@@ -155,7 +160,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isSelectionMode: false,
   selectedCount: 0,
 
-  // 🟢 1 в 1 с ChatViewModel.cs: EnsureMyProfileLoadedAsync()
   ensureMyProfileLoadedAsync: async () => {
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
@@ -168,7 +172,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     try {
-      const res = await apiClient.get<any>(`api/Users/${currentUserId}`).catch(() => apiClient.get<any>(`api/User/${currentUserId}`));
+      const res = await apiClient
+        .get<any>(`api/Users/${currentUserId}`)
+        .catch(() => apiClient.get<any>(`api/User/${currentUserId}`));
       if (res && res.data) {
         const u = res.data;
         const freshName = u.nickName || u.username || localName || 'User';
@@ -252,9 +258,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const groupId = target.isGroup ? Number(target.id ?? (target as any).groupId ?? 0) : null;
     const targetId = target.isGroup ? (groupId ?? 0) : (targetUserId ?? 0);
 
-    const existingSidebarChat = useSidebarChatsStore.getState().allChats.find((c) =>
-      !c.isGroup && Number(c.userId || c.id) === targetId
-    );
+    const existingSidebarChat = useSidebarChatsStore
+      .getState()
+      .allChats.find((c) => !c.isGroup && Number(c.userId || c.id) === targetId);
 
     const isOnlineInitial = existingSidebarChat ? existingSidebarChat.isOnline : Boolean(target.isOnline);
     const lastSeenInitial = existingSidebarChat
@@ -464,74 +470,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       typingDebounceTimer = null;
     }
 
-    if (isSecret) {
-      const secretChatId = selectedChatUser.secretChatId!;
-      const replySender = replies[0]?.senderName || null;
-      const replyText = replies[0]?.text || null;
-
-      const payload = {
-        text,
-        replySender,
-        replyText,
-        attachments: attachments.map((a) => ({
-          type: a.type,
-          fileName: a.fileName,
-          fileSizeStr: a.fileSizeStr,
-          url: a.url,
-          thumbnailUrl: a.thumbnailUrl,
-          fileHash: a.fileHash,
-          hasAudio: a.hasAudio,
-          width: a.width || 0,
-          height: a.height || 0,
-          durationSeconds: a.durationSeconds || 0,
-        })),
+    // Сохраняем исходные вложения с уже известными размерами
+    const initialAttachments: IAttachment[] = (attachments || []).map((a) => {
+      const cached = mediaDimensionsCache.get(a.url) || mediaDimensionsCache.get(a.fileName);
+      return {
+        ...a,
+        width: a.width > 0 ? a.width : (cached?.width || 0),
+        height: a.height > 0 ? a.height : (cached?.height || 0),
       };
-
-      const encrypted = await secretChatCrypto.encryptText(secretChatId, JSON.stringify(payload));
-
-      const newSecretMsg: IMessage = {
-        id: localTempId,
-        serverId: 0,
-        senderId: currentUserId,
-        receiverId: selectedChatUser.id,
-        secretChatId,
-        senderName: currentUserName,
-        senderAvatar: currentUserAvatar,
-        text,
-        timestamp: new Date().toISOString(),
-        isMyMessage: true,
-        isSentToServer: true,
-        isRead: false,
-        isDeleted: false,
-        isDeletedForMe: false,
-        isPinned: false,
-        viewsCount: 1,
-        replyToMessageIds: replyText ? `sec::${replySender}::${replyText}` : null,
-        attachments,
-      };
-
-      await chatService.saveMessageLocallyAsync(newSecretMsg);
-      set((state) => ({ currentChatMessages: [...state.currentChatMessages, newSecretMsg] }));
-
-      useSidebarChatsStore.getState().updateSidebar(
-        selectedChatUser.id,
-        null,
-        text || 'Вложение',
-        false,
-        LastMessageType.Text,
-        secretChatId
-      );
-
-      await signalRService.sendSecretMessageAsync(
-        selectedChatUser.id,
-        secretChatId,
-        encrypted.ciphertextBase64,
-        encrypted.nonceBase64,
-        encrypted.tagBase64,
-        encrypted.sequenceNumber
-      );
-      return;
-    }
+    });
 
     const replyIds = replies.map((r) => r.serverId || r.id).filter(Boolean).join(',');
 
@@ -553,10 +500,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isPinned: false,
       replyToMessageIds: replyIds || null,
       viewsCount: 1,
-      attachments,
+      attachments: initialAttachments,
       repliedMessages: replies,
     };
 
+    // 🟢 1. Мгновенно отображаем сообщение в интерфейсе (оптимистичный вывод)
     set((state) => ({ currentChatMessages: [...state.currentChatMessages, newMsg] }));
 
     try {
@@ -568,51 +516,117 @@ export const useChatStore = create<ChatState>((set, get) => ({
     useSidebarChatsStore.getState().updateSidebar(
       newMsg.receiverId,
       newMsg.groupId,
-      text || (attachments.length > 0 ? 'Вложение' : ''),
+      text || (initialAttachments.length > 0 ? 'Вложение' : ''),
       false,
       LastMessageType.Text
     );
 
-    const attachmentDtos = (attachments || []).map((a) => ({
-      type: a.type,
-      fileName: a.fileName,
-      fileSizeStr: a.fileSizeStr,
-      url: a.url,
-      thumbnailUrl: a.thumbnailUrl,
-      fileHash: a.fileHash,
-      hasAudio: Boolean(a.hasAudio),
-      width: a.width || 0,
-      height: a.height || 0,
-      durationSeconds: a.durationSeconds || 0,
-    }));
+    // 🟢 2. Фоновая чанковая загрузка на сервер и сохранение в постоянный CacheStorage
+    (async () => {
+      try {
+        let finalAttachments = [...initialAttachments];
+        const filesToUpload: File[] = [];
+        const fileIndices: number[] = [];
 
-    try {
-      const realId = await signalRService.sendMessageAsync(
-        newMsg.receiverId ?? null,
-        newMsg.groupId ?? null,
-        null,
-        text,
-        replyIds || null,
-        null,
-        null,
-        null,
-        attachmentDtos.length > 0 ? (attachmentDtos as any) : null
-      );
+        initialAttachments.forEach((att, idx) => {
+          if (att.rawFile) {
+            filesToUpload.push(att.rawFile);
+            fileIndices.push(idx);
+          }
+        });
 
-      if (realId && realId > 0) {
+        if (filesToUpload.length > 0) {
+          const uploadedResults = await chatService.uploadAttachmentsAsync(filesToUpload);
+
+          if (uploadedResults && uploadedResults.length > 0) {
+            uploadedResults.forEach((upDto, i) => {
+              const targetIdx = fileIndices[i];
+              if (targetIdx !== undefined && finalAttachments[targetIdx]) {
+                const targetAtt = finalAttachments[targetIdx];
+                const rawFile = targetAtt.rawFile;
+
+                // 🟢 Формируем полный постоянный URL бэкенда (порт 7214)
+                const fullServerUrl = UrlHelper.normalize(upDto.url, BASE_SERVER_URL);
+                const fullThumbUrl = upDto.thumbnailUrl
+                  ? UrlHelper.normalize(upDto.thumbnailUrl, BASE_SERVER_URL)
+                  : fullServerUrl;
+
+                // Сохраняем файл в дисковый CacheStorage браузера
+                if (rawFile) {
+                  mediaCacheService.cacheMediaFile(fullServerUrl, rawFile);
+                }
+
+                targetAtt.url = fullServerUrl;
+                targetAtt.thumbnailUrl = fullThumbUrl;
+                targetAtt.fileHash = upDto.fileHash;
+                if (upDto.width > 0) targetAtt.width = upDto.width;
+                if (upDto.height > 0) targetAtt.height = upDto.height;
+
+                mediaDimensionsCache.set(fullServerUrl, { width: targetAtt.width, height: targetAtt.height });
+                mediaDimensionsCache.set(upDto.fileName, { width: targetAtt.width, height: targetAtt.height });
+              }
+            });
+          }
+        }
+
+        const uploadedDtos = finalAttachments.map((a) => {
+          const cached = mediaDimensionsCache.get(a.url) || mediaDimensionsCache.get(a.fileName);
+          const w = a.width > 0 ? a.width : (cached?.width || 0);
+          const h = a.height > 0 ? a.height : (cached?.height || 0);
+
+          return {
+            type: a.type,
+            fileName: a.fileName,
+            fileSizeStr: a.fileSizeStr,
+            url: a.url,
+            thumbnailUrl: a.thumbnailUrl || a.url,
+            fileHash: a.fileHash,
+            hasAudio: Boolean(a.hasAudio),
+            width: w,
+            height: h,
+            durationSeconds: a.durationSeconds || 0,
+          };
+        });
+
         set((state) => ({
           currentChatMessages: state.currentChatMessages.map((m) =>
-            m.id === localTempId || (m.serverId === 0 && m.timestamp === newMsg.timestamp && m.text === newMsg.text)
-              ? { ...m, serverId: realId, isSentToServer: true }
-              : m
+            m.id === localTempId ? { ...m, attachments: finalAttachments } : m
           ),
         }));
 
-        await chatService.markAsSentAsync(newMsg.id, realId, undefined, text);
+        try {
+          const db = getLocalDatabase(userSession.userId);
+          const localRecord = await db.messages.filter((m) => m.id === localTempId).first();
+          if (localRecord?.id) {
+            await db.messages.update(localRecord.id, { attachments: finalAttachments });
+          }
+        } catch {}
+
+        const realId = await signalRService.sendMessageAsync(
+          newMsg.receiverId ?? null,
+          newMsg.groupId ?? null,
+          null,
+          text,
+          replyIds || null,
+          null,
+          null,
+          null,
+          uploadedDtos.length > 0 ? (uploadedDtos as any) : null
+        );
+
+        if (realId && realId > 0) {
+          set((state) => ({
+            currentChatMessages: state.currentChatMessages.map((m) =>
+              m.id === localTempId ? { ...m, serverId: realId, isSentToServer: true } : m
+            ),
+          }));
+
+          await chatService.markAsSentAsync(localTempId, realId, undefined, text);
+        }
+      } catch (err) {
+        console.error('[ChatStore ERROR] Ошибка фоновой загрузки и отправки:', err);
       }
-    } catch (err) {
-      console.error('[ChatStore ERROR] Ошибка отправки сообщения:', err);
-    }
+    })();
   },
 
   editMessage: async (localId, serverId, text) => {
@@ -720,7 +734,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     eventBus.emit('EndSearchBoxMessage', undefined);
   },
 
-  // 🟢 1 в 1 с ChatViewModel.cs: OnChatSearchTextChanged(string value)
   onChatSearchTextChanged: (query: string) => {
     if (chatSearchDebounceTimer) {
       clearTimeout(chatSearchDebounceTimer);
@@ -750,10 +763,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
         const otherUserId = !selectedChatUser.isGroup ? selectedChatUser.id : null;
 
-        // 1. Полнотекстовый поиск по API
         let serverResults = await chatService.searchMessagesAsync(searchVal, groupId, otherUserId);
 
-        // 2. Фолбэк на локальную базу данных
         let results: IMessage[] = [];
         if (serverResults && serverResults.length > 0) {
           results = serverResults;
@@ -767,10 +778,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           );
         }
 
-        // 🟢 КРИТИЧЕСКИЙ ФИЛЬТР: ИСКЛЮЧАЕМ СЛУЖЕБНЫЕ ЛОГИ ЗВОНКОВ (_CALL:...) ИЗ ПОИСКА
         results = results.filter((msg) => !msg.isCallMessage && !MessageHelper.isCallMessage(msg));
 
-        // 🟢 ДЕДУПЛИКАЦИЯ
         const seen = new Set<string>();
         const uniqueResults: IMessage[] = [];
 
@@ -782,7 +791,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        // 🟢 3. ОБОГАЩЕНИЕ АВАТАРОК И ИМЕН (ВМЕСТО "Me" ВЫВОДИТСЯ РЕАЛЬНОЕ ИМЯ И АВАТАР)
         const myActualName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'You';
         const myActualAvatar = currentUserAvatar || resolveSessionUser().avatar;
 
@@ -805,7 +813,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }, 250);
   },
 
-  // 🟢 1 В 1 С WPF ChatViewModel.cs: JumpToSearchedMessage(Message targetMsg)
   jumpToSearchedMessage: async (targetMsg: IMessage) => {
     if (!targetMsg) return;
 
@@ -820,7 +827,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         (targetMsg.text && m.text === targetMsg.text && Math.abs(new Date(m.timestamp).getTime() - new Date(targetMsg.timestamp).getTime()) < 3000)
     );
 
-    // До 10 пачек диапазонной подгрузки истории (1 в 1 с C# for (short i = 0; i < 10; i++))
     if (!isLoaded) {
       for (let i = 0; i < 10; i++) {
         await get().loadOlderMessages();
@@ -834,7 +840,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
-    // Отправляем полный контекст сообщения для 100% попадания в лейаут
     setTimeout(() => {
       eventBus.emit('ScrollToMessageRequestMessage' as any, {
         messageId: targetId,
@@ -911,6 +916,57 @@ export const useChatStore = create<ChatState>((set, get) => ({
     unviewed.forEach((id) => alreadyTrackedPostIds.add(id));
     signalRService.trackPostViewsAsync(unviewed);
   },
+
+  updateAttachmentDimensions: (messageId: number, width: number, height: number) => {
+    if (width <= 0 || height <= 0) return;
+
+    set((state) => {
+      let modified = false;
+
+      const newMessages = state.currentChatMessages.map((m) => {
+        const currentId = Number(m.id || 0);
+        const currentServerId = Number(m.serverId || 0);
+        const isMatch = messageId > 0 && (currentId === messageId || currentServerId === messageId);
+
+        if (isMatch && m.attachments && m.attachments.length > 0) {
+          const att = m.attachments[0];
+
+          mediaDimensionsCache.set(att.url, { width, height });
+          mediaDimensionsCache.set(att.fileName, { width, height });
+
+          if (att.width !== width || att.height !== height) {
+            modified = true;
+            return {
+              ...m,
+              attachments: m.attachments.map((a, idx) =>
+                idx === 0 ? { ...a, width, height } : a
+              ),
+            };
+          }
+        }
+        return m;
+      });
+
+      if (!modified) return state;
+
+      const updatedTarget = newMessages.find((m) => {
+        const currentId = Number(m.id || 0);
+        const currentServerId = Number(m.serverId || 0);
+        return messageId > 0 && (currentId === messageId || currentServerId === messageId);
+      });
+
+      if (updatedTarget && updatedTarget.id) {
+        try {
+          const db = getLocalDatabase(userSession.userId);
+          db.messages.update(updatedTarget.id, {
+            attachments: updatedTarget.attachments,
+          }).catch(() => {});
+        } catch {}
+      }
+
+      return { currentChatMessages: newMessages };
+    });
+  },
 }));
 
 // ================= СЛУШАТЕЛИ EVENTBUS =================
@@ -962,7 +1018,7 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
   const activeId = Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? 0);
   const isCurrent = groupId
     ? selectedChatUser.isGroup && activeId === Number(groupId)
-    : !selectedChatUser.isGroup && activeId === Number(senderId);
+    : !selectedChatUser.isGroup && (activeId === Number(senderId) || activeId === Number(senderId));
 
   if (isCurrent) {
     useChatStore.setState({
@@ -1006,7 +1062,8 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   if (selectedChatUser && activeChatId > 0) {
     const isFromCurrentChat = incoming.groupId
       ? selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)
-      : !selectedChatUser.isGroup && activeChatId === Number(incoming.senderId);
+      : !selectedChatUser.isGroup &&
+        (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId));
 
     if (isFromCurrentChat) {
       if (activeChatTypingTimer) {
@@ -1019,33 +1076,58 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
     }
   }
 
+  const isChatOpen = Boolean(
+    selectedChatUser &&
+      activeChatId > 0 &&
+      ((incoming.groupId && selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)) ||
+        (!incoming.groupId &&
+          !selectedChatUser.isGroup &&
+          (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId))))
+  );
+
   if (isMy) {
-    useChatStore.setState((state) => ({
-      currentChatMessages: state.currentChatMessages.map((m) => {
+    let matched = false;
+
+    useChatStore.setState((state) => {
+      const updated = state.currentChatMessages.map((m) => {
         if (
           (incoming.serverId > 0 && m.serverId === incoming.serverId) ||
           (m.serverId === 0 && m.isMyMessage && (m.text === incoming.text || m.id === incoming.id))
         ) {
+          matched = true;
           return {
             ...m,
             serverId: incoming.serverId,
             isSentToServer: true,
-            isRead: incoming.isRead || m.isRead,
+            isRead: incoming.isRead, // 🟢 Берем честный статус от сервера, без принудительного true
           };
         }
         return m;
-      }),
-    }));
-  } else {
-    const isChatOpen = Boolean(
-      selectedChatUser &&
-        activeChatId > 0 &&
-        ((incoming.groupId && selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)) ||
-          (!incoming.groupId &&
-            !selectedChatUser.isGroup &&
-            (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId))))
-    );
+      });
 
+      if (!matched && isChatOpen) {
+        const alreadyExists = updated.some(
+          (m) =>
+            (incoming.serverId > 0 && m.serverId === incoming.serverId) ||
+            (incoming.id > 0 && m.id === incoming.id) ||
+            (m.text === incoming.text &&
+              Math.abs(new Date(m.timestamp).getTime() - new Date(incoming.timestamp).getTime()) < 2000)
+        );
+
+        if (!alreadyExists) {
+          return { currentChatMessages: [...updated, incoming] };
+        }
+      }
+
+      return { currentChatMessages: updated };
+    });
+
+    if (!matched) {
+      chatService.saveMessageLocallyAsync(incoming).catch((err) => {
+        console.warn('[ChatStore] Ошибка локального сохранения синхронизированного сообщения:', err);
+      });
+    }
+  } else {
     if (isChatOpen) {
       useChatStore.setState((state) => {
         const alreadyExists = state.currentChatMessages.some(
@@ -1071,16 +1153,19 @@ eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; m
     userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
   );
 
+  // 🟢 Отмечаем прочитанными только те исходящие сообщения, чей ID <= maxReadId (и строго maxReadId > 0)
   if (selectedChatUser && !selectedChatUser.isGroup && selectedChatUser.id === data.readerId) {
-    useChatStore.setState((state) => ({
-      currentChatMessages: state.currentChatMessages.map((msg) =>
-        msg.isMyMessage && !msg.isRead && (data.maxReadId <= 0 || (msg.serverId > 0 && msg.serverId <= data.maxReadId))
-          ? { ...msg, isRead: true }
-          : msg
-      ),
-    }));
+    if (data.maxReadId > 0) {
+      useChatStore.setState((state) => ({
+        currentChatMessages: state.currentChatMessages.map((msg) =>
+          msg.isMyMessage && !msg.isRead && msg.serverId > 0 && msg.serverId <= data.maxReadId
+            ? { ...msg, isRead: true }
+            : msg
+        ),
+      }));
 
-    await chatService.markMessagesAsReadLocallyAsync(currentUserId, data.readerId, data.maxReadId);
+      await chatService.markMessagesAsReadLocallyAsync(currentUserId, data.readerId, data.maxReadId);
+    }
   }
 });
 

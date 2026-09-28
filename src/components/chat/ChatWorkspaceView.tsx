@@ -98,7 +98,7 @@ export const ChatWorkspaceView: React.FC = () => {
   } = useChatStore();
 
   const { togglePinChat, toggleMuteChat, clearChatHistory, deleteChat, currentSidebarChat } = useSidebarChatsStore();
-  const { openProfile } = useNavigationStore();
+  const { openUserProfile, openGroupProfile } = useNavigationStore();
   const { setEditMessage, addReplyMessage } = useMessageInputStore();
 
   const [isPinnedPopupOpen, setIsPinnedPopupOpen] = useState(false);
@@ -118,6 +118,62 @@ export const ChatWorkspaceView: React.FC = () => {
   const prevLastMessageIdRef = useRef<number | null>(null);
   const prevChatIdRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef<number>(0);
+
+  const handleOpenCurrentChatProfile = useCallback(() => {
+    console.log('%c[PROFILE_DEBUG] Клик по шапке диалога (handleOpenCurrentChatProfile)', 'color: #3b82f6; font-size: 14px; font-weight: bold;', {
+      selectedChatUser,
+    });
+
+    if (!selectedChatUser) return;
+
+    const anyChat = selectedChatUser as any;
+    const targetGroupId = Number(
+      selectedChatUser.groupId ||
+      anyChat.GroupId ||
+      (selectedChatUser.isGroup ? selectedChatUser.id : 0) ||
+      0
+    );
+
+    const targetUserId = Number(
+      selectedChatUser.userId ||
+      anyChat.UserId ||
+      (!selectedChatUser.isGroup ? selectedChatUser.id : 0) ||
+      0
+    );
+
+    console.log('[PROFILE_DEBUG] Извлеченные ID из selectedChatUser:', {
+      targetGroupId,
+      targetUserId,
+      isGroup: selectedChatUser.isGroup,
+    });
+
+    if (selectedChatUser.isGroup && targetGroupId > 0) {
+      void openGroupProfile({
+        ...selectedChatUser,
+        id: targetGroupId,
+        groupId: targetGroupId,
+      });
+    } else if (!selectedChatUser.isGroup && targetUserId > 0) {
+      // 🟢 Spread ставим ПЕРВЫМ, чтобы не перетирать ключи (устраняет TS2783), и убираем лишний profileTab (устраняет TS2353)
+      useNavigationStore.setState({
+        isProfileOpen: true,
+        isOwnProfile: false,
+        isGroupProfile: false,
+        profileUser: {
+          ...selectedChatUser,
+          id: targetUserId,
+          nickName: selectedChatUser.nickName,
+          username: anyChat.username || selectedChatUser.nickName,
+          avatarPath: selectedChatUser.avatarPath || anyChat.avatar,
+          isOnline: selectedChatUser.isOnline,
+        } as any,
+      });
+
+      void (openUserProfile as any)(targetUserId, selectedChatUser);
+    } else {
+      console.error('[PROFILE_DEBUG] ❌ targetUserId равен 0! Нечего открывать:', selectedChatUser);
+    }
+  }, [selectedChatUser, openGroupProfile, openUserProfile]);
 
   useEffect(() => {
     const handleOutside = () => {
@@ -193,7 +249,6 @@ export const ChatWorkspaceView: React.FC = () => {
     return items.slice(firstIndex, lastIndex + 1);
   }, [layoutItems, scrollTop, viewportHeight]);
 
-  // 🟢 1 в 1 с WPF ScrollToOffsetAnimated (Duration: 240ms, CubicEase Out)
   const scrollToOffsetAnimated = useCallback((targetOffset: number, onCompleted?: () => void) => {
     if (!scrollRef.current) return;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -396,7 +451,6 @@ export const ChatWorkspaceView: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 🟢 1 В 1 С WPF ChatWorkspaceView.xaml.cs: ScrollToMessageRequestMessage
   useEffect(() => {
     const unbind = eventBus.on('ScrollToMessageRequestMessage' as any, async (payload: any) => {
       const msgId = Number(payload?.messageId ?? payload?.serverId ?? payload?.localId ?? 0);
@@ -463,12 +517,10 @@ export const ChatWorkspaceView: React.FC = () => {
       const itemHeight = Number(targetLayout.totalHeight ?? targetLayout.height ?? 40);
       const viewportH = scrollRef.current.clientHeight || viewportHeight || 600;
 
-      // 🟢 1 в 1 с WPF: centeredTargetY = targetY - (viewportHeight / 2.0) + (msgHeight / 2.0)
       const centered = targetY - (viewportH / 2.0) + (itemHeight / 2.0);
       const maxScroll = Math.max(0, scrollRef.current.scrollHeight - viewportH);
       const finalOffset = Math.max(0, Math.min(centered, maxScroll));
 
-      // 🟢 Подсветка сообщения (1 в 1 с FastChatPanel.HighlightMessage(targetMsg.Id))
       const highlightId = targetLocalId || targetServerId;
 
       scrollToOffsetAnimated(finalOffset, () => {
@@ -529,7 +581,7 @@ export const ChatWorkspaceView: React.FC = () => {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: PALETTE.bgChat, position: 'relative', overflow: 'hidden' }}>
       
-      {/* ================= ШАПКА ЧАТА (54px) ================= */}
+      {/* ШАПКА ЧАТА */}
       <div
         style={{
           height: 54,
@@ -600,8 +652,9 @@ export const ChatWorkspaceView: React.FC = () => {
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            {/* КЛИК ПО ШАПКЕ: Открывает профиль собеседника / группы */}
             <div
-              onClick={() => openProfile?.()}
+              onClick={handleOpenCurrentChatProfile}
               style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', minWidth: 0, flex: 1 }}
             >
               <div style={{ position: 'relative', width: 40, height: 40, marginRight: 12, flexShrink: 0 }}>
@@ -763,7 +816,7 @@ export const ChatWorkspaceView: React.FC = () => {
                 )}
               </div>
 
-              {/* 🟢 КНОПКА ПОИСКА В ШАПКЕ */}
+              {/* КНОПКА ПОИСКА В ШАПКЕ */}
               <HeaderIconButton
                 isActive={isChatSearchMode}
                 title="Search"
@@ -819,7 +872,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       text="View Profile"
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        openProfile?.();
+                        handleOpenCurrentChatProfile();
                       }}
                     />
 
@@ -905,7 +958,7 @@ export const ChatWorkspaceView: React.FC = () => {
         )}
       </div>
 
-      {/* ================= ОБЛАСТЬ СООБЩЕНИЙ ================= */}
+      {/* ОБЛАСТЬ СООБЩЕНИЙ */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         
         {isHistoryLoading && msgs.length === 0 && (
@@ -969,7 +1022,7 @@ export const ChatWorkspaceView: React.FC = () => {
           </div>
         </div>
 
-        {/* ================= ОБЪЕДИНЕННЫЙ НИЖНИЙ СТЕК ================= */}
+        {/* ОБЪЕДИНЕННЫЙ НИЖНИЙ СТЕК */}
         <div
           style={{
             position: 'absolute',

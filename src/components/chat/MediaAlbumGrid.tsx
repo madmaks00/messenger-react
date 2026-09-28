@@ -1,12 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { IAttachment } from '../../types/models';
 import { AttachmentType } from '../../types/enums';
+import { mediaCacheService } from '../../services/mediaCache.service';
+import { BASE_SERVER_URL } from '../../services/apiClient';
+import { UrlHelper } from '../../utils/helpers';
 
 interface MediaAlbumGridProps {
   media: IAttachment[];
   mediaWidth: number;
   mediaHeight: number;
   onMediaClick?: (attachment: IAttachment) => void;
+  onImageDimensionsLoaded?: (attachment: IAttachment, naturalWidth: number, naturalHeight: number) => void;
 }
 
 export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
@@ -14,6 +18,7 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
   mediaWidth,
   mediaHeight,
   onMediaClick,
+  onImageDimensionsLoaded,
 }) => {
   if (!media || media.length === 0) return null;
 
@@ -21,7 +26,6 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
   const displayItems = media.slice(0, 4);
   const extraCount = totalCount > 4 ? totalCount - 3 : 0;
 
-  // Определение стилей скруглений углов для ячеек сетки (GridCellHelper.CornerRadius в C#)
   const getCornerRadius = (index: number): string => {
     if (totalCount === 1) return '16px';
     if (totalCount === 2) {
@@ -32,7 +36,6 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
       if (index === 1) return '2px 16px 2px 2px';
       return '2px 2px 16px 16px';
     }
-    // 4 и более
     switch (index) {
       case 0: return '16px 2px 2px 2px';
       case 1: return '2px 16px 2px 2px';
@@ -42,12 +45,17 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
     }
   };
 
-  // Определение расположения в CSS Grid
   const getGridItemStyle = (index: number): React.CSSProperties => {
     const borderRadius = getCornerRadius(index);
 
     if (totalCount === 1) {
-      return { gridColumn: 'span 2', gridRow: 'span 2', borderRadius };
+      return {
+        gridColumn: '1',
+        gridRow: '1',
+        width: '100%',
+        height: '100%',
+        borderRadius,
+      };
     }
     if (totalCount === 2) {
       return { gridRow: 'span 2', borderRadius };
@@ -66,7 +74,7 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
         display: 'grid',
         gridTemplateColumns: totalCount === 1 ? '1fr' : '1fr 1fr',
         gridTemplateRows: totalCount === 1 ? '1fr' : '1fr 1fr',
-        gap: '2px',
+        gap: totalCount === 1 ? '0px' : '2px',
         overflow: 'hidden',
         userSelect: 'none',
       }}
@@ -89,28 +97,12 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               backgroundColor: '#0F172A',
             }}
           >
-            {/* 1. Автопроигрыватель для GIF / Видео без звука */}
             {isVideo && isSilent ? (
-              <video
-                src={item.url}
-                poster={item.thumbnailUrl || undefined}
-                autoPlay
-                loop
-                muted
-                playsInline
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
+              <CachedVideoItem item={item} onImageDimensionsLoaded={onImageDimensionsLoaded} />
             ) : (
-              /* 2. Статическое изображение / Превью видео */
-              <img
-                src={item.thumbnailUrl || item.url}
-                alt={item.fileName}
-                loading="lazy"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              />
+              <CachedImageItem item={item} onImageDimensionsLoaded={onImageDimensionsLoaded} />
             )}
 
-            {/* 3. Бейдж GIF */}
             {isVideo && isSilent && (
               <div
                 style={{
@@ -130,7 +122,6 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               </div>
             )}
 
-            {/* 4. Оверлей видео со звуком: длительность, размер и кнопка Play/Скачать */}
             {isVideo && !isSilent && (
               <div
                 style={{
@@ -185,7 +176,6 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               </div>
             )}
 
-            {/* 5. Оверлей «+X фото» для 4-го элемента */}
             {isLastWithOverlay && (
               <div
                 style={{
@@ -208,5 +198,91 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
         );
       })}
     </div>
+  );
+};
+
+const CachedImageItem: React.FC<{
+  item: IAttachment;
+  onImageDimensionsLoaded?: (attachment: IAttachment, naturalWidth: number, naturalHeight: number) => void;
+}> = ({ item, onImageDimensionsLoaded }) => {
+  const rawUrl = item.thumbnailUrl || item.url || '';
+  const initialUrl = rawUrl.startsWith('blob:') ? rawUrl : UrlHelper.normalize(rawUrl, BASE_SERVER_URL);
+  const [src, setSrc] = useState<string>(initialUrl);
+
+  useEffect(() => {
+    let active = true;
+    if (initialUrl && !initialUrl.startsWith('blob:')) {
+      mediaCacheService.getCachedMediaUrl(initialUrl).then((cachedUrl) => {
+        if (active && cachedUrl) setSrc(cachedUrl);
+      });
+    } else {
+      setSrc(initialUrl);
+    }
+    return () => {
+      active = false;
+    };
+  }, [initialUrl]);
+
+  return (
+    <img
+      src={src}
+      alt={item.fileName}
+      loading="lazy"
+      onLoad={(e) => {
+        const nw = e.currentTarget.naturalWidth;
+        const nh = e.currentTarget.naturalHeight;
+        if (nw > 0 && nh > 0) {
+          onImageDimensionsLoaded?.(item, nw, nh);
+        }
+      }}
+      onError={() => {
+        if (src !== initialUrl && !initialUrl.startsWith('blob:')) {
+          setSrc(initialUrl);
+        }
+      }}
+      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+    />
+  );
+};
+
+const CachedVideoItem: React.FC<{
+  item: IAttachment;
+  onImageDimensionsLoaded?: (attachment: IAttachment, naturalWidth: number, naturalHeight: number) => void;
+}> = ({ item, onImageDimensionsLoaded }) => {
+  const rawUrl = item.url || '';
+  const initialUrl = rawUrl.startsWith('blob:') ? rawUrl : UrlHelper.normalize(rawUrl, BASE_SERVER_URL);
+  const [src, setSrc] = useState<string>(initialUrl);
+
+  useEffect(() => {
+    let active = true;
+    if (initialUrl && !initialUrl.startsWith('blob:')) {
+      mediaCacheService.getCachedMediaUrl(initialUrl).then((cachedUrl) => {
+        if (active && cachedUrl) setSrc(cachedUrl);
+      });
+    } else {
+      setSrc(initialUrl);
+    }
+    return () => {
+      active = false;
+    };
+  }, [initialUrl]);
+
+  return (
+    <video
+      src={src}
+      poster={item.thumbnailUrl ? UrlHelper.normalize(item.thumbnailUrl, BASE_SERVER_URL) : undefined}
+      autoPlay
+      loop
+      muted
+      playsInline
+      onLoadedMetadata={(e) => {
+        const vw = e.currentTarget.videoWidth;
+        const vh = e.currentTarget.videoHeight;
+        if (vw > 0 && vh > 0) {
+          onImageDimensionsLoaded?.(item, vw, vh);
+        }
+      }}
+      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+    />
   );
 };

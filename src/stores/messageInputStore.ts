@@ -69,7 +69,6 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
   isCurrentChatJoined: true,
   isAdmin: false,
 
-  // 🟢 При любом вводе текста отправляем статус typing через сокет собеседнику в C# WPF
   setNewMessageText: (text) => {
     set({ newMessageText: text });
     useChatStore.getState().sendTyping(text);
@@ -117,8 +116,8 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       if (file.size > maxFileSize) continue;
 
       let type = AttachmentType.Document;
-      let width = 0;
-      let height = 0;
+      let width = (file as any).width || 0;
+      let height = (file as any).height || 0;
       let durationSeconds = 0;
       let hasAudio = false;
 
@@ -152,6 +151,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         fileSizeBytes: file.size,
         url: objectUrl,
         localImagePath: objectUrl,
+        rawFile: file, // 🟢 СОХРАНЯЕМ ИСХОДНЫЙ ФАЙЛ
         hasAudio,
         width,
         height,
@@ -197,6 +197,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       fileSizeBytes: result.file.size,
       url,
       localImagePath: url,
+      rawFile: result.file, // 🟢 СОХРАНЯЕМ ГОЛОСОВОЙ ФАЙЛ
       waveform: result.waveform,
       durationSeconds: result.durationSeconds,
       hasAudio: true,
@@ -221,7 +222,6 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
   syncChatPermissions: (perms) => set(perms),
 }));
 
-// Слушатель выбора эмодзи
 eventBus.on('EmojiPickedMessage' as any, (data: any) => {
   if (data?.emoji) {
     const current = useMessageInputStore.getState().newMessageText;

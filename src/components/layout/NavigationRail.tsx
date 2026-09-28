@@ -76,15 +76,28 @@ export const NavigationRail: React.FC = () => {
   const avatarSrc = normalizeAvatarUrl(currentUser?.avatarPath || (currentUser as any)?.avatar);
 
   // 🟢 Открытие профиля со вкладки историй (клик по аватарке)
+  // Явно гарантируем, что флаг isOwnProfile выставлен в true и profileUser — это currentUser
   const handleOpenStories = () => {
-    useNavigationStore.setState({ isProfileOpen: true, profileTab: 'stories' } as any);
+    useNavigationStore.setState({
+      isProfileOpen: true,
+      isOwnProfile: true,
+      isGroupProfile: false,
+      profileTab: 'stories',
+      profileUser: currentUser,
+    } as any);
     openProfile();
     eventBus.emit('SelectProfileTab' as any, { tab: 'stories' });
   };
 
   // 🟢 Открытие профиля сразу со вкладки настроек (клик по шестерёнке, 1:1 WPF SelectSettingsTab)
   const handleOpenSettings = () => {
-    useNavigationStore.setState({ isProfileOpen: true, profileTab: 'settings' } as any);
+    useNavigationStore.setState({
+      isProfileOpen: true,
+      isOwnProfile: true,
+      isGroupProfile: false,
+      profileTab: 'settings',
+      profileUser: currentUser,
+    } as any);
     openProfile();
     eventBus.emit('SelectProfileTab' as any, { tab: 'settings' });
   };
