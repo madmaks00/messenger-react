@@ -552,6 +552,7 @@ export class ChatService implements IChatService {
   }
 
   // 🟢 1 В 1 С WPF ChatService.cs: ДЕДУПЛИКАЦИЯ СООБЩЕНИЙ (.GroupBy(m => m.ServerId > 0 ? m.ServerId : m.Id))
+  // 🟢 1 В 1 С WPF ChatService.cs: ДЕДУПЛИКАЦИЯ СТРОГО ПО УНИКАЛЬНЫМ ИДЕНТИФИКАТОРАМ
   public async getLocalMessagesAsync(
     currentUserId: number,
     targetUserId?: number | null,
@@ -568,14 +569,13 @@ export class ChatService implements IChatService {
     } else if (groupId && groupId > 0) {
       collection = db.messages.where('groupId').equals(groupId);
     } else if (targetUserId && targetUserId > 0) {
-      collection = db.messages
-        .filter(
-          (m) =>
-            !m.groupId &&
-            !m.secretChatId &&
-            ((m.senderId === currentUserId && m.receiverId === targetUserId) ||
-              (m.senderId === targetUserId && m.receiverId === currentUserId))
-        );
+      collection = db.messages.filter(
+        (m) =>
+          !m.groupId &&
+          !m.secretChatId &&
+          ((m.senderId === currentUserId && m.receiverId === targetUserId) ||
+            (m.senderId === targetUserId && m.receiverId === currentUserId))
+      );
     } else {
       return [];
     }
@@ -589,28 +589,26 @@ export class ChatService implements IChatService {
       list = list.filter((m) => new Date(m.timestamp).getTime() < beforeTime);
     }
 
-    // Сортируем от новых к старым
-    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    // 🟢 Сортируем: более новые первыми для среза take
+    list.sort((a, b) => {
+      const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      return ((b.serverId || 0) - (a.serverId || 0)) || ((b.id || 0) - (a.id || 0));
+    });
 
-    // 🟢 1 в 1 с WPF: устраняем дублирование между оптимистичной записью и записью сервера
-    const seenServerIds = new Set<number>();
-    const seenContentKeys = new Set<string>();
+    // 🟢 Строго как в C# WPF: GroupBy(m => m.ServerId > 0 ? m.ServerId : m.Id)
+    // Больше НИКАКИХ удалений одинаковых текстов или фото, отправленных подряд!
+    const seenKeys = new Set<string>();
     const deduplicated: IMessage[] = [];
 
     for (const m of list) {
-      if (m.serverId && m.serverId > 0) {
-        if (seenServerIds.has(m.serverId)) continue;
-        seenServerIds.add(m.serverId);
-      }
-
-      // Ключ: отправитель + текст + округленное время (окно 4 секунды)
-      const contentKey = `${m.senderId}_${m.text || ''}_${Math.floor(new Date(m.timestamp).getTime() / 4000)}`;
-      if (seenContentKeys.has(contentKey)) continue;
-      seenContentKeys.add(contentKey);
-
+      const key = m.serverId && m.serverId > 0 ? `s_${m.serverId}` : `l_${m.id}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
       deduplicated.push(m);
     }
 
+    // Возвращаем в хронологическом порядке (старые вверху, новые внизу)
     return deduplicated.slice(0, take).reverse();
   }
 

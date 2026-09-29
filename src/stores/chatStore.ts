@@ -462,18 +462,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
+    // ⏱️ СТАРТ ТАЙМЕРА (высокоточный таймер браузера)
+    const sendTimestamp = performance.now();
+
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
     );
-    const isSecret = Boolean(selectedChatUser.isSecretChat && selectedChatUser.secretChatId);
-    const localTempId = Date.now();
+    const localTempId = Date.now() + Math.floor(Math.random() * 100000);
 
     if (typingDebounceTimer) {
       clearTimeout(typingDebounceTimer);
       typingDebounceTimer = null;
     }
 
-    // Сохраняем исходные вложения с уже известными размерами
     const initialAttachments: IAttachment[] = (attachments || []).map((a) => {
       const cached = mediaDimensionsCache.get(a.url) || mediaDimensionsCache.get(a.fileName);
       return {
@@ -507,14 +508,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       repliedMessages: replies,
     };
 
-    // 🟢 1. Мгновенно отображаем сообщение в интерфейсе (оптимистичный вывод)
+    // 🟢 1. Мгновенно рендерим бабл в чате (0 мс)
     set((state) => ({ currentChatMessages: [...state.currentChatMessages, newMsg] }));
 
-    try {
-      await chatService.saveMessageLocallyAsync(newMsg);
-    } catch (e) {
-      console.warn('[ChatStore] Ошибка кэширования сообщения:', e);
-    }
+    // Фоновая запись в IndexedDB (НЕ блокируем сетевой стек)
+    chatService.saveMessageLocallyAsync(newMsg).catch(() => {});
 
     useSidebarChatsStore.getState().updateSidebar(
       newMsg.receiverId,
@@ -524,13 +522,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       LastMessageType.Text
     );
 
-    // 🟢 2. Фоновая чанковая загрузка на сервер и сохранение в постоянный CacheStorage
+    // 🟢 2. Отправка через SignalR
     (async () => {
       try {
         let finalAttachments = [...initialAttachments];
+
+        // Если есть файлы — сначала загружаем их
         const filesToUpload: File[] = [];
         const fileIndices: number[] = [];
-
         initialAttachments.forEach((att, idx) => {
           if (att.rawFile) {
             filesToUpload.push(att.rawFile);
@@ -572,39 +571,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        const uploadedDtos = finalAttachments.map((a) => {
-          const cached = mediaDimensionsCache.get(a.url) || mediaDimensionsCache.get(a.fileName);
-          const w = a.width > 0 ? a.width : (cached?.width || 0);
-          const h = a.height > 0 ? a.height : (cached?.height || 0);
-
-          return {
-            type: a.type,
-            fileName: a.fileName,
-            fileSizeStr: a.fileSizeStr,
-            url: a.url,
-            thumbnailUrl: a.thumbnailUrl || a.url,
-            fileHash: a.fileHash,
-            hasAudio: Boolean(a.hasAudio),
-            width: w,
-            height: h,
-            durationSeconds: a.durationSeconds || 0,
-          };
-        });
-
-        set((state) => ({
-          currentChatMessages: state.currentChatMessages.map((m) =>
-            m.id === localTempId ? { ...m, attachments: finalAttachments } : m
-          ),
+        const uploadedDtos = finalAttachments.map((a) => ({
+          type: a.type,
+          fileName: a.fileName,
+          fileSizeStr: a.fileSizeStr,
+          url: a.url,
+          thumbnailUrl: a.thumbnailUrl || a.url,
+          fileHash: a.fileHash,
+          hasAudio: Boolean(a.hasAudio),
+          width: a.width || 0,
+          height: a.height || 0,
+          durationSeconds: a.durationSeconds || 0,
         }));
 
-        try {
-          const db = getLocalDatabase(userSession.userId);
-          const localRecord = await db.messages.filter((m) => m.id === localTempId).first();
-          if (localRecord?.id) {
-            await db.messages.update(localRecord.id, { attachments: finalAttachments });
-          }
-        } catch {}
-
+        // ⏱️ ВЫЗОВ SIGNALR ХАБА
+        const networkStart = performance.now();
+        
         const realId = await signalRService.sendMessageAsync(
           newMsg.receiverId ?? null,
           newMsg.groupId ?? null,
@@ -618,16 +600,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
         );
 
         if (realId && realId > 0) {
+          const totalElapsed = (performance.now() - sendTimestamp).toFixed(1);
+          const networkElapsed = (performance.now() - networkStart).toFixed(1);
+
+          // 🟢 ВЫВОД В КОНСОЛЬ ТОЧНОГО ВРЕМЕНИ
+          console.log(
+            `%c⚡ [CONFIRMED] ID: ${realId} | Общее время (с клика): ${totalElapsed} мс | SignalR roundtrip: ${networkElapsed} мс`,
+            'color: #00FF66; font-weight: bold; font-size: 13px;'
+          );
+
           set((state) => ({
             currentChatMessages: state.currentChatMessages.map((m) =>
               m.id === localTempId ? { ...m, serverId: realId, isSentToServer: true } : m
             ),
           }));
 
-          await chatService.markAsSentAsync(localTempId, realId, undefined, text);
+          void chatService.markAsSentAsync(localTempId, realId, undefined, text);
         }
       } catch (err) {
-        console.error('[ChatStore ERROR] Ошибка фоновой загрузки и отправки:', err);
+        console.error('[ChatStore ERROR] Ошибка отправки:', err);
       }
     })();
   },
@@ -1133,12 +1124,11 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   } else {
     if (isChatOpen) {
       useChatStore.setState((state) => {
+        // 🟢 Проверяем дубликат СТРОГО по serverId или local id, без опасного m.text === incoming.text
         const alreadyExists = state.currentChatMessages.some(
           (m) =>
             (incoming.serverId > 0 && m.serverId === incoming.serverId) ||
-            (incoming.id > 0 && m.id === incoming.id) ||
-            (m.text === incoming.text &&
-              Math.abs(new Date(m.timestamp).getTime() - new Date(incoming.timestamp).getTime()) < 2000)
+            (incoming.id > 0 && m.id === incoming.id)
         );
         if (alreadyExists) return state;
 

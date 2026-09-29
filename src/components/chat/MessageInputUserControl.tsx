@@ -18,18 +18,18 @@ import { useMessageInputStore } from '../../stores/messageInputStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useEmojiStore } from '../../stores/emojiStore';
 import { EmojiPickerUserControl } from './EmojiPickerUserControl';
+import { AttachmentType } from '../../types/enums';
 
-// Цвета 1 в 1 из DefaultDark.xaml
 const COLORS = {
-  accent: '#1E9BEB',           // Color.Accent / AppAccentBrush
-  inputBg: '#1C212D',          // InputAreaBackgroundBrush
-  inputBorder: '#2A303C',      // InputAreaBorderBrush
-  inputText: '#FFFFFF',        // InputAreaTextBrush
-  textMuted: '#7D8494',        // TextMuted
-  warningBg: '#1C212D',        // WarningBarBgBrush
-  warningBorder: '#E74C3C',    // WarningBarAccentBorderBrush
-  warningText: '#FFFFFF',      // WarningBarTextBrush
-  activeToggleBg: '#2AFFFFFF', // HeaderSearchActiveBgBrush / InputAreaButtonCheckedBgBrush
+  accent: '#1E9BEB',
+  inputBg: '#1C212D',
+  inputBorder: '#2A303C',
+  inputText: '#FFFFFF',
+  textMuted: '#7D8494',
+  warningBg: '#1C212D',
+  warningBorder: '#E74C3C',
+  warningText: '#FFFFFF',
+  activeToggleBg: '#2AFFFFFF',
   hoverWhite: '#FFFFFF',
 };
 
@@ -94,7 +94,6 @@ export const MessageInputUserControl: React.FC = () => {
     }
   }, []);
 
-  // Автоматический пересчет высоты textarea от 40px до 180px
   useEffect(() => {
     if (inputTextBoxRef.current) {
       inputTextBoxRef.current.style.height = 'auto';
@@ -116,22 +115,27 @@ export const MessageInputUserControl: React.FC = () => {
     }
   };
 
-  const handleSendAction = async () => {
+  const handleSendAction = () => {
     if (isRecordingVoice) {
-      await stopAndSendVoiceRecording();
+      void stopAndSendVoiceRecording();
       return;
     }
 
     const text = (newMessageText || '').trim();
-    if (!text && pendingAttachments.length === 0) return;
+    const attachmentsToSend = [...pendingAttachments];
+    const editMsg = editingMessage;
+    const replies = [...replyingToMessages];
 
-    await sendMessage(text, pendingAttachments, editingMessage, replyingToMessages);
+    if (!text && attachmentsToSend.length === 0) return;
+
     setNewMessageText('');
     cancelEdit();
     cancelReply();
     if (inputTextBoxRef.current) {
       inputTextBoxRef.current.style.height = 'auto';
     }
+
+    void sendMessage(text, attachmentsToSend, editMsg, replies);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -148,7 +152,6 @@ export const MessageInputUserControl: React.FC = () => {
               (file as any).width = img.naturalWidth;
               (file as any).height = img.naturalHeight;
               
-              // 🟢 Сохраняем в синглтон-кэш и НЕ вызываем revokeObjectURL преждевременно
               mediaDimensionsCache.set(file.name, { width: img.naturalWidth, height: img.naturalHeight });
               mediaDimensionsCache.set(objectUrl, { width: img.naturalWidth, height: img.naturalHeight });
               resolve();
@@ -161,7 +164,7 @@ export const MessageInputUserControl: React.FC = () => {
         }
       }
 
-      addPendingAttachments(fileList);
+      void addPendingAttachments(fileList);
     }
   };
 
@@ -171,7 +174,6 @@ export const MessageInputUserControl: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
       
-      {/* 🟢 1 В 1 С WPF: Белый цвет с HintOpacity="0.56" */}
       <style>{`
         .wpf-message-input::placeholder {
           color: rgba(255, 255, 255, 0.56) !important;
@@ -199,7 +201,7 @@ export const MessageInputUserControl: React.FC = () => {
         }
       `}</style>
 
-      {/* 1. ПЛАШКА РЕДАКТИРОВАНИЯ (EditorStatusBarBgBrush = #1C212D, BorderLeft = 2px #1E9BEB) */}
+      {/* 1. ПЛАШКА РЕДАКТИРОВАНИЯ */}
       {editingMessage && (
         <div
           style={{
@@ -245,7 +247,7 @@ export const MessageInputUserControl: React.FC = () => {
         </div>
       )}
 
-      {/* 2. ПЛАШКА ЦИТИРОВАНИЯ (ReplyStatusBarBgBrush = #1C212D, BorderLeft = 2px #1E9BEB) */}
+      {/* 2. ПЛАШКА ЦИТИРОВАНИЯ */}
       {replyingToMessages.length > 0 && !editingMessage && (
         <div
           style={{
@@ -349,10 +351,10 @@ export const MessageInputUserControl: React.FC = () => {
           </div>
         )}
 
-        {/* АКТИВНОЕ ПОЛЕ ВВОДА (1 в 1 с WPF XAML) */}
+        {/* АКТИВНОЕ ПОЛЕ ВВОДА */}
         {canWriteMessages && (
           <div>
-            {/* Лента прикрепленных файлов */}
+            {/* 🟢 ЛЕНТА ПРИКРЕПЛЕННЫХ ФАЙЛОВ С ПОДДЕРЖКОЙ ВИДЕО И ГИФ */}
             {hasAttachments && (
               <div
                 style={{
@@ -365,58 +367,85 @@ export const MessageInputUserControl: React.FC = () => {
                   overflowX: 'auto',
                 }}
               >
-                {pendingAttachments.map((att: any, idx: number) => (
-                  <div
-                    key={att.id || idx}
-                    style={{
-                      width: 60,
-                      height: 60,
-                      borderRadius: 8,
-                      position: 'relative',
-                      background: '#232A3B',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {att.displayImageUrl || att.url ? (
-                      <img src={att.displayImageUrl || att.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <MdiIcon path={mdiFileDocumentOutline} size={30} color="#5E92CE" />
-                    )}
+                {pendingAttachments.map((att: any, idx: number) => {
+                  const isVideoOrGif =
+                    att.type === AttachmentType.Video ||
+                    att.fileSizeStr === 'GIF' ||
+                    (att.rawFile && (att.rawFile.type.startsWith('video/') || att.rawFile.name.toLowerCase().endsWith('.gif')));
 
-                    <button
-                      onClick={() => removePendingAttachment(idx)}
+                  return (
+                    <div
+                      key={att.id || idx}
                       style={{
-                        position: 'absolute',
-                        top: 2,
-                        right: 2,
-                        width: 20,
-                        height: 20,
-                        borderRadius: 10,
-                        background: '#CC000000',
-                        border: 'none',
-                        cursor: 'pointer',
+                        width: 60,
+                        height: 60,
+                        borderRadius: 8,
+                        position: 'relative',
+                        background: '#232A3B',
+                        overflow: 'hidden',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        padding: 0,
+                        flexShrink: 0,
                       }}
                     >
-                      <MdiIcon path={mdiClose} size={12} color="#FFFFFF" />
-                    </button>
-                  </div>
-                ))}
+                      {att.displayImageUrl ? (
+                        <img
+                          src={att.displayImageUrl}
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : isVideoOrGif && att.url ? (
+                        <video
+                          src={`${att.url}#t=0.001`}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            pointerEvents: 'none',
+                          }}
+                        />
+                      ) : att.url && (att.type === AttachmentType.Photo || (att.rawFile && att.rawFile.type.startsWith('image/'))) ? (
+                        <img
+                          src={att.url}
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <MdiIcon path={mdiFileDocumentOutline} size={30} color="#5E92CE" />
+                      )}
+
+                      <button
+                        onClick={() => removePendingAttachment(idx)}
+                        style={{
+                          position: 'absolute',
+                          top: 2,
+                          right: 2,
+                          width: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          background: 'rgba(0, 0, 0, 0.7)',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0,
+                          zIndex: 5,
+                        }}
+                      >
+                        <MdiIcon path={mdiClose} size={12} color="#FFFFFF" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* ИНПУТ-КАПСУЛА:
-                WPF: BorderThickness="1.2", CornerRadius="20", Padding="10,1,2,1", Grid Margin="-3,0,3,0"
-                Итоговый padding: слева (10-3)=7px, справа (2+3)=5px, сверху 2px, снизу 2px
-                Итоговая высота: 46px (38px кнопка + 1px margin-bottom + 4px paddings + 2.4px borders)
-            */}
+            {/* ИНПУТ-КАПСУЛА */}
             <div
               style={{
                 border: `1.2px solid ${COLORS.inputBorder}`,
@@ -431,7 +460,6 @@ export const MessageInputUserControl: React.FC = () => {
                 position: 'relative',
               }}
             >
-              {/* 1. Кнопка скрепки: Width="36", Height="36", Margin="0,0,0,2", Icon="26x26" */}
               {!isRecordingVoice && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -465,10 +493,6 @@ export const MessageInputUserControl: React.FC = () => {
               )}
               <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} style={{ display: 'none' }} />
 
-              {/* 2. Поле ввода сообщения:
-                  FontSize="14", LineHeight="20", VerticalAlignment="Center"
-                  CaretBrush="White", SmartHint Foreground="White" + HintOpacity="0.56"
-              */}
               {!isRecordingVoice && (
                 <textarea
                   ref={inputTextBoxRef}
@@ -484,7 +508,7 @@ export const MessageInputUserControl: React.FC = () => {
                     border: 'none',
                     outline: 'none',
                     color: COLORS.inputText,
-                    caretColor: '#FFFFFF', // 1 в 1 с CaretBrush="White"
+                    caretColor: '#FFFFFF',
                     fontSize: 14,
                     lineHeight: '20px',
                     padding: '8px 8px 10px 8px',
@@ -496,7 +520,6 @@ export const MessageInputUserControl: React.FC = () => {
                 />
               )}
 
-              {/* 3. Голосовая запись */}
               {isRecordingVoice && (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', height: 40, marginLeft: 10 }}>
                   <div
@@ -518,9 +541,6 @@ export const MessageInputUserControl: React.FC = () => {
                 </div>
               )}
 
-              {/* 4. Кнопка эмодзи (TelegramStyleActionToggleButton):
-                  Width="36", Height="36", Margin="0,0,5,2", Icon Width="24" Height="24"
-              */}
               {!isRecordingVoice && (
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end' }}>
                   <button
@@ -555,7 +575,6 @@ export const MessageInputUserControl: React.FC = () => {
                 </div>
               )}
 
-              {/* 5. Кнопка отмены записи (37x37, Margin="0,0,5,2") */}
               {isRecordingVoice && (
                 <button
                   onClick={cancelVoiceRecording}
@@ -579,9 +598,6 @@ export const MessageInputUserControl: React.FC = () => {
                 </button>
               )}
 
-              {/* 6. Кнопка микрофона / отправки (Telegram Style):
-                  Width="38", Height="38", Margin="0,0,0,1", Background="#1E9BEB", Icon="22x22"
-              */}
               <button
                 onClick={
                   isRecordingVoice

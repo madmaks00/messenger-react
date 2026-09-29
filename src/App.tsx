@@ -108,26 +108,38 @@ export const App: React.FC = () => {
   }>({ isOpen: false, image: '', storyId: null, description: '', isPrivate: false });
 
   useEffect(() => {
+    // 🟢 1. МГНОВЕННЫЙ СТАРТ СОКЕТА: не ждём checkAuth!
+    // Токен уже есть в хранилище — начинаем WebSocket-рукопожатие сразу же:
+    const token =
+      userSession.token ||
+      localStorage.getItem('auth_token') ||
+      localStorage.getItem('jwt_token') ||
+      (() => {
+        try {
+          return JSON.parse(localStorage.getItem('user_session_data') || '{}').token;
+        } catch {
+          return null;
+        }
+      })();
+
+    if (token && !isAppLocked) {
+      void signalRService.initAsync(token).catch((err) => {
+        console.warn('[App] Ошибка раннего подключения к SignalR:', err);
+      });
+    }
+
+    // 🟢 2. Проверка сессии и загрузка данных (ПАРАЛЛЕЛЬНО, не блокируя сокет)
     checkAuth(authService, userService).then(async (isAuth) => {
       if (isAuth && !isAppLocked) {
-        const token =
-          userSession.token ||
-          localStorage.getItem('auth_token') ||
-          JSON.parse(localStorage.getItem('user_session_data') || '{}').token;
+        // Загружаем чаты и истории параллельно через Promise.all
+        await Promise.allSettled([
+          loadChats(true),
+          useStoriesStore.getState().loadStoriesFeed(),
+          useStoriesStore.getState().loadMyStories(),
+        ]);
 
-        if (token) {
-          try {
-            await signalRService.initAsync(token);
-          } catch (err) {
-            console.warn('[App] Ошибка раннего подключения к SignalR:', err);
-          }
-        }
-
-        await loadChats(true);
         initTodo();
         initNotes();
-        void useStoriesStore.getState().loadStoriesFeed();
-        void useStoriesStore.getState().loadMyStories();
 
         const currentUserId = useAuthStore.getState().currentUser?.id ?? userSession.userId ?? 0;
         if (currentUserId > 0) {

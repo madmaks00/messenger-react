@@ -20,24 +20,22 @@ interface MessageItemProps {
   onDelete: (msg: IMessage) => void;
   onForward: (msg: IMessage) => void;
   onScrollToMessage: (id: number) => void;
+  onMediaClick?: (attachment: IAttachment, messageId: number) => void;
 }
 
-// 🟢 Цвета 1 в 1 из DefaultDark.xaml
 const PALETTE = {
-  myBubbleBg: '#16699B',       // MyBubbleBg
-  otherBubbleBg: '#1C212D',    // OtherBubbleBg
-  tgCheckmark: '#80BFFF',      // TgCheckmark
-  authorName: '#5E92CE',       // MessageAuthorNameBrush
-  textMuted: '#7D8494',        // TextMuted
-  contextMenuBg: '#1C212D',    // ChatContextMenuBackgroundBrush
-  contextMenuBorder: '#2A303C',// ChatContextMenuBorderBrush
-  contextMenuHover: '#232A3B', // ChatMenuItemHighlightBrush
-  accent: '#1E9BEB',           // AppAccentBrush
-  destructive: '#FF3B30',      // MembersMenuDestructiveActionTextBrush
-  mediaStatusPillBg: 'rgba(0, 0, 0, 0.47)', // MediaStatusPillBgBrush
-  selectionBg: '#1A5E92CE',    // MessageSelectionBackgroundBrush
-
-  // WPF Call Colors
+  myBubbleBg: '#16699B',
+  otherBubbleBg: '#1C212D',
+  tgCheckmark: '#80BFFF',
+  authorName: '#5E92CE',
+  textMuted: '#7D8494',
+  contextMenuBg: '#1C212D',
+  contextMenuBorder: '#2A303C',
+  contextMenuHover: '#232A3B',
+  accent: '#1E9BEB',
+  destructive: '#FF3B30',
+  mediaStatusPillBg: 'rgba(0, 0, 0, 0.47)',
+  selectionBg: '#1A5E92CE',
   callSummaryTitle: '#FFFFFF',
   callSummaryDetails: '#A0B0C0',
   callSummaryIcon: 'rgba(255, 255, 255, 0.25)',
@@ -89,6 +87,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onDelete,
   onForward,
   onScrollToMessage,
+  onMediaClick,
 }) => {
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -185,18 +184,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     >
       <style>{`
         @keyframes wpfMessageHighlightPulse {
-          0% {
-            opacity: 0;
-          }
-          15.38% {
-            opacity: 0.4;
-          }
-          50% {
-            opacity: 0.4;
-          }
-          100% {
-            opacity: 0;
-          }
+          0% { opacity: 0; }
+          15.38% { opacity: 0.4; }
+          50% { opacity: 0.4; }
+          100% { opacity: 0; }
         }
         .wpf-message-highlight-pulse {
           animation: wpfMessageHighlightPulse 1300ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
@@ -267,46 +258,28 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
       {/* 3. КОНТЕЙНЕР БАБЛА */}
       <div style={{ position: 'relative', maxWidth: '500px', display: 'flex', overflow: 'visible' }}>
-        
-        {/* Базовый хвостик моего сообщения */}
         {isMy && !model.isMediaOnly && (
           <svg
             width="8"
             height="8"
             viewBox="0 0 8 8"
-            style={{
-              position: 'absolute',
-              right: -7,
-              bottom: 0,
-              zIndex: 2,
-              display: 'block',
-              pointerEvents: 'none',
-            }}
+            style={{ position: 'absolute', right: -7, bottom: 0, zIndex: 2, display: 'block', pointerEvents: 'none' }}
           >
             <path d="M 0,8 L 8,8 L 0,0 Z" fill={PALETTE.myBubbleBg} />
           </svg>
         )}
 
-        {/* Базовый хвостик чужого сообщения */}
         {!isMy && !model.isMediaOnly && (
           <svg
             width="8"
             height="8"
             viewBox="0 0 8 8"
-            style={{
-              position: 'absolute',
-              left: -7,
-              bottom: 0,
-              zIndex: 2,
-              display: 'block',
-              pointerEvents: 'none',
-            }}
+            style={{ position: 'absolute', left: -7, bottom: 0, zIndex: 2, display: 'block', pointerEvents: 'none' }}
           >
             <path d="M 8,8 L 0,8 L 8,0 Z" fill={PALETTE.otherBubbleBg} />
           </svg>
         )}
 
-        {/* БАБЛ (Bubble) */}
         <div
           style={{
             position: 'relative',
@@ -320,21 +293,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             justifyContent: 'center',
           }}
         >
-          {/* Закреп */}
           {model.isPinned && (
             <div style={{ position: 'absolute', top: 5, right: 10, transform: 'rotate(45deg)', zIndex: 10 }}>
               <SvgIcon path={ICONS.pin} size={14} color={PALETTE.tgCheckmark} />
             </div>
           )}
 
-          {/* Имя автора в группе */}
           {!isMy && (model.isGroupMessage || model.isChannel) && !model.isForwarded && !model.isDeletedForMe && (
             <div style={{ padding: '6px 12px 2px 12px', fontSize: 14, fontWeight: 600, color: PALETTE.authorName, cursor: 'pointer' }}>
               {model.senderName}
             </div>
           )}
 
-          {/* Переслано */}
           {model.isForwarded && (
             <div style={{ padding: '6px 10px 2px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 13, color: PALETTE.tgCheckmark, fontWeight: 600 }}>Forwarded from</span>
@@ -343,7 +313,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
-          {/* Цитаты */}
           {model.repliedMessages && model.repliedMessages.length > 0 && (
             <div style={{ margin: '6px 10px 0 10px' }}>
               {model.repliedMessages.map((rep: any, idx: number) => (
@@ -373,36 +342,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
-          {/* Медиа */}
+          {/* 🟢 МЕДИА: Рендеринг через MediaAlbumGrid */}
           {model.previewMedia && model.previewMedia.length > 0 && (
             <div style={{ width: model.mediaWidth, height: model.mediaHeight, position: 'relative', borderRadius: 16, overflow: 'hidden' }}>
               <MediaAlbumGrid
                 media={model.previewMedia}
                 mediaWidth={model.mediaWidth}
                 mediaHeight={model.mediaHeight}
+                onMediaClick={(att) => onMediaClick?.(att, Number(model.id || model.serverId || 0))}
                 onImageDimensionsLoaded={(att, naturalWidth, naturalHeight) => {
-                  console.log('%c[MESSAGE_ITEM] 🔔 onImageDimensionsLoaded сработал:', 'color: #f472b6; font-weight: bold;', {
-                    msgId: model.id,
-                    serverId: model.serverId,
-                    mediaCount: model.previewMedia.length,
-                    naturalWidth,
-                    naturalHeight,
-                    currentMediaWidth: model.mediaWidth,
-                    currentMediaHeight: model.mediaHeight,
-                  });
-
-                  // 🟢 1 в 1 с CheckAndUpdateImageDimensionsFromElement из ChatWorkspaceView.xaml.cs
                   if (model.previewMedia && model.previewMedia.length === 1 && naturalWidth > 0 && naturalHeight > 0) {
                     const dims = AsyncChatLayoutEngine.calculateMediaDimensionsFromPixels(naturalWidth, naturalHeight);
                     const diffW = Math.abs(model.mediaWidth - dims.width);
                     const diffH = Math.abs(model.mediaHeight - dims.height);
-
-                    console.log('[MESSAGE_ITEM] Сравнение размеров:', {
-                      рассчитано: `${dims.width}x${dims.height}`,
-                      былоВМодели: `${model.mediaWidth}x${model.mediaHeight}`,
-                      разница: { diffW, diffH },
-                      нужноЛиОбновлять: diffW > 2 || diffH > 2,
-                    });
 
                     if (diffW > 2 || diffH > 2) {
                       useChatStore.getState().updateAttachmentDimensions(
@@ -414,15 +366,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                   }
                 }}
               />
-              {model.isSilentVideo && (
-                <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 5px', color: '#FFFFFF', fontSize: 10.5, fontWeight: 'bold', zIndex: 2 }}>
-                  GIF
-                </div>
-              )}
             </div>
           )}
 
-          {/* Голосовые */}
           {model.voices && model.voices.length > 0 && (
             <div style={{ padding: '4px 8px', minWidth: 240, maxWidth: 280, height: 44, display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: PALETTE.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
@@ -437,7 +383,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
-          {/* Документы */}
           {model.documents && model.documents.length > 0 && (
             <div style={{ padding: '6px 10px 0 10px' }}>
               {model.documents.map((doc: IAttachment, idx: number) => (
@@ -456,14 +401,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
-          {/* Текст сообщения */}
           {model.text && !isCall && (
             <div style={{ padding: getBubblePadding(), boxSizing: 'border-box' }}>
               <LightweightChatTextBox text={model.text} isDeleted={model.isDeletedForMe} fontSize={15} lineHeight={20} />
             </div>
           )}
 
-          {/* Карточка звонка */}
           {isCall && (
             <div
               style={{
@@ -477,57 +420,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 userSelect: 'none',
               }}
             >
-              <div
-                style={{
-                  margin: '6px 0 6px 8px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  minWidth: 0,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 600,
-                    color: PALETTE.callSummaryTitle,
-                    marginBottom: 3,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
+              <div style={{ margin: '6px 0 6px 8px', display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: PALETTE.callSummaryTitle, marginBottom: 3, whiteSpace: 'nowrap' }}>
                   {callTitle}
                 </div>
-
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <SvgIcon
-                    path={isOut ? ICONS.arrowTopRight : ICONS.arrowBottomLeft}
-                    size={16}
-                    color={callArrowColor}
-                    style={{ marginRight: 4 }}
-                  />
-
-                  <span
-                    style={{
-                      fontSize: 14,
-                      color: PALETTE.callSummaryDetails,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {callTimeAndDuration}
-                  </span>
+                  <SvgIcon path={isOut ? ICONS.arrowTopRight : ICONS.arrowBottomLeft} size={16} color={callArrowColor} style={{ marginRight: 4 }} />
+                  <span style={{ fontSize: 14, color: PALETTE.callSummaryDetails, whiteSpace: 'nowrap' }}>{callTimeAndDuration}</span>
                 </div>
               </div>
-
-              <SvgIcon
-                path={ICONS.phone}
-                size={32}
-                color={PALETTE.callSummaryIcon}
-                style={{ marginRight: 12 }}
-              />
+              <SvgIcon path={ICONS.phone} size={32} color={PALETTE.callSummaryIcon} style={{ marginRight: 12 }} />
             </div>
           )}
 
-          {/* Время и статус */}
           {!isCall && (
             <div
               style={{
@@ -568,59 +473,22 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           )}
         </div>
 
-        {/* 🟢 ЕДИНЫЙ КОМПОЗИТНЫЙ СЛОЙ ПОДСВЕТКИ (БАБЛ + ХВОСТИК) */}
         {isHighlighted && (
           <div
             className="wpf-message-highlight-pulse"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              pointerEvents: 'none',
-              zIndex: 20,
-              display: 'flex',
-              overflow: 'visible',
-            }}
+            style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 20, display: 'flex', overflow: 'visible' }}
           >
             {isMy && !model.isMediaOnly && (
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 8 8"
-                style={{
-                  position: 'absolute',
-                  right: -7,
-                  bottom: 0,
-                  display: 'block',
-                }}
-              >
+              <svg width="8" height="8" viewBox="0 0 8 8" style={{ position: 'absolute', right: -7, bottom: 0, display: 'block' }}>
                 <path d="M 0,8 L 8,8 L 0,0 Z" fill="#FFFFFF" />
               </svg>
             )}
-
             {!isMy && !model.isMediaOnly && (
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 8 8"
-                style={{
-                  position: 'absolute',
-                  left: -7,
-                  bottom: 0,
-                  display: 'block',
-                }}
-              >
+              <svg width="8" height="8" viewBox="0 0 8 8" style={{ position: 'absolute', left: -7, bottom: 0, display: 'block' }}>
                 <path d="M 8,8 L 0,8 L 8,0 Z" fill="#FFFFFF" />
               </svg>
             )}
-
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: bubbleRadius,
-                backgroundColor: '#FFFFFF',
-              }}
-            />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: bubbleRadius, backgroundColor: '#FFFFFF' }} />
           </div>
         )}
       </div>
@@ -714,3 +582,5 @@ const ContextMenuItem: React.FC<{
     </div>
   );
 };
+
+export default MessageItem;

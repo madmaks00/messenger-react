@@ -245,15 +245,15 @@ export class SignalRService {
         })),
       };
 
-      try {
-        if (currentId > 0) {
+      if (!isMyMessage && currentId > 0) {
+        try {
           const db = getLocalDatabase(currentId);
           const { id: _, ...toInsert } = newMsg;
           const localId = await db.messages.add(toInsert as any);
           newMsg.id = Number(localId);
+        } catch (err) {
+          console.warn('[SignalR] Ошибка сохранения сообщения в локальную БД:', err);
         }
-      } catch (err) {
-        console.warn('[SignalR] Ошибка сохранения сообщения в локальную БД:', err);
       }
 
       eventBus.emit('ReceiveMessage', newMsg);

@@ -15,7 +15,6 @@ interface MessageInputState {
   recordingTimeStr: string;
   hintText: string;
 
-  // Права и ограничения
   canWriteMessages: boolean;
   canSendMedia: boolean;
   canSendText: boolean;
@@ -26,7 +25,6 @@ interface MessageInputState {
   isCurrentChatJoined: boolean;
   isAdmin: boolean;
 
-  // Действия
   setNewMessageText: (text: string) => void;
   setEditMessage: (msg: IMessage) => void;
   cancelEdit: () => void;
@@ -110,7 +108,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     const state = get();
     if (state.isGroup && !state.isAdmin && !state.canSendMedia) return;
 
-    const maxFileSize = 500 * 1024 * 1024; // 500 MB
+    const maxFileSize = 500 * 1024 * 1024;
     const newAtts: IAttachment[] = [];
 
     for (const file of files) {
@@ -118,20 +116,130 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
 
       let type = AttachmentType.Document;
       
-      // 🟢 Берем реальные размеры, считанные из файла, либо из кэша
       const cached = mediaDimensionsCache.get(file.name);
       let width = Number((file as any).width || cached?.width || 0);
       let height = Number((file as any).height || cached?.height || 0);
       let durationSeconds = 0;
       let hasAudio = false;
+      let displayImageUrl = '';
 
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      const isGifExt = ext === 'gif' || file.type === 'image/gif' || file.name.toLowerCase().includes('.gif');
+      const isVideoExt = ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext) || file.type.startsWith('video/');
 
-      if (['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'].includes(ext) || file.type.startsWith('image/')) {
-        type = AttachmentType.Photo;
-      } else if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext) || file.type.startsWith('video/')) {
+      const objectUrl = URL.createObjectURL(file);
+
+      if (isGifExt) {
         type = AttachmentType.Video;
-        hasAudio = true;
+        hasAudio = false;
+
+        // Для GIF генерируем кадр превью через Canvas
+        try {
+          const videoMeta = await new Promise<{ width: number; height: number; thumbUrl: string }>((resolve) => {
+            const video = document.createElement('video');
+            video.preload = 'auto';
+            video.muted = true;
+            video.playsInline = true;
+
+            video.onloadeddata = () => {
+              video.currentTime = 0.001;
+            };
+
+            video.onseeked = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth || 300;
+                canvas.height = video.videoHeight || 300;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                  resolve({
+                    width: video.videoWidth || 0,
+                    height: video.videoHeight || 0,
+                    thumbUrl: canvas.toDataURL('image/jpeg', 0.85),
+                  });
+                  return;
+                }
+              } catch {}
+              resolve({ width: 0, height: 0, thumbUrl: '' });
+            };
+
+            video.onerror = () => resolve({ width: 0, height: 0, thumbUrl: '' });
+            video.src = objectUrl;
+          });
+
+          displayImageUrl = videoMeta.thumbUrl;
+          if (videoMeta.width > 0 && width === 0) width = videoMeta.width;
+          if (videoMeta.height > 0 && height === 0) height = videoMeta.height;
+        } catch {}
+
+      } else if (['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext) || file.type.startsWith('image/')) {
+        type = AttachmentType.Photo;
+        displayImageUrl = objectUrl;
+
+      } else if (isVideoExt) {
+        type = AttachmentType.Video;
+
+        // Для обычного видео считываем метаданные, звук и первый кадр
+        try {
+          const videoMeta = await new Promise<{
+            hasAudio: boolean;
+            duration: number;
+            width: number;
+            height: number;
+            thumbUrl: string;
+          }>((resolve) => {
+            const video = document.createElement('video');
+            video.preload = 'auto';
+            video.muted = true;
+            video.playsInline = true;
+
+            video.onloadeddata = () => {
+              video.currentTime = 0.001;
+            };
+
+            video.onseeked = () => {
+              let thumb = '';
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth || 300;
+                canvas.height = video.videoHeight || 300;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                  thumb = canvas.toDataURL('image/jpeg', 0.85);
+                }
+              } catch {}
+
+              const anyVid = video as any;
+              const hasSound = Boolean(
+                anyVid.mozHasAudio ||
+                anyVid.webkitAudioDecodedByteCount > 0 ||
+                Boolean(anyVid.audioTracks && anyVid.audioTracks.length > 0)
+              );
+
+              resolve({
+                hasAudio: hasSound,
+                duration: Math.round(video.duration || 0),
+                width: video.videoWidth || 0,
+                height: video.videoHeight || 0,
+                thumbUrl: thumb,
+              });
+            };
+
+            video.onerror = () => resolve({ hasAudio: true, duration: 0, width: 0, height: 0, thumbUrl: '' });
+            video.src = objectUrl;
+          });
+
+          hasAudio = videoMeta.hasAudio;
+          durationSeconds = videoMeta.duration;
+          displayImageUrl = videoMeta.thumbUrl;
+          if (videoMeta.width > 0 && width === 0) width = videoMeta.width;
+          if (videoMeta.height > 0 && height === 0) height = videoMeta.height;
+        } catch {
+          hasAudio = true;
+        }
+
       } else if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus'].includes(ext) || file.type.startsWith('audio/')) {
         type = AttachmentType.Audio;
       }
@@ -143,8 +251,10 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         size /= 1024;
         unitIdx++;
       }
-      const fileSizeStr = `${size.toFixed(2)} ${units[unitIdx]}`;
-      const objectUrl = URL.createObjectURL(file);
+      
+      const fileSizeStr = (isGifExt || (type === AttachmentType.Video && !hasAudio))
+        ? 'GIF'
+        : `${size.toFixed(2)} ${units[unitIdx]}`;
 
       newAtts.push({
         id: Date.now() + Math.random(),
@@ -155,6 +265,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         fileSizeBytes: file.size,
         url: objectUrl,
         localImagePath: objectUrl,
+        displayImageUrl: displayImageUrl || undefined,
         rawFile: file,
         hasAudio,
         width,
