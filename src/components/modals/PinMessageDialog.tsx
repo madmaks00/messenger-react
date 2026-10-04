@@ -1,84 +1,237 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useChatStore } from '../../stores/chatStore';
 
-interface PinMessageDialogProps {
-  isOpen: boolean;
-  pinDialogTitle?: string;
-  pinForAllText?: string;
-  canPinForAll?: boolean;
-  actionText?: string;
-  onCancel: () => void;
-  onConfirm: (pinForAll: boolean) => void;
+export interface PinMessageDialogProps {
+  isOpen?: boolean;
+  onCancel?: () => void;
+  onConfirm?: (pinForAll: boolean) => void;
 }
 
 export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
-  isOpen,
-  pinDialogTitle = 'Do you want to pin this message?',
-  pinForAllText = 'Pin for everyone',
-  canPinForAll = true,
-  actionText = 'Pin',
-  onCancel,
-  onConfirm,
+  isOpen: propIsOpen,
+  onCancel: propOnCancel,
+  onConfirm: propOnConfirm,
 }) => {
-  const [pinForAll, setPinForAll] = useState(true);
+  const store = useChatStore();
 
-  if (!isOpen) return null;
+  const isDialogOpen = propIsOpen !== undefined ? propIsOpen : store.isPinDialogOpen;
+  const cancelPin = propOnCancel || store.cancelPin;
+  const confirmPin = propOnConfirm || store.confirmPin;
+
+  const {
+    pinDialogTitle,
+    pinDialogActionText,
+    pinForAllText,
+    canPinForAll,
+  } = store;
+
+  const [pinForAll, setPinForAll] = useState(true);
+  const [isRendered, setIsRendered] = useState(isDialogOpen);
+  const [isFadingOut, setIsFadingOut] = useState(false);
+
+  useEffect(() => {
+    if (isDialogOpen) {
+      setPinForAll(true);
+      setIsRendered(true);
+      setIsFadingOut(false);
+    } else if (isRendered) {
+      setIsFadingOut(true);
+      const timer = setTimeout(() => {
+        setIsRendered(false);
+        setIsFadingOut(false);
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [isDialogOpen]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isRendered) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelPin();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRendered, cancelPin]);
+
+  if (!isRendered) return null;
 
   return (
     <div
-      onClick={onCancel}
+      onClick={cancelPin}
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-        zIndex: 1000,
+        backgroundColor: 'rgba(0, 0, 0, 0.35)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        zIndex: 10000,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backdropFilter: 'blur(4px)',
+        userSelect: 'none',
+        boxSizing: 'border-box',
+        padding: 16,
+        opacity: isFadingOut ? 0 : 1,
+        transition: 'opacity 0.12s ease-out',
       }}
     >
+      <style>{`
+        .btn-close {
+          width: 26px !important;
+          height: 26px !important;
+          padding: 0 !important;
+          border-radius: 50% !important;
+          background-color: transparent !important;
+          color: #7D8494 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          cursor: pointer !important;
+          border: none !important;
+          outline: none !important;
+          transition: background-color 0.15s ease, color 0.15s ease !important;
+        }
+        .btn-close:hover {
+          background-color: rgba(255, 255, 255, 0.08) !important;
+          color: #FFFFFF !important;
+        }
+        .btn-close:active {
+          background-color: rgba(255, 255, 255, 0.16) !important;
+        }
+
+        .btn-cancel {
+          height: 34px;
+          padding: 0 14px;
+          background-color: transparent !important;
+          border: none;
+          border-radius: 7px;
+          color: #7D8494 !important;
+          font-weight: 500;
+          font-size: 13px;
+          cursor: pointer;
+          outline: none;
+          transition: background-color 0.15s ease, color 0.15s ease !important;
+        }
+        .btn-cancel:hover {
+          background-color: rgba(255, 255, 255, 0.08) !important;
+          color: #FFFFFF !important;
+        }
+        .btn-cancel:active {
+          background-color: rgba(255, 255, 255, 0.14) !important;
+        }
+
+        .btn-primary {
+          height: 34px;
+          padding: 0 18px;
+          background-color: #1E9BEB !important;
+          border: none;
+          border-radius: 7px;
+          color: #FFFFFF !important;
+          font-weight: 600;
+          font-size: 13px;
+          cursor: pointer;
+          outline: none;
+          transition: opacity 0.15s ease !important;
+        }
+        .btn-primary:hover {
+          opacity: 0.9 !important;
+        }
+        .btn-primary:active {
+          opacity: 0.8 !important;
+        }
+      `}</style>
+
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 340,
-          backgroundColor: '#1E2330',
+          maxWidth: '92vw',
+          backgroundColor: '#161B26',
           borderRadius: 12,
-          padding: '20px 20px 12px 20px',
-          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.6)',
-          border: '1px solid #334155',
+          padding: '16px 18px 14px 18px',
+          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
+          border: '1px solid #2A3342',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
         }}
       >
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#FFF', marginBottom: 20 }}>
-          {pinDialogTitle}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 12,
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: 17, fontWeight: 600, color: '#FFFFFF' }}>
+            {pinDialogActionText === 'Unpin' ? 'Unpin Message' : 'Pin Message'}
+          </span>
+
+          <button
+            type="button"
+            onClick={cancelPin}
+            className="btn-close"
+            title="Close"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+            </svg>
+          </button>
+        </div>
+
+        <div style={{ fontSize: 14.5, color: '#FFFFFF', lineHeight: '21px', marginBottom: 14, wordBreak: 'break-word' }}>
+          {pinDialogTitle || 'Do you want to pin this message?'}
         </div>
 
         {canPinForAll && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 25, fontSize: 15, color: '#E2E8F0' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              cursor: 'pointer',
+              marginBottom: 18,
+              fontSize: 14,
+              color: '#FFFFFF',
+              userSelect: 'none',
+            }}
+          >
             <input
               type="checkbox"
               checked={pinForAll}
               onChange={(e) => setPinForAll(e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: '#3B82F6' }}
+              style={{ width: 17, height: 17, accentColor: '#1E9BEB', cursor: 'pointer' }}
             />
-            <span>{pinForAllText}</span>
+            <span style={{ color: '#E2E8F0' }}>{pinForAllText || 'Also apply for everyone'}</span>
           </label>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
           <button
-            onClick={onCancel}
-            style={{ background: 'transparent', border: 'none', color: '#94A3B8', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 15px' }}
+            type="button"
+            onClick={cancelPin}
+            className="btn-cancel"
           >
             Cancel
           </button>
+
           <button
-            onClick={() => onConfirm(pinForAll)}
-            style={{ background: 'transparent', border: 'none', color: 'var(--app-accent, #3B82F6)', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', padding: '6px 15px' }}
+            type="button"
+            onClick={() => void confirmPin(pinForAll)}
+            className="btn-primary"
           >
-            {actionText}
+            {pinDialogActionText || 'Pin'}
           </button>
         </div>
       </div>
     </div>
   );
 };
+
+export default PinMessageDialog;

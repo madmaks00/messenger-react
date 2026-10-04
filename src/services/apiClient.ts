@@ -13,11 +13,21 @@ export const apiClient: AxiosInstance = axios.create({
 });
 
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  // 🟢 Берём токен из памяти ИЛИ из localStorage
   const token = userSession.token || localStorage.getItem('jwt_token');
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  // 🟢 КРИТИЧЕСКИ ВАЖНО: Если отправляется FormData, удаляем дефолтный 'application/json',
+  // чтобы браузер сам сгенерировал multipart/form-data с правильным boundary для ASP.NET Core [FromForm]
+  if (config.data instanceof FormData && config.headers) {
+    if (typeof (config.headers as any).delete === 'function') {
+      (config.headers as any).delete('Content-Type');
+    }
+    delete (config.headers as any)['Content-Type'];
+    delete (config.headers as any)['content-type'];
+  }
+
   return config;
 });
 

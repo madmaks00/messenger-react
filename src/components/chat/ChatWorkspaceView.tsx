@@ -23,8 +23,10 @@ import {
   mdiBullhornOutline,
   mdiChevronDown,
 } from '@mdi/js';
-
-import { useChatStore } from '../../stores/chatStore';
+import { PinMessageDialog } from '../modals/PinMessageDialog';
+import { ForwardMessageDialog } from '../modals/ForwardMessageDialog';
+import { ConfirmDialogView } from '../modals/ConfirmDialogView';
+import { useChatStore, getMessageReplyText } from '../../stores/chatStore';
 import { useMessageInputStore } from '../../stores/messageInputStore';
 import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
 import { useNavigationStore } from '../../stores/navigationStore';
@@ -72,6 +74,17 @@ const PALETTE = {
   secretChatFingerprintBg: '#0F172A',
 };
 
+const formatPinTimestamp = (timestamp: string | Date | undefined): string => {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day}.${month} ${hours}:${minutes}`;
+};
+
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
   size = 20,
@@ -82,7 +95,7 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
     viewBox="0 0 24 24"
     width={size}
     height={size}
-    fill={color === 'inherit' ? 'currentColor' : color}
+    fill={color}
     style={{ display: 'inline-block', flexShrink: 0, verticalAlign: 'middle', ...style }}
   >
     <path d={path} />
@@ -98,14 +111,23 @@ export const ChatWorkspaceView: React.FC = () => {
     isSelectionMode,
     selectedCount,
     pinnedMessages = [],
+    currentUserName,
     isChatSearchMode,
+    isConfirmDialogOpen,
+    confirmDialogTitle,
+    confirmDialogMessage,
+    confirmDialogCheckboxText,
+    confirmDialogButtonText,
+    closeConfirmDialog,
+    confirmDelete,
+    openDeleteDialog,
+    deleteSelected,
+    replySelected,
+    forwardSelected,
     startSearch,
     exitSearch,
-    togglePinMessage,
-    deleteMessage,
     toggleSelectMessage,
     clearSelection,
-    forwardMessages,
     markAsRead,
   } = useChatStore();
 
@@ -118,7 +140,6 @@ export const ChatWorkspaceView: React.FC = () => {
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
 
-  // Состояние просмотра фото
   const [photoViewerState, setPhotoViewerState] = useState<{
     isOpen: boolean;
     mediaList: IAttachment[];
@@ -146,7 +167,27 @@ export const ChatWorkspaceView: React.FC = () => {
   const prevMessagesLengthRef = useRef<number>(0);
   const prevLastMsgIdRef = useRef<number | null>(null);
 
-  // 1. Открытие полноэкранного просмотрщика фото
+  const handleMessageAreaMouseDown = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('button') ||
+      target.closest('a') ||
+      target.closest('input') ||
+      target.closest('textarea') ||
+      target.closest('[role="button"]') ||
+      target.closest('.context-menu')
+    ) {
+      return;
+    }
+
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.toString().length === 0) {
+        eventBus.emit('FocusMessageInputMessage' as any, undefined);
+      }
+    }, 10);
+  }, []);
+
   const handleOpenPhotoGallery = useCallback((clickedAtt: IAttachment, clickedMsgId?: number) => {
     if (!clickedAtt) return;
 
@@ -164,7 +205,14 @@ export const ChatWorkspaceView: React.FC = () => {
       const attachments = msg.attachments || [];
       for (let aIdx = 0; aIdx < attachments.length; aIdx++) {
         const att = attachments[aIdx];
-        const isPhoto = att.type === AttachmentType.Photo || (!att.type && att.url && !att.hasAudio);
+        const isVideo =
+          att.type === AttachmentType.Video ||
+          AttachmentHelper.isVideo(att) ||
+          att.fileSizeStr === 'GIF' ||
+          (att.fileName && att.fileName.toLowerCase().endsWith('.mp4')) ||
+          (att.url && att.url.toLowerCase().endsWith('.mp4'));
+
+        const isPhoto = (att.type === AttachmentType.Photo || (!att.type && att.url)) && !isVideo;
 
         if (isPhoto) {
           allChatPhotos.push(att);
@@ -213,32 +261,32 @@ export const ChatWorkspaceView: React.FC = () => {
     });
   }, [currentChatMessages]);
 
-  // 2. Универсальный диспетчер клика по медиа (фото -> галерея, видео -> VideoViewerView)
   const handleMediaItemClick = useCallback(
     (clickedAtt: IAttachment, clickedMsgId?: number) => {
       if (!clickedAtt) return;
 
-      const isVideo = AttachmentHelper.isVideo(clickedAtt) || clickedAtt.type === AttachmentType.Video;
-      const isSilent = AttachmentHelper.isSilentVideo(clickedAtt);
+      const isVideo =
+        clickedAtt.type === AttachmentType.Video ||
+        AttachmentHelper.isVideo(clickedAtt) ||
+        clickedAtt.fileSizeStr === 'GIF' ||
+        (clickedAtt.fileName && clickedAtt.fileName.toLowerCase().endsWith('.mp4')) ||
+        (clickedAtt.url && clickedAtt.url.toLowerCase().endsWith('.mp4'));
 
-      // Видео со звуком -> открываем VideoViewerView (аналог MediaHelper.WatchVideo в C#)
-      if (isVideo && !isSilent) {
+      if (isVideo) {
         const senderName = selectedChatUser?.nickName || 'User';
         useVideoViewerStore.getState().open(
           clickedAtt.url,
-          clickedAtt.fileName || 'Video',
+          clickedAtt.durationSeconds || clickedAtt.fileName || 'Video',
           senderName
         );
         return;
       }
 
-      // Фото или GIF -> открываем PhotoViewerView
       handleOpenPhotoGallery(clickedAtt, clickedMsgId);
     },
     [selectedChatUser, handleOpenPhotoGallery]
   );
 
-  // 3. Открытие профиля текущего чата
   const handleOpenCurrentChatProfile = useCallback(() => {
     if (!selectedChatUser) return;
 
@@ -291,7 +339,6 @@ export const ChatWorkspaceView: React.FC = () => {
     return () => document.removeEventListener('click', handleOutside);
   }, []);
 
-  // 4. Расчет разметки сообщений через Virtualizing Engine
   const { layoutItems, totalContentHeight } = useMemo(() => {
     const msgs = currentChatMessages || [];
     if (msgs.length === 0) return { layoutItems: [], totalContentHeight: 0 };
@@ -357,7 +404,6 @@ export const ChatWorkspaceView: React.FC = () => {
     return items.slice(firstIndex, lastIndex + 1);
   }, [layoutItems, scrollTop, viewportHeight]);
 
-  // 5. Плавная прокрутка к смещению (анимация CubicEaseOut)
   const scrollToOffsetAnimated = useCallback((targetOffset: number, onCompleted?: () => void) => {
     if (!scrollRef.current) return;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -427,6 +473,7 @@ export const ChatWorkspaceView: React.FC = () => {
       prevLastMsgIdRef.current = lastMsg ? Number(lastMsg.id || lastMsg.serverId || 0) : null;
       prevMessagesLengthRef.current = currentChatMessages.length;
       prevTotalHeightRef.current = totalContentHeight;
+      eventBus.emit('FocusMessageInputMessage' as any, undefined);
     }
   }, [selectedChatUser?.id, isHistoryLoading, totalContentHeight, currentChatMessages]);
 
@@ -523,8 +570,22 @@ export const ChatWorkspaceView: React.FC = () => {
           anchorRelativeOffset,
         };
 
+        const resolvedMyName = currentUserName && currentUserName !== 'Me' ? currentUserName : 'Me';
+        const opponentName = !selectedChatUser.isGroup ? (selectedChatUser.nickName || 'User') : 'User';
+        const opponentAvatar = !selectedChatUser.isGroup ? (selectedChatUser.avatarPath || (selectedChatUser as any).avatar) : null;
+
+        const enrichedOlder = older.map((m) => {
+          const isMy = Number(m.senderId) === Number(userSession.userId) || Boolean(m.isMyMessage);
+          return {
+            ...m,
+            isMyMessage: isMy,
+            senderName: isMy ? resolvedMyName : (m.senderName || opponentName),
+            senderAvatar: isMy ? useChatStore.getState().currentUserAvatar : (m.senderAvatar || opponentAvatar),
+          };
+        });
+
         useChatStore.setState((state) => ({
-          currentChatMessages: [...older, ...state.currentChatMessages],
+          currentChatMessages: [...enrichedOlder, ...state.currentChatMessages],
         }));
       }
     } catch (err) {
@@ -577,7 +638,6 @@ export const ChatWorkspaceView: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 6. Подписка на событие ScrollToMessageRequestMessage
   useEffect(() => {
     const unbind = eventBus.on('ScrollToMessageRequestMessage' as any, async (payload: any) => {
       const msgId = Number(payload?.messageId ?? payload?.serverId ?? payload?.localId ?? 0);
@@ -707,7 +767,7 @@ export const ChatWorkspaceView: React.FC = () => {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: PALETTE.bgChat, position: 'relative', overflow: 'hidden' }}>
       
-      {/* 🟢 ШАПКА ЧАТА */}
+      {/* ШАПКА ЧАТА */}
       <div
         style={{
           height: 54,
@@ -740,11 +800,7 @@ export const ChatWorkspaceView: React.FC = () => {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 10 }}>
               <button
-                onClick={() => {
-                  const selected = msgs.filter((m) => m.isSelected);
-                  if (selected.length > 0) addReplyMessage(selected[0]);
-                  clearSelection();
-                }}
+                onClick={replySelected}
                 style={headerActionBtnStyle}
               >
                 <MdiIcon path={mdiReplyOutline} size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
@@ -752,11 +808,7 @@ export const ChatWorkspaceView: React.FC = () => {
               </button>
 
               <button
-                onClick={() => {
-                  const selected = msgs.filter((m) => m.isSelected);
-                  if (selected.length > 0) forwardMessages(selected);
-                  clearSelection();
-                }}
+                onClick={forwardSelected}
                 style={{ ...headerActionBtnStyle, color: PALETTE.accent }}
               >
                 <MdiIcon path={mdiShareOutline} size={18} color={PALETTE.accent} style={{ marginRight: 6 }} />
@@ -764,11 +816,7 @@ export const ChatWorkspaceView: React.FC = () => {
               </button>
 
               <button
-                onClick={() => {
-                  const selected = msgs.filter((m) => m.isSelected);
-                  selected.forEach((m) => deleteMessage(m, true));
-                  clearSelection();
-                }}
+                onClick={deleteSelected}
                 style={{ ...headerActionBtnStyle, color: PALETTE.destructive }}
               >
                 <MdiIcon path={mdiDeleteOutline} size={18} color={PALETTE.destructive} style={{ marginRight: 6 }} />
@@ -873,14 +921,14 @@ export const ChatWorkspaceView: React.FC = () => {
                       backgroundColor: PALETTE.pinnedPopupBg,
                       border: `1.2px solid ${PALETTE.pinnedPopupBorder}`,
                       borderRadius: 12,
-                      padding: '6px 8px 2px 6px',
+                      padding: '8px 2px 6px 6px',
                       zIndex: 1000,
                       display: 'flex',
                       flexDirection: 'column',
                       boxShadow: '0 8px 25px rgba(0,0,0,0.45)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 8px 4px', borderBottom: `1px solid ${PALETTE.pinnedPopupBorder}`, margin: '0 0 6px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 8px 8px 4px', borderBottom: `1px solid ${PALETTE.pinnedPopupBorder}`, margin: '0 4px 6px 0' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <div style={{ transform: 'rotate(45deg)', display: 'flex' }}>
                           <MdiIcon path={mdiPinOutline} size={16} color={PALETTE.accent} />
@@ -901,40 +949,73 @@ export const ChatWorkspaceView: React.FC = () => {
                           <div style={{ fontSize: 13, fontWeight: 600 }}>No pinned messages</div>
                         </div>
                       ) : (
-                        pinnedMessages.map((pin: any) => (
-                          <div
-                            key={pin.id || pin.serverId}
-                            onClick={() => {
-                              eventBus.emit('ScrollToMessageRequestMessage' as any, { messageId: pin.serverId || pin.id });
-                              setIsPinnedPopupOpen(false);
-                            }}
-                            style={{
-                              padding: '6px 8px',
-                              borderRadius: 6,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              gap: 8,
-                              margin: '0 1px 4px 1px',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = PALETTE.pinnedPopupHover)}
-                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-                          >
-                            <div style={{ width: 3, backgroundColor: PALETTE.accentMarker, borderRadius: 1.5 }} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                                <span style={{ color: PALETTE.tgCheckmark, fontWeight: 'bold', fontSize: 12.5 }}>
-                                  {pin.senderName || 'User'}
-                                </span>
-                                <span style={{ color: PALETTE.textMuted, fontSize: 11 }}>
-                                  {pin.timestamp ? new Date(pin.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                                </span>
-                              </div>
-                              <div style={{ color: '#FFFFFF', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                                {pin.text || pin.previewText || 'Attachment'}
+                        pinnedMessages.map((pin: any) => {
+                          const isMy = Boolean(pin.isMyMessage || (pin.senderId && Number(pin.senderId) === Number(userSession.userId)));
+                          const senderDisplayName =
+                            pin.senderName && pin.senderName !== 'User'
+                              ? pin.senderName
+                              : isMy
+                              ? (currentUserName || 'Me')
+                              : (selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'User');
+
+                          return (
+                            <div
+                              key={pin.id || pin.serverId}
+                              onClick={() => {
+                                eventBus.emit('ScrollToMessageRequestMessage' as any, { messageId: pin.serverId || pin.id });
+                                setIsPinnedPopupOpen(false);
+                              }}
+                              style={{
+                                padding: '6px 8px 6px 6px',
+                                margin: '0 5px 1px 0',
+                                borderRadius: 6,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'stretch',
+                                backgroundColor: 'transparent',
+                                transition: 'background-color 0.12s ease',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = PALETTE.pinnedPopupHover)}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            >
+                              <div
+                                style={{
+                                  width: 3,
+                                  minWidth: 3,
+                                  backgroundColor: PALETTE.accentMarker,
+                                  borderRadius: 1.5,
+                                  alignSelf: 'stretch',
+                                }}
+                              />
+
+                              <div style={{ flex: 1, minWidth: 0, marginLeft: 8, marginRight: 4, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                  <span
+                                    style={{
+                                      color: PALETTE.tgCheckmark,
+                                      fontWeight: 'bold',
+                                      fontSize: 12.5,
+                                      marginRight: 10,
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    {senderDisplayName}
+                                  </span>
+
+                                  <span style={{ color: PALETTE.textMuted, fontSize: 11, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                    {formatPinTimestamp(pin.timestamp)}
+                                  </span>
+                                </div>
+
+                                <div style={{ color: '#FFFFFF', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                  {getMessageReplyText(pin)}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -1082,17 +1163,17 @@ export const ChatWorkspaceView: React.FC = () => {
         )}
       </div>
 
-      {/* 🟢 ОБЛАСТЬ СООБЩЕНИЙ */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        
-        {/* Заглушка 1: Загрузка истории чата */}
+      {/* ОБЛАСТЬ СООБЩЕНИЙ */}
+      <div
+        onMouseDown={handleMessageAreaMouseDown}
+        style={{ flex: 1, position: 'relative', overflow: 'hidden' }}
+      >
         {isHistoryLoading && msgs.length === 0 && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: PALETTE.textMuted }}>
             <div style={{ fontSize: 15 }}>Loading history...</div>
           </div>
         )}
 
-        {/* Заглушка 2: Пустой обычный чат или канал */}
         {!selectedChatUser.isSecretChat && msgs.length === 0 && !isHistoryLoading && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 5, userSelect: 'none', marginBottom: 50 }}>
             <div style={{ width: 100, height: 100, borderRadius: 50, background: PALETTE.emptyIconContainerBg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
@@ -1107,7 +1188,6 @@ export const ChatWorkspaceView: React.FC = () => {
           </div>
         )}
 
-        {/* Заглушка 3: Карточка Секретного Чата (Secret Chat Banner из XAML) */}
         {selectedChatUser.isSecretChat && msgs.length === 0 && !isHistoryLoading && (
           <div
             style={{
@@ -1214,7 +1294,7 @@ export const ChatWorkspaceView: React.FC = () => {
           </div>
         )}
 
-        {/* 🟢 ВИРТУАЛИЗИРОВАННЫЙ СКРОЛЛЕР СООБЩЕНИЙ */}
+        {/* ВИРТУАЛИЗИРОВАННЫЙ СКРОЛЛЕР СООБЩЕНИЙ */}
         <div
           ref={scrollRef}
           className="wpf-scroll-viewer"
@@ -1241,11 +1321,11 @@ export const ChatWorkspaceView: React.FC = () => {
                   isHighlighted={isMsgHighlighted}
                   isSelectionMode={isSelectionMode}
                   onToggleSelect={toggleSelectMessage}
-                  onReply={addReplyMessage}
+                  onReply={(msg) => addReplyMessage({ ...msg, text: getMessageReplyText(msg) })}
                   onEdit={setEditMessage}
-                  onPin={(msg) => togglePinMessage(msg, true)}
-                  onDelete={(msg) => deleteMessage(msg, true)}
-                  onForward={(msg) => forwardMessages([msg])}
+                  onPin={(msg) => useChatStore.getState().openPinDialog(msg)}
+                  onDelete={(msg) => openDeleteDialog(msg)}
+                  onForward={(msg) => useChatStore.getState().openForwardDialog([msg])}
                   onScrollToMessage={(id) => {
                     eventBus.emit('ScrollToMessageRequestMessage' as any, { messageId: id });
                   }}
@@ -1256,7 +1336,7 @@ export const ChatWorkspaceView: React.FC = () => {
           </div>
         </div>
 
-        {/* 🟢 ОБЪЕДИНЕННЫЙ НИЖНИЙ СТЕК: ТУМАН, КНОПКА СКРОЛЛА И ПОЛЕ ВВОДА */}
+        {/* НИЖНИЙ СТЕК */}
         <div
           style={{
             position: 'absolute',
@@ -1267,8 +1347,8 @@ export const ChatWorkspaceView: React.FC = () => {
             pointerEvents: 'none',
           }}
         >
-          {/* Градиентный туман */}
           <div
+            onClick={() => eventBus.emit('FocusMessageInputMessage' as any, undefined)}
             style={{
               position: 'absolute',
               left: 0,
@@ -1276,12 +1356,11 @@ export const ChatWorkspaceView: React.FC = () => {
               bottom: 0,
               height: 100,
               background: `linear-gradient(to bottom, ${PALETTE.fogTop} 0%, ${PALETTE.fogMid} 40%, ${PALETTE.fogBottom} 100%)`,
-              pointerEvents: 'none',
+              pointerEvents: 'auto',
               zIndex: 5,
             }}
           />
 
-          {/* Плавающая кнопка быстрого скролла вниз со счетчиком непрочитанных */}
           <div
             style={{
               position: 'absolute',
@@ -1296,7 +1375,10 @@ export const ChatWorkspaceView: React.FC = () => {
           >
             <div style={{ position: 'relative' }}>
               <button
-                onClick={scrollToBottom}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  scrollToBottom();
+                }}
                 style={{
                   width: 44,
                   height: 44,
@@ -1342,7 +1424,6 @@ export const ChatWorkspaceView: React.FC = () => {
             </div>
           </div>
 
-          {/* Модульное поле ввода сообщений */}
           <div
             style={{
               margin: '0 30px 20px 30px',
@@ -1357,7 +1438,6 @@ export const ChatWorkspaceView: React.FC = () => {
 
       </div>
 
-      {/* Просмотрщик фото */}
       <PhotoViewerView
         isOpen={photoViewerState.isOpen}
         mediaList={photoViewerState.mediaList}
@@ -1365,8 +1445,19 @@ export const ChatWorkspaceView: React.FC = () => {
         onClose={() => setPhotoViewerState((prev) => ({ ...prev, isOpen: false }))}
       />
 
-      {/* Полноэкранный видеоплеер (VideoViewerView из XAML) */}
       <VideoViewerView />
+      <PinMessageDialog />
+      <ForwardMessageDialog />
+
+      <ConfirmDialogView
+        isOpen={isConfirmDialogOpen}
+        targetTitle={confirmDialogTitle}
+        dialogMessage={confirmDialogMessage}
+        checkboxText={confirmDialogCheckboxText}
+        confirmButtonText={confirmDialogButtonText}
+        onCancel={closeConfirmDialog}
+        onConfirm={(isChecked) => void confirmDelete(isChecked)}
+      />
     </div>
   );
 };

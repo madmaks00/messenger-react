@@ -25,7 +25,6 @@ export class AppLocalDatabase extends Dexie {
   public syncStates!: Table<ISyncState, string>;
 
   constructor(userId: number) {
-    // Каждому аккаунту — изолированная база данных, как было в WPF: $"{userId}_cached.db"
     const dbName = userId > 0 ? `MessengerCache_${userId}` : 'MessengerCache_Guest';
     super(dbName);
 
@@ -41,10 +40,14 @@ export class AppLocalDatabase extends Dexie {
       savedGifs: '++id, serverId',
       syncStates: 'key',
     });
+
+    // 🟢 Версия 2: быстрая выборка закрепов и диапазонов без сканирования всей базы
+    this.version(2).stores({
+      messages: '++id, serverId, senderId, receiverId, groupId, timestamp, secretChatId, isPinned, [groupId+timestamp], [senderId+receiverId+timestamp], [secretChatId+timestamp]',
+    });
   }
 }
 
-// Реестр открытых баз данных для поддержки Account Switcher
 let currentDbInstance: AppLocalDatabase | null = null;
 let currentActiveUserId: number | null = null;
 

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Theme } from '../profile/profile.theme';
 
 export interface ConfirmDialogProps {
   isOpen: boolean;
@@ -17,9 +16,8 @@ export interface ConfirmDialogProps {
 export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
   isOpen,
   targetTitle,
-  targetAvatar,
   targetIcon,
-  targetIconColor = Theme.AppAccent,
+  targetIconColor = '#1E9BEB',
   dialogMessage,
   checkboxText,
   confirmButtonText = 'Delete',
@@ -27,185 +25,251 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
   onConfirm,
 }) => {
   const [isChecked, setIsChecked] = useState(false);
-  const [isMounted, setIsMounted] = useState(isOpen);
-  const [isVisible, setIsVisible] = useState(false);
-
-  // Кэшируем содержимое, чтобы оно НЕ пропадало при сбросе пропсов родительским компонентом
-  const [cached, setCached] = useState({
-    targetTitle,
-    targetAvatar,
-    targetIcon,
-    targetIconColor,
-    dialogMessage,
-    checkboxText,
-    confirmButtonText,
-  });
-
-  const [cancelHovered, setCancelHovered] = useState(false);
-  const [confirmHovered, setConfirmHovered] = useState(false);
+  const [isRendered, setIsRendered] = useState(isOpen);
+  const [isFadingOut, setIsFadingOut] = useState(false);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-
     if (isOpen) {
       setIsChecked(false);
-      setIsMounted(true);
-
-      // Сохраняем свежие данные
-      setCached({
-        targetTitle,
-        targetAvatar,
-        targetIcon,
-        targetIconColor: targetIconColor || Theme.AppAccent,
-        dialogMessage,
-        checkboxText,
-        confirmButtonText: confirmButtonText || 'Delete',
-      });
-
-      // Старт плавной анимации появления
-      timer = setTimeout(() => {
-        setIsVisible(true);
-      }, 16);
-    } else {
-      // Если закрытие вызвано извне (через проп isOpen = false)
-      setIsVisible(false);
-      timer = setTimeout(() => {
-        setIsMounted(false);
-      }, 160);
+      setIsRendered(true);
+      setIsFadingOut(false);
+    } else if (isRendered) {
+      setIsFadingOut(true);
+      const timer = setTimeout(() => {
+        setIsRendered(false);
+        setIsFadingOut(false);
+      }, 120);
+      return () => clearTimeout(timer);
     }
+  }, [isOpen]);
 
-    return () => clearTimeout(timer);
-  }, [
-    isOpen,
-    targetTitle,
-    targetAvatar,
-    targetIcon,
-    targetIconColor,
-    dialogMessage,
-    checkboxText,
-    confirmButtonText,
-  ]);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isRendered) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRendered, onCancel]);
 
-  // Плавный выход перед вызовом колбэка
-  const handleClose = (callback: () => void) => {
-    if (!isVisible) return;
-    setIsVisible(false);
-    setTimeout(() => {
-      setIsMounted(false);
-      callback();
-    }, 160); // 160ms — оптимальное быстрое время растворения
-  };
+  if (!isRendered) return null;
 
-  if (!isMounted) return null;
+  const isDestructive = confirmButtonText?.toLowerCase().includes('delete') ||
+                        confirmButtonText?.toLowerCase().includes('leave') ||
+                        confirmButtonText?.toLowerCase().includes('clear') ||
+                        confirmButtonText?.toLowerCase().includes('block');
 
   return (
     <div
-      onClick={() => handleClose(onCancel)}
+      onClick={onCancel}
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: Theme.OverlayBackdrop || 'rgba(0, 0, 0, 0.6)',
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: 'blur(4px)',
         zIndex: 10000,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         userSelect: 'none',
-        fontFamily: "'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
-        opacity: isVisible ? 1 : 0,
-        pointerEvents: isVisible ? 'auto' : 'none',
-        transition: 'opacity 0.16s ease-out',
+        boxSizing: 'border-box',
+        padding: 16,
+        opacity: isFadingOut ? 0 : 1,
+        transition: 'opacity 0.12s ease-out',
       }}
     >
+      <style>{`
+        .btn-close {
+          width: 28px !important;
+          height: 28px !important;
+          padding: 0 !important;
+          border-radius: 50% !important;
+          background-color: transparent !important;
+          color: #7D8494 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          cursor: pointer !important;
+          border: none !important;
+          outline: none !important;
+          transition: background-color 0.15s ease, color 0.15s ease !important;
+        }
+        .btn-close:hover {
+          background-color: rgba(255, 255, 255, 0.08) !important;
+          color: #FFFFFF !important;
+        }
+        .btn-close:active {
+          background-color: rgba(255, 255, 255, 0.16) !important;
+        }
+
+        .btn-cancel {
+          height: 36px;
+          padding: 0 16px;
+          background-color: transparent !important;
+          border: none;
+          border-radius: 8px;
+          color: #7D8494 !important;
+          font-weight: 500;
+          font-size: 13.5px;
+          cursor: pointer;
+          outline: none;
+          transition: background-color 0.15s ease, color 0.15s ease !important;
+        }
+        .btn-cancel:hover {
+          background-color: rgba(255, 255, 255, 0.08) !important;
+          color: #FFFFFF !important;
+        }
+        .btn-cancel:active {
+          background-color: rgba(255, 255, 255, 0.14) !important;
+        }
+
+        .btn-primary {
+          height: 36px;
+          padding: 0 22px;
+          background-color: #1E9BEB !important;
+          border: none;
+          border-radius: 8px;
+          color: #FFFFFF !important;
+          font-weight: 600;
+          font-size: 13.5px;
+          cursor: pointer;
+          outline: none;
+          transition: opacity 0.15s ease !important;
+        }
+        .btn-primary:hover {
+          opacity: 0.9 !important;
+        }
+        .btn-primary:active {
+          opacity: 0.8 !important;
+        }
+
+        .btn-danger {
+          height: 36px;
+          padding: 0 22px;
+          background-color: #E74C3C !important;
+          border: none;
+          border-radius: 8px;
+          color: #FFFFFF !important;
+          font-weight: 600;
+          font-size: 13.5px;
+          cursor: pointer;
+          outline: none;
+          transition: opacity 0.15s ease !important;
+        }
+        .btn-danger:hover {
+          opacity: 0.9 !important;
+        }
+        .btn-danger:active {
+          opacity: 0.8 !important;
+        }
+      `}</style>
+
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 340,
-          backgroundColor: Theme.SidebarContextMenuBg || '#1C212D',
+          width: 380,
+          backgroundColor: '#161A23',
           borderRadius: 14,
-          padding: '24px 20px 18px 20px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.7)',
-          border: `1px solid ${Theme.SidebarContextMenuBorder || '#272E3F'}`,
+          padding: '20px 22px 18px 22px',
+          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
+          border: '1px solid #2A3342',
           boxSizing: 'border-box',
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'scale(1) translateY(0)' : 'scale(0.96) translateY(4px)',
-          transition: isVisible
-            ? 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease'
-            : 'transform 0.16s ease-out, opacity 0.15s ease-out',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
         }}
       >
-        {/* 1. Шапка: Заголовок + иконка (берём из cached, чтобы не схлопывалось) */}
-        {cached.targetTitle && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-            {cached.targetIcon && (
-              <svg width={28} height={28} viewBox="0 0 24 24" fill={cached.targetIconColor}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 16,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            {targetIcon && (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill={targetIconColor} style={{ flexShrink: 0 }}>
                 <path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" />
               </svg>
             )}
-            <div style={{ fontSize: 20, fontWeight: 600, color: '#FFFFFF' }}>
-              {cached.targetTitle}
-            </div>
+            <span
+              style={{
+                fontSize: 18,
+                fontWeight: 600,
+                color: '#FFFFFF',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {targetTitle || 'Confirmation'}
+            </span>
           </div>
-        )}
 
-        {/* 2. Текст вопроса */}
-        <div style={{ fontSize: 16, color: '#FFFFFF', lineHeight: '22px', marginBottom: 20, wordBreak: 'break-word' }}>
-          {cached.dialogMessage}
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn-close"
+            title="Close"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+            </svg>
+          </button>
         </div>
 
-        {/* 3. Опциональный чекбокс */}
-        {cached.checkboxText && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 25, fontSize: 15, color: '#FFFFFF' }}>
+        <div style={{ fontSize: 15, color: '#FFFFFF', lineHeight: '22px', marginBottom: 20, wordBreak: 'break-word' }}>
+          {dialogMessage}
+        </div>
+
+        {checkboxText && (
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              cursor: 'pointer',
+              marginBottom: 24,
+              fontSize: 14.5,
+              color: '#FFFFFF',
+              userSelect: 'none',
+            }}
+          >
             <input
               type="checkbox"
               checked={isChecked}
               onChange={(e) => setIsChecked(e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: Theme.AppAccent }}
+              style={{ width: 18, height: 18, accentColor: isDestructive ? '#E74C3C' : '#1E9BEB', cursor: 'pointer' }}
             />
-            <span>{cached.checkboxText}</span>
+            <span style={{ color: '#E2E8F0' }}>{checkboxText}</span>
           </label>
         )}
 
-        {/* 4. Кнопки Cancel / Confirm */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
           <button
-            onClick={() => handleClose(onCancel)}
-            onMouseEnter={() => setCancelHovered(true)}
-            onMouseLeave={() => setCancelHovered(false)}
-            style={{
-              background: cancelHovered ? 'rgba(74, 148, 232, 0.14)' : 'transparent',
-              border: 'none',
-              borderRadius: 8,
-              color: '#4A94E8',
-              fontSize: 15,
-              fontWeight: 600,
-              cursor: 'pointer',
-              padding: '8px 16px',
-              transition: 'background-color 0.15s ease',
-            }}
+            type="button"
+            onClick={onCancel}
+            className="btn-cancel"
           >
             Cancel
           </button>
-          
+
           <button
-            onClick={() => handleClose(() => onConfirm(isChecked))}
-            onMouseEnter={() => setConfirmHovered(true)}
-            onMouseLeave={() => setConfirmHovered(false)}
-            style={{
-              background: confirmHovered ? 'rgba(231, 76, 60, 0.16)' : 'transparent',
-              border: 'none',
-              borderRadius: 8,
-              color: '#E74C3C',
-              fontSize: 15,
-              fontWeight: 600,
-              cursor: 'pointer',
-              padding: '8px 16px',
-              transition: 'background-color 0.15s ease',
-            }}
+            type="button"
+            onClick={() => onConfirm(isChecked)}
+            className={isDestructive ? 'btn-danger' : 'btn-primary'}
           >
-            {cached.confirmButtonText}
+            {confirmButtonText}
           </button>
         </div>
       </div>
     </div>
   );
 };
+
+export default ConfirmDialogView;

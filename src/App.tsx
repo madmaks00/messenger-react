@@ -21,11 +21,9 @@ import { VideoViewerView } from './components/media/VideoViewerView';
 import { ImageEditorView } from './components/media/ImageEditorView';
 import { MusicPlayerView } from './components/media/MusicPlayerView';
 
-// 🟢 1:1 C# WPF: Окно звонков CallWindow (CallWindow.xaml / CallsViewModel.cs)
 import { CallWindow } from './components/modals/CallWindow';
 import { InAppNotification } from './components/common/InAppNotification';
 
-// Диалоги и оверлеи
 import { ConfirmDialogView } from './components/modals/ConfirmDialogView';
 import { CreateFolderDialog } from './components/modals/CreateFolderDialog';
 import { PinMessageDialog } from './components/modals/PinMessageDialog';
@@ -98,7 +96,6 @@ export const App: React.FC = () => {
     src: '',
   });
 
-  // 🟢 1:1 WPF: Состояние редактора историй StoryEditorOverlay
   const [storyEditor, setStoryEditor] = useState<{
     isOpen: boolean;
     image: string;
@@ -108,8 +105,6 @@ export const App: React.FC = () => {
   }>({ isOpen: false, image: '', storyId: null, description: '', isPrivate: false });
 
   useEffect(() => {
-    // 🟢 1. МГНОВЕННЫЙ СТАРТ СОКЕТА: не ждём checkAuth!
-    // Токен уже есть в хранилище — начинаем WebSocket-рукопожатие сразу же:
     const token =
       userSession.token ||
       localStorage.getItem('auth_token') ||
@@ -128,10 +123,8 @@ export const App: React.FC = () => {
       });
     }
 
-    // 🟢 2. Проверка сессии и загрузка данных (ПАРАЛЛЕЛЬНО, не блокируя сокет)
     checkAuth(authService, userService).then(async (isAuth) => {
       if (isAuth && !isAppLocked) {
-        // Загружаем чаты и истории параллельно через Promise.all
         await Promise.allSettled([
           loadChats(true),
           useStoriesStore.getState().loadStoriesFeed(),
@@ -196,7 +189,6 @@ export const App: React.FC = () => {
     window.addEventListener('OpenCreateGroupModal', unbindCreateGroup);
     window.addEventListener('OpenPasscodeSetupModal', unbindPasscodeSetup);
 
-    // 🟢 Поддержка обоих контрактов фото-галереи (WPF OpenPhotoGalleryMessage и web OpenPhotoViewerMessage)
     const handleOpenPhoto = (d: any) => {
       setPhotoViewer({
         isOpen: true,
@@ -207,7 +199,6 @@ export const App: React.FC = () => {
     const unbindPhotoLegacy = eventBus.on('OpenPhotoViewerMessage' as any, handleOpenPhoto);
     const unbindPhotoGallery = eventBus.on('OpenPhotoGalleryMessage' as any, handleOpenPhoto);
 
-    // 🟢 Видеоплеер
     const unbindVideo = eventBus.on('OpenVideoViewerRequestMessage' as any, (d: any) =>
       setVideoViewer({
         isOpen: true,
@@ -217,7 +208,6 @@ export const App: React.FC = () => {
       })
     );
 
-    // 🟢 1:1 WPF: Редактор историй
     const unbindStoryEditor = eventBus.on('OpenStoryEditorMessage', (d) =>
       setStoryEditor({
         isOpen: true,
@@ -320,14 +310,19 @@ export const App: React.FC = () => {
             display: isCollapsed ? 'none' : 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
+            position: 'relative', // 👈 ОБЯЗАТЕЛЬНО: ориентир для absolute плеера
           }}
         >
-          {currentTab === MainTab.Chats && <SidebarChatsView />}
-          {currentTab === MainTab.AccountSwitch && <SidebarAccountsView />}
-          {currentTab === MainTab.Notes && <SidebarNotesView />}
-          {currentTab === MainTab.Tasks && <SidebarTasksView />}
-          {currentTab === MainTab.Games && <SidebarGamesView />}
+          {/* Вкладки занимают всю высоту, список чатов прокручивается под плеером */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {currentTab === MainTab.Chats && <SidebarChatsView />}
+            {currentTab === MainTab.AccountSwitch && <SidebarAccountsView />}
+            {currentTab === MainTab.Notes && <SidebarNotesView />}
+            {currentTab === MainTab.Tasks && <SidebarTasksView />}
+            {currentTab === MainTab.Games && <SidebarGamesView />}
+          </div>
 
+          {/* Плеер поверх списка чатов (absolute) */}
           <MusicPlayerView />
         </div>
 
@@ -420,7 +415,6 @@ export const App: React.FC = () => {
         onDone={(res) => imageEditor.onDone?.(res)}
       />
 
-      {/* 🟢 РЕДАКТОР ИСТОРИЙ (StoryEditorOverlay) */}
       <StoryEditorView
         isOpen={storyEditor.isOpen}
         imageSource={storyEditor.image}
@@ -431,8 +425,6 @@ export const App: React.FC = () => {
       />
 
       <StoryViewerView />
-
-      {/* 🟢 1:1 WPF ОКНО ЗВОНКА (CallWindow.xaml / CallWindow.xaml.cs) */}
       <CallWindow />
 
       <ConfirmDialogView
@@ -454,12 +446,12 @@ export const App: React.FC = () => {
       <PinMessageDialog
         isOpen={pinDialog.isOpen}
         onCancel={() => setPinDialog({ isOpen: false })}
-        onConfirm={(pinForAll) => pinDialog.onConfirm?.(pinForAll)}
+        onConfirm={(pinForAll: boolean) => pinDialog.onConfirm?.(pinForAll)}
       />
       <ForwardMessageDialog
         isOpen={forwardDialog.isOpen}
         onCancel={() => setForwardDialog({ isOpen: false })}
-        onConfirm={(chatIds) => forwardDialog.onConfirm?.(chatIds)}
+        onConfirm={(chatIds: any) => forwardDialog.onConfirm?.(chatIds)}
       />
       <JoinGroupDialog
         isOpen={Boolean(joinGroupData)}

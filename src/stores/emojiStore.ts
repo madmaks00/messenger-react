@@ -1,9 +1,10 @@
-// src/stores/emojiStore.ts
 import { create } from 'zustand';
 import { EmojiService } from '../services/emoji.service';
+import { gifService, getCanonicalGifFilename } from '../services/gif.service';
 import { eventBus } from '../services/eventBus';
 import { ISavedGif } from '../types/models';
-import { apiClient } from '../services/apiClient';
+import { UrlHelper } from '../utils/helpers';
+import { BASE_SERVER_URL } from '../services/apiClient';
 
 interface EmojiState {
   isEmojiPickerOpen: boolean;
@@ -13,7 +14,6 @@ interface EmojiState {
   savedGifs: ISavedGif[];
   isGifsLoading: boolean;
 
-  // Actions
   togglePicker: () => void;
   openPicker: () => void;
   closePicker: () => void;
@@ -22,6 +22,7 @@ interface EmojiState {
   addEmoji: (emoji: string) => void;
   pickGif: (gif: ISavedGif) => void;
   loadSavedGifs: () => Promise<void>;
+  addSavedGifLocally: (gif: ISavedGif) => void;
 }
 
 export const useEmojiStore = create<EmojiState>((set, get) => ({
@@ -32,14 +33,28 @@ export const useEmojiStore = create<EmojiState>((set, get) => ({
   savedGifs: [],
   isGifsLoading: false,
 
-  togglePicker: () => set((state) => ({ isEmojiPickerOpen: !state.isEmojiPickerOpen })),
-  openPicker: () => set({ isEmojiPickerOpen: true }),
+  togglePicker: () => {
+    const nextState = !get().isEmojiPickerOpen;
+    set({ isEmojiPickerOpen: nextState });
+    if (nextState && get().selectedMainTab === 'GIF') {
+      void get().loadSavedGifs();
+    }
+  },
+
+  openPicker: () => {
+    set({ isEmojiPickerOpen: true });
+    if (get().selectedMainTab === 'GIF') {
+      void get().loadSavedGifs();
+    }
+  },
+
   closePicker: () => set({ isEmojiPickerOpen: false }),
 
   selectMainTab: (tab) => {
+    if (get().selectedMainTab === tab) return;
     set({ selectedMainTab: tab });
     if (tab === 'GIF') {
-      get().loadSavedGifs();
+      void get().loadSavedGifs();
     }
   },
 
@@ -69,12 +84,44 @@ export const useEmojiStore = create<EmojiState>((set, get) => ({
   },
 
   loadSavedGifs: async () => {
-    set({ isGifsLoading: true });
     try {
-      const res = await apiClient.get<ISavedGif[]>('api/Gifs/saved');
-      set({ savedGifs: res.data || [], isGifsLoading: false });
-    } catch {
+      set({ isGifsLoading: get().savedGifs.length === 0 });
+
+      // 1. Мгновенное чтение дедуплицированного списка из локальной БД
+      const localGifs = await gifService.getSavedGifsAsync();
+      if (localGifs.length > 0) {
+        set({ savedGifs: localGifs, isGifsLoading: false });
+      }
+
+      // 2. Фоновая синхронизация с сервером
+      const syncedGifs = await gifService.syncGifsWithServerAsync();
+      set({ savedGifs: syncedGifs, isGifsLoading: false });
+    } catch (e) {
+      console.error('[EmojiStore] Ошибка загрузки сохраненных GIF:', e);
       set({ isGifsLoading: false });
     }
   },
+
+  addSavedGifLocally: (gif: ISavedGif) => {
+    if (!gif.url || gif.url.startsWith('blob:')) return;
+    const normUrl = UrlHelper.normalize(gif.url, BASE_SERVER_URL);
+    const targetFname = getCanonicalGifFilename(normUrl);
+
+    set((state) => {
+      const exists = state.savedGifs.some((g) => {
+        const gNorm = UrlHelper.normalize(g.url, BASE_SERVER_URL);
+        return gNorm === normUrl || (targetFname && getCanonicalGifFilename(gNorm) === targetFname);
+      });
+
+      if (exists) return state;
+
+      return {
+        savedGifs: [{ ...gif, url: normUrl }, ...state.savedGifs],
+      };
+    });
+  },
 }));
+
+setTimeout(() => {
+  void useEmojiStore.getState().loadSavedGifs();
+}, 500);

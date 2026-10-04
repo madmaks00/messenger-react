@@ -30,7 +30,8 @@ export interface IAttachment {
   waveform?: string | null;
   isSelected?: boolean;
   isSilentVideo?: boolean;
-  isDownloaded?: boolean; 
+  isDownloaded?: boolean;
+  displayImageUrl?: string;
 }
 
 export class AttachmentHelper {
@@ -401,7 +402,7 @@ export interface IUser {
   gender?: Gender | null;
   birthday?: string | null;
   registrationDate: string;
-  avatar?: string | null; // Base64
+  avatar?: string | null;
   token?: string | null;
   isOnline: boolean;
   lastSeen: string;
@@ -489,6 +490,7 @@ export interface IUserSearchResult {
   keyFingerprint?: string | null;
   groupId?: number | null;
   userId?: number | null;
+  unreadCount?: number;
 }
 
 // =========================================================================
@@ -506,7 +508,7 @@ export interface IStory {
   dislikesCount: number;
   commentsCount: number;
   hasViewed: boolean;
-  myReaction?: number | null; // 0 = Like, 1 = Dislike, null = No reaction
+  myReaction?: number | null;
   authorAvatar?: string | null;
   authorName: string;
 }
@@ -653,7 +655,7 @@ export interface ICachedSecretChat {
   targetUserId: number;
   targetName: string;
   targetAvatar?: string | null;
-  sharedKey?: string | null; // Base64
+  sharedKey?: string | null;
   localPrivateKeyBase64?: string | null;
   keyFingerprint: string;
   emojiFingerprint: string;
@@ -722,7 +724,7 @@ export interface INote {
   statusColor?: string;
   groupId?: number | null;
   thumbnail?: string | null;
-  inkData?: string | null; // Base64 or stroke SVG points
+  inkData?: string | null;
   lastEditedTime: string;
   isEditing?: boolean;
   isSelected?: boolean;

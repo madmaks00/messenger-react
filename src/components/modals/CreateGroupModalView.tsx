@@ -71,7 +71,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
         setIsRendered(false);
         setIsFadingOut(false);
         resetGroupCreation();
-      }, 100); // 0:0:0.1 в WPF DialogOverlayFadeOutStoryboard
+      }, 120); // 0:0:0.12 в WPF DialogOverlayFadeOutStoryboard
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
@@ -110,7 +110,6 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
     } catch (err) {
       console.error('[GroupCreationVM ERROR] Не удалось прочитать файл аватарки группы.', err);
     } finally {
-      // Сброс значения инпута для возможности повторного выбора того же файла
       e.target.value = '';
     }
   };
@@ -170,7 +169,6 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
         setNewGroupInviteLink(link);
         setStep(2);
 
-        // 🟢 1 в 1 с WPF: Формируем ChatListItem для шины сообщений со всеми обязательными полями
         const newChat: IChatListItem = {
           id: result.id,
           groupId: result.id,
@@ -247,11 +245,11 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
       style={{
         ...styles.overlay,
         opacity: isFadingOut ? 0 : 1,
-        transition: isFadingOut ? 'opacity 0.1s ease-out' : 'opacity 0.12s ease-out',
+        transition: isFadingOut ? 'opacity 0.12s ease-out' : 'opacity 0.15s ease-out',
       }}
     >
       <style>{`
-      .btn-close {
+        .btn-close {
           width: 28px !important;
           height: 28px !important;
           padding: 0 !important;
@@ -261,6 +259,9 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           display: flex !important;
           align-items: center !important;
           justify-content: center !important;
+          cursor: pointer !important;
+          border: none !important;
+          outline: none !important;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .btn-close:hover {
@@ -270,18 +271,39 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
         .btn-close:active {
           background-color: rgba(255, 255, 255, 0.16) !important;
         }
+
         .btn-cancel {
+          height: 36px;
+          padding: 0 16px;
           background-color: transparent !important;
+          border: none;
+          border-radius: 8px;
           color: #7D8494 !important;
+          font-weight: 500;
+          font-size: 13.5px;
+          cursor: pointer;
+          outline: none;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .btn-cancel:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
+        .btn-cancel:active {
+          background-color: rgba(255, 255, 255, 0.14) !important;
+        }
+
         .btn-create {
+          height: 36px;
+          padding: 0 22px;
           background-color: #1E9BEB !important;
+          border: none;
+          border-radius: 8px;
           color: #FFFFFF !important;
+          font-weight: 600;
+          font-size: 13.5px;
+          cursor: pointer;
+          outline: none;
           transition: opacity 0.15s ease !important;
         }
         .btn-create:hover {
@@ -292,7 +314,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
         }
       `}</style>
 
-      {/* КАРТОЧКА ДИАЛОГА (Width: 410px, Background: #161A23) */}
+      {/* КАРТОЧКА ДИАЛОГА (1 в 1 с CreateFolderDialog: #161B26, тень и рамка) */}
       <div
         id="CreateGroupCard"
         onClick={(e) => e.stopPropagation()}
@@ -310,7 +332,6 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                 type="button"
                 onClick={onClose}
                 className="btn-close"
-                style={styles.closeButton}
                 title="Close"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -489,7 +510,6 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                 type="button"
                 onClick={onClose}
                 className="btn-cancel"
-                style={styles.cancelButton}
               >
                 Cancel
               </button>
@@ -497,7 +517,6 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                 type="button"
                 onClick={handleCreateGroup}
                 className="btn-create"
-                style={styles.createButton}
               >
                 Create
               </button>
@@ -552,7 +571,6 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                 type="button"
                 onClick={onClose}
                 className="btn-cancel"
-                style={styles.cancelButton}
               >
                 Done
               </button>
@@ -560,7 +578,6 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                 type="button"
                 onClick={handleCopyLink}
                 className="btn-create"
-                style={styles.createButton}
               >
                 {isCopied ? 'Copied!' : 'Copy Link'}
               </button>
@@ -572,25 +589,35 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
   );
 };
 
-// ===================== CSS Стили =====================
+// ===================== CSS Стили (1 в 1 с CreateFolderDialog) =====================
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed',
     inset: 0,
-    zIndex: 200,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 2000,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backdropFilter: 'blur(4px)',
+    WebkitBackdropFilter: 'blur(4px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    userSelect: 'none',
+    boxSizing: 'border-box',
+    padding: 16,
   },
   card: {
     width: 410,
-    backgroundColor: '#161A23',
-    borderRadius: 14,
-    padding: '20px 22px',
-    boxShadow: '0 4px 28px rgba(0, 0, 0, 0.35)',
+    maxWidth: '95vw',
+    maxHeight: '92vh',
+    backgroundColor: '#161B26', // Точный цвет фона как в CreateFolderDialog
+    borderRadius: 12,
+    padding: '20px 24px 18px 24px',
+    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)', // Глубокая тень окна
+    border: '1px solid #2A3342', // Контрастная граница окна
     boxSizing: 'border-box',
-    userSelect: 'none',
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'relative',
   },
   stepContainer: {
     display: 'flex',
@@ -601,22 +628,17 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 15,
+    flexShrink: 0,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 600,
+    margin: 0,
     color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   closeButton: {
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    padding: 4,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#7D8494',
+    // Стили переопределены через .btn-close
   },
   segmentedTrack: {
     backgroundColor: '#11151D',
@@ -777,31 +799,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'flex-end',
     alignItems: 'center',
-  },
-  cancelButton: {
-    height: 36,
-    padding: '0 16px',
-    background: 'transparent',
-    border: 'none',
-    borderRadius: 8,
-    color: '#7D8494',
-    fontWeight: 500,
-    fontSize: 13.5,
-    cursor: 'pointer',
-    marginRight: 8,
-    transition: 'background-color 0.15s ease, color 0.15s ease',
-  },
-  createButton: {
-    height: 36,
-    padding: '0 22px',
-    backgroundColor: '#1E9BEB',
-    border: 'none',
-    borderRadius: 8,
-    color: '#FFFFFF',
-    fontWeight: 600,
-    fontSize: 13.5,
-    cursor: 'pointer',
-    transition: 'opacity 0.15s ease',
+    gap: 8,
+    marginTop: 10,
+    flexShrink: 0,
   },
   successContent: {
     display: 'flex',
@@ -833,8 +833,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   inviteLinkContainer: {
     width: '100%',
-    backgroundColor: '#161A23',
-    border: '1px solid #333E4A',
+    backgroundColor: '#11151D',
+    border: '1px solid #2A3342',
     borderRadius: 8,
     padding: '10px 14px',
     display: 'flex',
@@ -860,3 +860,5 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
 };
+
+export default CreateGroupModalView;

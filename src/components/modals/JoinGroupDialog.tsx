@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 export interface JoinGroupPreviewData {
   groupId: number;
@@ -24,7 +24,40 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
   onCancel,
   onConfirm,
 }) => {
-  if (!isOpen || !data) return null;
+  const [isRendered, setIsRendered] = useState(isOpen && !!data);
+  const [isFadingOut, setIsFadingOut] = useState(false);
+  const [cachedData, setCachedData] = useState<JoinGroupPreviewData | null>(data);
+
+  useEffect(() => {
+    if (isOpen && data) {
+      setCachedData(data);
+      setIsRendered(true);
+      setIsFadingOut(false);
+    } else if (isRendered) {
+      setIsFadingOut(true);
+      const timer = setTimeout(() => {
+        setIsRendered(false);
+        setIsFadingOut(false);
+        setCachedData(null);
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, data]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isRendered) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRendered, onCancel]);
+
+  const activeData = data || cachedData;
+  if (!isRendered || !activeData) return null;
 
   return (
     <div
@@ -38,6 +71,8 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
         alignItems: 'center',
         justifyContent: 'center',
         backdropFilter: 'blur(4px)',
+        opacity: isFadingOut ? 0 : 1,
+        transition: 'opacity 0.12s ease-out',
       }}
     >
       <div
@@ -54,8 +89,8 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
         {/* 1. Иконка + Заголовок */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>
-            <span>{data.isChannel ? '📢' : '👥'}</span>
-            <span>{data.isChannel ? 'Group Details' : 'Join Group'}</span>
+            <span>{activeData.isChannel ? '📢' : '👥'}</span>
+            <span>{activeData.isChannel ? 'Group Details' : 'Join Group'}</span>
           </div>
           <button onClick={onCancel} style={{ background: 'transparent', border: 'none', color: '#94A3B8', fontSize: 18, cursor: 'pointer' }}>
             ✕
@@ -80,35 +115,35 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
               overflow: 'hidden',
             }}
           >
-            {data.avatar ? (
-              <img src={data.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            {activeData.avatar ? (
+              <img src={activeData.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              data.title.charAt(0).toUpperCase()
+              activeData.title.charAt(0).toUpperCase()
             )}
           </div>
         </div>
 
         {/* Название */}
         <div style={{ fontSize: 20, fontWeight: 'bold', color: '#FFF', textAlign: 'center', marginBottom: 4 }}>
-          {data.title}
+          {activeData.title}
         </div>
 
         {/* Подписчики / Участники */}
         <div style={{ textAlign: 'center', color: '#94A3B8', fontSize: 13.5, fontWeight: 600, marginBottom: 14 }}>
-          {data.isChannel ? (
-            `${data.memberCount.toLocaleString()} subscribers`
+          {activeData.isChannel ? (
+            `${activeData.memberCount.toLocaleString()} subscribers`
           ) : (
             <span>
-              {data.onlineCount > 0 && <span style={{ color: 'var(--app-accent, #38BDF8)' }}>{data.onlineCount.toLocaleString()} online • </span>}
-              {data.memberCount.toLocaleString()} members
+              {activeData.onlineCount > 0 && <span style={{ color: 'var(--app-accent, #38BDF8)' }}>{activeData.onlineCount.toLocaleString()} online • </span>}
+              {activeData.memberCount.toLocaleString()} members
             </span>
           )}
         </div>
 
         {/* Описание */}
-        {data.description && (
+        {activeData.description && (
           <div style={{ backgroundColor: '#161B26', borderRadius: 10, padding: '12px 10px', marginBottom: 14, maxHeight: 80, overflowY: 'auto', fontSize: 13, color: '#94A3B8' }}>
-            {data.description}
+            {activeData.description}
           </div>
         )}
 
@@ -116,7 +151,7 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: 8, padding: '6px 10px', marginBottom: 24 }}>
           <span style={{ fontSize: 13 }}>🔗</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: '#94A3B8', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {data.joinLink}
+            {activeData.joinLink}
           </span>
         </div>
 
@@ -141,10 +176,12 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
               padding: '8px 20px',
             }}
           >
-            {data.isChannel ? 'Join Channel' : 'Join Group'}
+            {activeData.isChannel ? 'Join Channel' : 'Join Group'}
           </button>
         </div>
       </div>
     </div>
   );
 };
+
+export default JoinGroupDialog;

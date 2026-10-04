@@ -4,7 +4,6 @@ import { mediaCacheService } from '../../services/mediaCache.service';
 import { BASE_SERVER_URL } from '../../services/apiClient';
 import { UrlHelper } from '../../utils/helpers';
 
-// Material Design SVG Paths (WPF PackIcon)
 const MDI_ICONS = {
   close: 'M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z',
   play: 'M8,5.14V19.14L19,12.14L8,5.14Z',
@@ -18,15 +17,30 @@ const MDI_ICONS = {
   cogOutline: 'M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z',
 };
 
-export const VideoViewerView: React.FC = () => {
+export interface VideoViewerViewProps {
+  isOpen?: boolean;
+  videoUrl?: string;
+  fileHeader?: string;
+  senderMeta?: string;
+  onClose?: () => void;
+}
+
+export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
+  isOpen: propIsOpen,
+  videoUrl: propVideoUrl,
+  onClose: propOnClose,
+}) => {
+  const store = useVideoViewerStore();
+
+  const isOpen = propIsOpen !== undefined ? propIsOpen : store.isOpen;
+  const videoUrl = propVideoUrl !== undefined ? propVideoUrl : store.videoUrl;
+  const close = propOnClose || store.close;
+
   const {
-    isOpen,
-    videoUrl,
     isPlaying,
     isBuffering,
     isFullscreen,
     areControlsVisible,
-    positionSeconds,
     durationSeconds,
     currentTimeStr,
     remainingTimeStr,
@@ -35,7 +49,6 @@ export const VideoViewerView: React.FC = () => {
     playbackSpeed,
     rotationAngle,
 
-    close,
     togglePlay,
     toggleFullscreen,
     toggleMute,
@@ -52,10 +65,12 @@ export const VideoViewerView: React.FC = () => {
     onUserInteraction,
     downloadVideo,
     setIsBuffering,
-  } = useVideoViewerStore();
+  } = store;
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const scrubberRef = useRef<HTMLDivElement>(null);
+  const scrubberTrackRef = useRef<HTMLDivElement>(null);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const progressThumbRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const [resolvedSrc, setResolvedSrc] = useState<string>('');
@@ -66,9 +81,8 @@ export const VideoViewerView: React.FC = () => {
   });
 
   const [isScrubberHover, setIsScrubberHover] = useState<boolean>(false);
-  const [isDraggingScrubber, setIsDraggingScrubber] = useState<boolean>(false);
+  const isDraggingScrubberRef = useRef<boolean>(false);
 
-  // 1. Кэширование и получение URL видео
   useEffect(() => {
     let cancelled = false;
     if (!videoUrl || !isOpen) {
@@ -99,7 +113,6 @@ export const VideoViewerView: React.FC = () => {
     };
   }, [videoUrl, isOpen]);
 
-  // 2. Синхронизация громкости и скорости
   useEffect(() => {
     if (!videoRef.current) return;
     videoRef.current.volume = volume;
@@ -111,22 +124,18 @@ export const VideoViewerView: React.FC = () => {
     videoRef.current.playbackRate = playbackSpeed;
   }, [playbackSpeed]);
 
-  // 3. Синхронизация воспроизведения
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     if (isPlaying) {
       const p = video.play();
-      if (p !== undefined) {
-        p.catch(() => {});
-      }
+      if (p !== undefined) p.catch(() => {});
     } else {
       video.pause();
     }
   }, [isPlaying, resolvedSrc]);
 
-  // 4. Полноэкранный режим
   useEffect(() => {
     if (!rootRef.current) return;
 
@@ -148,7 +157,41 @@ export const VideoViewerView: React.FC = () => {
     }, 500);
   }, []);
 
-  // 5. Клавиатурные хоткеи
+  const updateScrubberVisuals = useCallback((currentTime: number, duration: number) => {
+    if (duration <= 0) return;
+    const pct = Math.max(0, Math.min(100, (currentTime / duration) * 100));
+
+    if (progressBarRef.current) {
+      progressBarRef.current.style.width = `${pct}%`;
+    }
+    if (progressThumbRef.current) {
+      progressThumbRef.current.style.left = `${pct}%`;
+    }
+  }, []);
+
+  useEffect(() => {
+    let animId: number;
+
+    const renderLoop = () => {
+      if (videoRef.current && isPlaying && !isDraggingScrubberRef.current) {
+        const cur = videoRef.current.currentTime;
+        const dur = videoRef.current.duration || durationSeconds;
+        updateScrubberVisuals(cur, dur);
+      }
+      if (isPlaying) {
+        animId = requestAnimationFrame(renderLoop);
+      }
+    };
+
+    if (isPlaying) {
+      animId = requestAnimationFrame(renderLoop);
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [isPlaying, durationSeconds, updateScrubberVisuals]);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -178,17 +221,18 @@ export const VideoViewerView: React.FC = () => {
           e.preventDefault();
           stepBackward();
           if (videoRef.current) {
-            videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
+            const next = Math.max(0, videoRef.current.currentTime - 5);
+            videoRef.current.currentTime = next;
+            updateScrubberVisuals(next, videoRef.current.duration || durationSeconds);
           }
           break;
         case 'ArrowRight':
           e.preventDefault();
           stepForward();
           if (videoRef.current) {
-            videoRef.current.currentTime = Math.min(
-              videoRef.current.duration || 0,
-              videoRef.current.currentTime + 5
-            );
+            const next = Math.min(videoRef.current.duration || durationSeconds, videoRef.current.currentTime + 5);
+            videoRef.current.currentTime = next;
+            updateScrubberVisuals(next, videoRef.current.duration || durationSeconds);
           }
           break;
         case 'f':
@@ -204,13 +248,12 @@ export const VideoViewerView: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isPlaying, isFullscreen, togglePlay, toggleFullscreen, close, rotate, stepForward, stepBackward, triggerCenterIndicator]);
+  }, [isOpen, isPlaying, isFullscreen, togglePlay, toggleFullscreen, close, rotate, stepForward, stepBackward, triggerCenterIndicator, durationSeconds, updateScrubberVisuals]);
 
-  // 6. Точный расчет скруббера при клике и перетаскивании
   const calculateScrubberSeconds = useCallback(
     (clientX: number) => {
-      if (!scrubberRef.current || durationSeconds <= 0) return 0;
-      const rect = scrubberRef.current.getBoundingClientRect();
+      if (!scrubberTrackRef.current || durationSeconds <= 0) return 0;
+      const rect = scrubberTrackRef.current.getBoundingClientRect();
       const relativeX = clientX - rect.left;
       const progress = Math.max(0, Math.min(1, relativeX / rect.width));
       return progress * durationSeconds;
@@ -220,24 +263,27 @@ export const VideoViewerView: React.FC = () => {
 
   const handleScrubberMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsDraggingScrubber(true);
+    isDraggingScrubberRef.current = true;
     startSliderDrag();
 
     const targetSec = calculateScrubberSeconds(e.clientX);
     seekTo(targetSec);
     if (videoRef.current) videoRef.current.currentTime = targetSec;
+    updateScrubberVisuals(targetSec, durationSeconds);
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const sec = calculateScrubberSeconds(moveEvent.clientX);
       seekTo(sec);
       if (videoRef.current) videoRef.current.currentTime = sec;
+      updateScrubberVisuals(sec, durationSeconds);
     };
 
     const handleMouseUp = (upEvent: MouseEvent) => {
-      setIsDraggingScrubber(false);
+      isDraggingScrubberRef.current = false;
       const finalSec = calculateScrubberSeconds(upEvent.clientX);
       endSliderDrag(finalSec);
       if (videoRef.current) videoRef.current.currentTime = finalSec;
+      updateScrubberVisuals(finalSec, durationSeconds);
 
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -249,14 +295,11 @@ export const VideoViewerView: React.FC = () => {
 
   if (!isOpen) return null;
 
-  const progressPercent = durationSeconds > 0 ? (positionSeconds / durationSeconds) * 100 : 0;
-  const isScrubberActive = isScrubberHover || isDraggingScrubber;
-
   return (
     <div
       ref={rootRef}
       onMouseMove={onUserInteraction}
-      onClick={close} // 🟢 ФИКС 3: Любой клик в темную область окна закрывает плеер
+      onClick={close}
       style={{
         position: 'fixed',
         inset: 0,
@@ -279,8 +322,6 @@ export const VideoViewerView: React.FC = () => {
         }
       `}</style>
 
-      {/* 🟢 ФИКС 2 И 3: Контейнер пропускает клики (pointerEvents: none). 
-          Клик по затемнению вокруг видео уходит в rootRef и закрывает окно! */}
       <div
         style={{
           position: 'relative',
@@ -291,7 +332,7 @@ export const VideoViewerView: React.FC = () => {
           height: isFullscreen ? '100vh' : 'calc(100vh - 140px)',
           maxWidth: isFullscreen ? '100vw' : 'calc(100vw - 80px)',
           maxHeight: isFullscreen ? '100vh' : 'calc(100vh - 140px)',
-          pointerEvents: 'none', // Кликабельно строго само видео!
+          pointerEvents: 'none',
           boxSizing: 'border-box',
         }}
       >
@@ -300,7 +341,7 @@ export const VideoViewerView: React.FC = () => {
           src={resolvedSrc}
           playsInline
           onClick={(e) => {
-            e.stopPropagation(); // Клик по телу видео делает паузу/плей
+            e.stopPropagation();
             togglePlay();
             triggerCenterIndicator(!isPlaying);
           }}
@@ -312,7 +353,7 @@ export const VideoViewerView: React.FC = () => {
           onPlaying={() => setIsBuffering(false)}
           onCanPlay={() => setIsBuffering(false)}
           onTimeUpdate={() => {
-            if (videoRef.current && !isDraggingScrubber) {
+            if (videoRef.current && !isDraggingScrubberRef.current) {
               const cur = videoRef.current.currentTime;
               const dur = videoRef.current.duration;
               updatePlaybackInfo(cur, dur);
@@ -323,6 +364,7 @@ export const VideoViewerView: React.FC = () => {
               const cur = videoRef.current.currentTime;
               const dur = videoRef.current.duration;
               updatePlaybackInfo(cur, dur);
+              updateScrubberVisuals(cur, dur || durationSeconds);
             }
           }}
           onEnded={onMediaEnded}
@@ -335,14 +377,13 @@ export const VideoViewerView: React.FC = () => {
             borderRadius: isFullscreen ? 0 : 8,
             transform: `rotate(${rotationAngle}deg)`,
             transition: 'transform 0.25s cubic-bezier(0.215, 0.61, 0.355, 1)',
-            pointerEvents: 'auto', // Само видео кликабельно
+            pointerEvents: 'auto',
             cursor: 'pointer',
             display: 'block',
           }}
         />
       </div>
 
-      {/* Индикатор Play/Pause по центру видео */}
       {centerIndicator.active && (
         <div
           className="wpf-center-pulse"
@@ -371,7 +412,6 @@ export const VideoViewerView: React.FC = () => {
         </div>
       )}
 
-      {/* Спиннер буферизации */}
       {isBuffering && (
         <div
           style={{
@@ -404,7 +444,6 @@ export const VideoViewerView: React.FC = () => {
         </div>
       )}
 
-      {/* Оверлей контролов (pointerEvents: none пропускает клики на фон) */}
       <div
         style={{
           position: 'absolute',
@@ -414,7 +453,6 @@ export const VideoViewerView: React.FC = () => {
           transition: 'opacity 0.2s cubic-bezier(0.645, 0.045, 0.355, 1)',
         }}
       >
-        {/* Кнопка закрытия */}
         <div
           style={{
             position: 'absolute',
@@ -435,9 +473,8 @@ export const VideoViewerView: React.FC = () => {
           />
         </div>
 
-        {/* 🟢 Нижний остров управления */}
         <div
-          onClick={(e) => e.stopPropagation()} // Клик внутри меню не закрывает окно
+          onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
             bottom: 24,
@@ -453,7 +490,6 @@ export const VideoViewerView: React.FC = () => {
             pointerEvents: areControlsVisible ? 'auto' : 'none',
           }}
         >
-          {/* Строка кнопок */}
           <div
             style={{
               display: 'flex',
@@ -462,7 +498,6 @@ export const VideoViewerView: React.FC = () => {
               marginBottom: 4,
             }}
           >
-            {/* Громкость */}
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <IconButton
                 icon={isMuted ? MDI_ICONS.volumeMute : MDI_ICONS.volumeHigh}
@@ -488,7 +523,6 @@ export const VideoViewerView: React.FC = () => {
               />
             </div>
 
-            {/* Play/Pause */}
             <IconButton
               icon={isPlaying ? MDI_ICONS.pause : MDI_ICONS.play}
               size={22}
@@ -497,7 +531,6 @@ export const VideoViewerView: React.FC = () => {
               onClick={togglePlay}
             />
 
-            {/* Опции справа */}
             <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
               <IconButton
                 icon={isFullscreen ? MDI_ICONS.fullscreenExit : MDI_ICONS.fullscreen}
@@ -593,86 +626,89 @@ export const VideoViewerView: React.FC = () => {
             </div>
           </div>
 
-          {/* 🟢 ФИКС 4: СТРОКА ТАЙМЛАЙНА (Моноширинные div жесткой ширины исключают сдвиг границ скруббера) */}
           <div
             style={{
-              display: 'flex',
+              display: 'grid',
+              gridTemplateColumns: '46px 1fr 50px',
               alignItems: 'center',
               marginTop: 4,
               width: '100%',
               boxSizing: 'border-box',
             }}
           >
-            {/* Текущее время */}
             <div
               style={{
+                width: 46,
                 color: '#DCDCDC',
                 fontSize: 11.5,
                 fontWeight: 500,
                 fontFamily: 'Consolas, monospace',
                 fontVariantNumeric: 'tabular-nums',
-                width: 44,
-                minWidth: 44,
-                maxWidth: 44,
-                flexShrink: 0,
                 textAlign: 'left',
                 userSelect: 'none',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
               }}
             >
               {currentTimeStr}
             </div>
 
-            {/* Полоса перемотки (жесткие отступы margin: 0 10px) */}
             <div
-              ref={scrubberRef}
-              onMouseEnter={() => setIsScrubberHover(true)}
-              onMouseLeave={() => setIsScrubberHover(false)}
-              onMouseDown={handleScrubberMouseDown}
               style={{
-                flex: 1,
-                height: 18,
-                display: 'flex',
-                alignItems: 'center',
-                cursor: 'pointer',
-                position: 'relative',
-                margin: '0 10px',
+                width: '100%',
+                padding: '0 8px',
+                boxSizing: 'border-box',
               }}
             >
-              {/* Фоновая подложка */}
               <div
+                ref={scrubberTrackRef}
+                onMouseEnter={() => setIsScrubberHover(true)}
+                onMouseLeave={() => setIsScrubberHover(false)}
+                onMouseDown={handleScrubberMouseDown}
                 style={{
                   width: '100%',
-                  height: isScrubberActive ? 4.5 : 3.0,
-                  backgroundColor: 'rgba(255, 255, 255, 0.22)',
-                  borderRadius: 1.5,
+                  height: 18,
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer',
                   position: 'relative',
-                  transition: 'height 0.12s ease',
-                  overflow: 'visible',
                 }}
               >
-                {/* Белая заполненная полоса */}
                 <div
                   style={{
-                    width: `${Math.max(0, Math.min(100, progressPercent))}%`,
-                    height: '100%',
-                    backgroundColor: '#FFFFFF',
+                    width: '100%',
+                    height: isScrubberHover ? 4.5 : 3.0,
+                    backgroundColor: 'rgba(255, 255, 255, 0.22)',
                     borderRadius: 1.5,
                     position: 'relative',
+                    transition: 'height 0.12s ease',
+                    overflow: 'visible',
                   }}
                 >
-                  {/* Ползунок */}
                   <div
+                    ref={progressBarRef}
+                    style={{
+                      width: '0%',
+                      height: '100%',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 1.5,
+                      position: 'relative',
+                    }}
+                  />
+
+                  <div
+                    ref={progressThumbRef}
                     style={{
                       position: 'absolute',
-                      right: -5,
+                      left: '0%',
                       top: '50%',
-                      transform: 'translateY(-50%)',
+                      transform: 'translate(-50%, -50%)',
                       width: 10,
                       height: 10,
-                      borderRadius: 5,
+                      borderRadius: '50%',
                       backgroundColor: '#FFFFFF',
                       boxShadow: '0 0 4px rgba(0, 0, 0, 0.5)',
-                      opacity: isScrubberActive ? 1 : 0,
+                      opacity: isScrubberHover ? 1 : 0,
                       transition: 'opacity 0.12s ease',
                       pointerEvents: 'none',
                     }}
@@ -681,20 +717,18 @@ export const VideoViewerView: React.FC = () => {
               </div>
             </div>
 
-            {/* Оставшееся время */}
             <div
               style={{
+                width: 50,
                 color: '#8E939A',
                 fontSize: 11.5,
                 fontWeight: 500,
                 fontFamily: 'Consolas, monospace',
                 fontVariantNumeric: 'tabular-nums',
-                width: 48,
-                minWidth: 48,
-                maxWidth: 48,
-                flexShrink: 0,
                 textAlign: 'right',
                 userSelect: 'none',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
               }}
             >
               {remainingTimeStr}

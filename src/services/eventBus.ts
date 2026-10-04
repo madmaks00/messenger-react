@@ -20,12 +20,13 @@ export type AppEvents = {
   CancelEmailVerificationMessage: void;
   UserProfileUpdatedMessage: { user: IUser };
   StoryDeletedMessage: { storyId: number; userId: number };
-
+VoiceRecordingTickMessage: { elapsedSeconds: number };
   // Chat Navigation & Selection
   SelectChatUserMessage: { target: IUserSearchResult | null };
   SwitchTabMessage: { tab: MainTab };
   ClearActiveChatMessagesMessage: { deleteForAll?: boolean } | void;
   ClearMessageInputMessage: void;
+  FocusMessageInputMessage: void;
 
   // Search & Navigation Pipeline (1 in 1 с WPF Messenger)
   FocusSearchBoxMessage: void;

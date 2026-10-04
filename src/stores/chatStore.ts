@@ -4,21 +4,97 @@ import {
   IUserSearchResult,
   IAttachment,
   ISelectableChat,
+  ISavedGif,
   MessageHelper,
 } from '../types/models';
-import { LastMessageType } from '../types/enums';
+import { LastMessageType, AttachmentType } from '../types/enums';
 import { apiClient, BASE_SERVER_URL } from '../services/apiClient';
 import { UrlHelper } from '../utils/helpers';
 import { chatService } from '../services/chat.service';
+import { gifService } from '../services/gif.service';
 import { signalRService } from '../services/signalr.service';
 import { secretChatCrypto } from '../services/secretChatCrypto.service';
 import { userSession } from '../services/userSession';
 import { eventBus } from '../services/eventBus';
 import { useSidebarChatsStore } from './sidebarChatsStore';
 import { useMessageInputStore } from './messageInputStore';
+import { useEmojiStore } from './emojiStore';
+import { useMusicPlayerStore } from './musicPlayerStore';
 import { mediaCacheService } from '../services/mediaCache.service';
 import { mediaDimensionsCache } from '../utils/mediaDimensionsCache';
 import { getLocalDatabase } from '../db/localDb';
+import { IAudioTrackModel, AudioMetadataHelper } from '../types/audio.types';
+import { AudioConverterHelper } from '../utils/audioConverters';
+import { audioPlayerService } from '../services/audioPlayer.service';
+
+export function getMessageReplyText(msg: IMessage | any): string {
+  if (!msg) return '';
+
+  const text = (msg.text || '').trim();
+  if (text.length > 0) {
+    return text;
+  }
+
+  const attachments: IAttachment[] = msg.attachments || [];
+  if (attachments.length > 0) {
+    const first = attachments[0];
+    const fileName = (first.fileName || '').toLowerCase();
+    const url = (first.url || '').toLowerCase();
+
+    const isGif =
+      first.fileSizeStr === 'GIF' ||
+      fileName.endsWith('.gif') ||
+      url.endsWith('.gif') ||
+      Boolean(first.isSilentVideo) ||
+      (fileName.endsWith('.mp4') && first.fileSizeStr === 'GIF');
+
+    if (isGif) return 'GIF';
+
+    if (
+      first.type === AttachmentType.Photo ||
+      (!first.type && (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') || fileName.endsWith('.webp') || fileName.endsWith('.bmp'))) ||
+      (!first.type && first.url && !fileName.endsWith('.mp4'))
+    ) {
+      return 'Photo';
+    }
+
+    if (
+      first.type === AttachmentType.Video ||
+      fileName.endsWith('.mp4') ||
+      fileName.endsWith('.mov') ||
+      fileName.endsWith('.avi') ||
+      fileName.endsWith('.mkv') ||
+      url.endsWith('.mp4')
+    ) {
+      return 'Video';
+    }
+
+    if (first.type === AttachmentType.Voice || fileName.startsWith('voice_')) {
+      return 'Voice message';
+    }
+
+    if (
+      first.type === AttachmentType.Audio ||
+      fileName.endsWith('.mp3') ||
+      fileName.endsWith('.wav') ||
+      fileName.endsWith('.flac') ||
+      fileName.endsWith('.m4a') ||
+      fileName.endsWith('.aac') ||
+      fileName.endsWith('.ogg') ||
+      fileName.endsWith('.opus')
+    ) {
+      return 'Music';
+    }
+
+    return first.fileName || 'Document';
+  }
+
+  if (msg.previewText && msg.previewText.trim().length > 0) {
+    return msg.previewText;
+  }
+
+  return 'Message';
+}
 
 interface ChatState {
   selectedChatUser: IUserSearchResult | null;
@@ -37,6 +113,34 @@ interface ChatState {
 
   currentUserName: string;
   currentUserAvatar: string | null;
+
+  isPinDialogOpen: boolean;
+  pinDialogTitle: string;
+  pinDialogActionText: string;
+  pinForAllText: string;
+  canPinForAll: boolean;
+  messageToPin: IMessage | null;
+  openPinDialog: (msg: IMessage) => void;
+  cancelPin: () => void;
+  confirmPin: (pinForAll: boolean) => Promise<void>;
+
+  isForwardDialogOpen: boolean;
+  messagesToForward: IMessage[];
+  openForwardDialog: (messages: IMessage[]) => void;
+  cancelForward: () => void;
+  toggleSelectForwardChat: (uniqueKey: string) => void;
+  confirmForward: () => Promise<void>;
+
+  isConfirmDialogOpen: boolean;
+  confirmDialogTitle: string;
+  confirmDialogMessage: string;
+  confirmDialogCheckboxText: string | null;
+  confirmDialogButtonText: string;
+  messagesPendingDeletion: IMessage[];
+  openDeleteDialog: (msg: IMessage) => void;
+  openDeleteSelectedDialog: () => void;
+  closeConfirmDialog: () => void;
+  confirmDelete: (deleteForAll: boolean) => Promise<void>;
 
   isCurrentChatJoined: boolean;
   isBlockedByMe: boolean;
@@ -63,8 +167,11 @@ interface ChatState {
   deleteMessage: (msg: IMessage, deleteForAll: boolean) => Promise<void>;
   togglePinMessage: (msg: IMessage, pinForAll: boolean) => Promise<void>;
   toggleSelectMessage: (msg: IMessage) => void;
+  toggleRowSelection: (msg: IMessage) => void;
   clearSelection: () => void;
-  forwardMessages: (messages: IMessage[]) => void;
+  replySelected: () => void;
+  forwardSelected: () => void;
+  deleteSelected: () => void;
 
   startSearch: () => void;
   exitSearch: () => void;
@@ -77,6 +184,8 @@ interface ChatState {
   syncPermissionsWithInput: () => void;
   triggerDeltaSync: () => Promise<void>;
   updateAttachmentDimensions: (messageId: number, width: number, height: number) => void;
+  toggleAudio: (clickedAtt: IAttachment) => void;
+  seekAudio: (seconds: number) => void;
 }
 
 const alreadyTrackedPostIds = new Set<number>();
@@ -84,6 +193,17 @@ let activeChatTypingTimer: ReturnType<typeof setTimeout> | null = null;
 let typingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let deltaSyncInterval: ReturnType<typeof setInterval> | null = null;
 let chatSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+let currentChatLoadAbortController: AbortController | null = null;
+let currentChatLoadSequence = 0;
+let lastLoadedChatKey: string | null = null;
+
+function getChatKey(target: IUserSearchResult | null): string {
+  if (!target) return '';
+  if (target.isSecretChat) return `s_${target.secretChatId || target.id}`;
+  if (target.isGroup) return `g_${target.id}`;
+  return `u_${target.id}`;
+}
 
 function computeCanWriteMessages(
   target: IUserSearchResult | null,
@@ -131,6 +251,93 @@ function resolveSessionUser(): { name: string; avatar: string | null } {
   };
 }
 
+function enrichMessage(
+  msg: IMessage,
+  currentUserId: number,
+  currentUserName: string,
+  currentUserAvatar: string | null,
+  targetChat: IUserSearchResult | null
+): IMessage {
+  const isMy = Number(msg.senderId) === Number(currentUserId) || Boolean(msg.isMyMessage);
+  const opponentAvatar = !targetChat?.isGroup
+    ? targetChat?.avatarPath || (targetChat as any)?.avatar || null
+    : null;
+
+  const opponentName = !targetChat?.isGroup
+    ? targetChat?.nickName || (targetChat as any)?.groupName || (targetChat as any)?.username || 'User'
+    : msg.senderName || 'User';
+
+  // 🟢 Автоматическое восстановление зависших blob-ссылок после перезагрузки
+  let fixedAttachments = msg.attachments;
+  if (fixedAttachments && fixedAttachments.length > 0) {
+    fixedAttachments = fixedAttachments.map((att) => {
+      if (att.url && att.url.startsWith('blob:') && att.fileName) {
+        const cleanName = att.fileName.replace(/^.*[\\/]/, '');
+        return {
+          ...att,
+          url: UrlHelper.normalize(`uploads/attachments/${cleanName}`, BASE_SERVER_URL),
+        };
+      }
+      return att;
+    });
+  }
+
+  return {
+    ...msg,
+    attachments: fixedAttachments,
+    isMyMessage: isMy,
+    isSelected: Boolean(msg.isSelected),
+    viewsCount: msg.viewsCount > 0 ? msg.viewsCount : 1,
+    senderName: isMy
+      ? (currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me')
+      : (msg.senderName && msg.senderName !== 'User' ? msg.senderName : opponentName),
+    senderAvatar: isMy
+      ? currentUserAvatar
+      : (msg.senderAvatar || opponentAvatar),
+  };
+}
+
+function resolveMessagePreview(
+  msg: IMessage,
+  _currentUserId: number,
+  _isGroup: boolean,
+  _isChannel: boolean
+): [string, LastMessageType] {
+  const text = (msg.text || '').trim();
+  const attachments = msg.attachments || [];
+
+  if (attachments.length > 0) {
+    const first = attachments[0];
+    const isGif =
+      first.fileSizeStr === 'GIF' ||
+      first.fileName?.toLowerCase().endsWith('.gif') ||
+      Boolean(first.isSilentVideo);
+
+    if (isGif) {
+      return [text || 'GIF', LastMessageType.Gif];
+    }
+    if (first.type === AttachmentType.Photo) {
+      return [text || 'Photo', LastMessageType.Photo];
+    }
+    if (first.type === AttachmentType.Video) {
+      return [text || 'Video', LastMessageType.Video];
+    }
+    if (first.type === AttachmentType.Voice) {
+      return [text || 'Voice message', LastMessageType.Voice];
+    }
+    if (first.type === AttachmentType.Audio) {
+      return [text || 'Music', LastMessageType.Audio];
+    }
+    return [text || first.fileName || 'Document', LastMessageType.Document];
+  }
+
+  if (text) {
+    return [text, LastMessageType.Text];
+  }
+
+  return ['', LastMessageType.None];
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   selectedChatUser: null,
   currentChatMessages: [],
@@ -149,6 +356,441 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentUserName: resolveSessionUser().name,
   currentUserAvatar: resolveSessionUser().avatar,
 
+  isPinDialogOpen: false,
+  pinDialogTitle: '',
+  pinDialogActionText: 'Pin',
+  pinForAllText: 'Also apply for everyone',
+  canPinForAll: true,
+  messageToPin: null,
+
+  openPinDialog: (msg: IMessage) => {
+    if (!msg) return;
+    const isUnpinning = msg.isPinned;
+    const targetChat = get().selectedChatUser;
+    const isGroup = Boolean(targetChat?.isGroup);
+    const nickName = targetChat?.nickName || 'User';
+
+    set({
+      messageToPin: msg,
+      isPinDialogOpen: true,
+      pinDialogTitle: isUnpinning ? 'Do you want to unpin this message?' : 'Do you want to pin this message?',
+      pinDialogActionText: isUnpinning ? 'Unpin' : 'Pin',
+      pinForAllText: isGroup ? 'Also apply for everyone' : `Also apply for ${nickName}`,
+      canPinForAll: true,
+    });
+  },
+
+  cancelPin: () => {
+    set({ isPinDialogOpen: false, messageToPin: null });
+  },
+
+  confirmPin: async (pinForAll: boolean) => {
+    const { messageToPin, togglePinMessage } = get();
+    set({ isPinDialogOpen: false, messageToPin: null });
+    if (messageToPin) {
+      await togglePinMessage(messageToPin, pinForAll);
+    }
+  },
+
+  isForwardDialogOpen: false,
+  messagesToForward: [],
+
+  openForwardDialog: (messages: IMessage[]) => {
+    if (!messages || messages.length === 0) return;
+
+    const allChats = useSidebarChatsStore.getState().allChats || [];
+    const currentUserId = Number(userSession.userId || 0);
+
+    const sortedChats = allChats
+      .filter((c) => !c.isChannel || (c.isChannel && c.adminId === currentUserId))
+      .sort((a, b) => {
+        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        const timeA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
+        const timeB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
+        return timeB - timeA;
+      })
+      .map((c) => ({
+        chat: c,
+        isSelected: false,
+      }));
+
+    set({
+      messagesToForward: [...messages],
+      forwardChatList: sortedChats,
+      isForwardDialogOpen: true,
+    });
+  },
+
+  cancelForward: () => {
+    set({ isForwardDialogOpen: false, messagesToForward: [], forwardChatList: [] });
+  },
+
+  toggleSelectForwardChat: (uniqueKey: string) => {
+    set((state) => ({
+      forwardChatList: state.forwardChatList.map((item) => {
+        const c = item.chat;
+        const key = c.isSecretChat
+          ? `s_${c.secretChatId || c.id}`
+          : c.isGroup
+          ? `g_${c.groupId || c.id}`
+          : `u_${c.userId || c.id}`;
+
+        return key === uniqueKey ? { ...item, isSelected: !item.isSelected } : item;
+      }),
+    }));
+  },
+
+  confirmForward: async () => {
+    const { forwardChatList, messagesToForward, selectedChatUser, currentUserName, currentUserAvatar } = get();
+    const selectedChats = forwardChatList.filter((c) => c.isSelected);
+    set({ isForwardDialogOpen: false, messagesToForward: [], forwardChatList: [] });
+
+    if (selectedChats.length === 0 || messagesToForward.length === 0) return;
+
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+
+    for (const target of selectedChats) {
+      const isGroup = Boolean(target.chat.isGroup);
+      const rId = isGroup ? null : Number(target.chat.userId || target.chat.id);
+      const gId = isGroup ? Number(target.chat.groupId || target.chat.id) : null;
+
+      const isCurrentActiveChat = Boolean(
+        selectedChatUser &&
+        ((isGroup && selectedChatUser.isGroup && Number(selectedChatUser.id) === gId) ||
+         (!isGroup && !selectedChatUser.isGroup && Number(selectedChatUser.id) === rId))
+      );
+
+      for (const msg of messagesToForward) {
+        const originalSender = msg.forwardedFromName || msg.senderName || 'User';
+        const originalAvatar = msg.forwardedFromAvatar || msg.senderAvatar || null;
+        const originalUserId = Number(msg.forwardedFromUserId || msg.senderId || 0);
+
+        const localTempId = Date.now() + Math.floor(Math.random() * 100000);
+
+        const clonedAttachments: IAttachment[] = (msg.attachments || []).map((a, idx) => ({
+          ...a,
+          id: idx + 1,
+          messageId: 0,
+        }));
+
+        const optimisticMsg: IMessage = {
+          id: localTempId,
+          serverId: 0,
+          senderId: currentUserId,
+          senderName: currentUserName || 'Me',
+          senderAvatar: currentUserAvatar,
+          receiverId: rId,
+          groupId: gId,
+          text: msg.text || '',
+          timestamp: new Date().toISOString(),
+          isMyMessage: true,
+          isSentToServer: false,
+          isRead: false,
+          isDeleted: false,
+          isDeletedForMe: false,
+          isPinned: false,
+          viewsCount: 1,
+          forwardedFromName: originalSender,
+          forwardedFromAvatar: originalAvatar,
+          forwardedFromUserId: originalUserId,
+          attachments: clonedAttachments,
+          repliedMessages: [],
+        };
+
+        if (isCurrentActiveChat) {
+          set((state) => ({
+            currentChatMessages: [...state.currentChatMessages, optimisticMsg],
+          }));
+        }
+
+        chatService.saveMessageLocallyAsync(optimisticMsg).catch(() => {});
+
+        const [fwdPreview, fwdType] = resolveMessagePreview(optimisticMsg, currentUserId, isGroup, false);
+
+        useSidebarChatsStore.getState().updateSidebar(
+          rId,
+          gId,
+          fwdPreview || 'Forwarded message',
+          false,
+          fwdType
+        );
+
+        (async () => {
+          try {
+            const attachmentDtos = clonedAttachments.map((a) => ({
+              type: a.type,
+              fileName: a.fileName,
+              fileSizeStr: a.fileSizeStr,
+              url: a.url,
+              thumbnailUrl: a.thumbnailUrl || a.url,
+              fileHash: a.fileHash,
+              hasAudio: Boolean(a.hasAudio),
+              width: a.width || 0,
+              height: a.height || 0,
+              durationSeconds: a.durationSeconds || 0,
+              waveform: a.waveform || '',
+            }));
+
+            const realId = await signalRService.sendMessageAsync(
+              rId,
+              gId,
+              null,
+              msg.text || '',
+              null,
+              originalSender,
+              originalAvatar,
+              originalUserId,
+              attachmentDtos.length > 0 ? (attachmentDtos as any) : null
+            );
+
+            if (realId && realId > 0) {
+              set((state) => ({
+                currentChatMessages: state.currentChatMessages.map((m) =>
+                  m.id === localTempId ? { ...m, serverId: realId, isSentToServer: true } : m
+                ),
+              }));
+              void chatService.markAsSentAsync(localTempId, realId, clonedAttachments as any, msg.text || '');
+            }
+          } catch (err) {
+            console.error('[ChatStore ERROR] Ошибка при фоновой пересылке:', err);
+          }
+        })();
+      }
+    }
+
+    get().clearSelection();
+  },
+
+  isConfirmDialogOpen: false,
+  confirmDialogTitle: '',
+  confirmDialogMessage: '',
+  confirmDialogCheckboxText: null,
+  confirmDialogButtonText: 'Delete',
+  messagesPendingDeletion: [],
+
+  openDeleteDialog: (msg: IMessage) => {
+    if (!msg) return;
+    const { selectedChatUser } = get();
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+    const isMy = msg.isMyMessage || Number(msg.senderId) === currentUserId;
+
+    const checkboxText = isMy
+      ? selectedChatUser?.isGroup
+        ? 'Delete for everyone'
+        : `Also delete for ${selectedChatUser?.nickName || 'User'}`
+      : null;
+
+    set({
+      messagesPendingDeletion: [msg],
+      isConfirmDialogOpen: true,
+      confirmDialogTitle: selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'Delete Message',
+      confirmDialogMessage: 'Do you want to delete this message?',
+      confirmDialogCheckboxText: checkboxText,
+      confirmDialogButtonText: 'Delete',
+    });
+  },
+
+  openDeleteSelectedDialog: () => {
+    const { currentChatMessages, selectedChatUser } = get();
+    const targets = currentChatMessages.filter((m) => m.isSelected);
+    if (targets.length === 0) return;
+
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+    const hasMy = targets.some((m) => m.isMyMessage || Number(m.senderId) === currentUserId);
+
+    let checkboxText: string | null = selectedChatUser?.isGroup
+      ? 'Delete for everyone'
+      : `Also delete for ${selectedChatUser?.nickName || 'User'}`;
+    if (!hasMy) checkboxText = null;
+
+    set({
+      messagesPendingDeletion: targets,
+      isConfirmDialogOpen: true,
+      confirmDialogTitle: selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'Delete Messages',
+      confirmDialogMessage: `Do you want to delete ${targets.length} message(s)?`,
+      confirmDialogCheckboxText: checkboxText,
+      confirmDialogButtonText: 'Delete',
+    });
+  },
+
+  closeConfirmDialog: () => {
+    set({
+      isConfirmDialogOpen: false,
+      messagesPendingDeletion: [],
+      confirmDialogCheckboxText: null,
+    });
+  },
+
+  confirmDelete: async (deleteForAll: boolean) => {
+    const { messagesPendingDeletion, selectedChatUser } = get();
+    if (messagesPendingDeletion.length === 0) return;
+
+    const targets = [...messagesPendingDeletion];
+    set({
+      isConfirmDialogOpen: false,
+      messagesPendingDeletion: [],
+      confirmDialogCheckboxText: null,
+    });
+
+    const currentUserId = Number(
+      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+    );
+
+    const currentReplies = useMessageInputStore.getState().replyingToMessages || [];
+    if (currentReplies.length > 0) {
+      const remainingReplies = currentReplies.filter((rep) => {
+        const rId = Number(rep.id || 0);
+        const rServerId = Number(rep.serverId || 0);
+        return !targets.some((t) =>
+          (t.id && rId > 0 && t.id === rId) ||
+          (t.serverId && rServerId > 0 && t.serverId === rServerId)
+        );
+      });
+      if (remainingReplies.length !== currentReplies.length) {
+        useMessageInputStore.setState({ replyingToMessages: remainingReplies });
+      }
+    }
+
+    const currentEdit = useMessageInputStore.getState().editingMessage;
+    if (currentEdit) {
+      const eId = Number(currentEdit.id || 0);
+      const eServerId = Number(currentEdit.serverId || 0);
+      const isEditDeleted = targets.some((t) =>
+        (t.id && eId > 0 && t.id === eId) ||
+        (t.serverId && eServerId > 0 && t.serverId === eServerId)
+      );
+      if (isEditDeleted) {
+        useMessageInputStore.getState().cancelEdit();
+      }
+    }
+
+    set((state) => {
+      let updated = [...state.currentChatMessages];
+
+      for (const msg of targets) {
+        const isMy = msg.isMyMessage || Number(msg.senderId) === currentUserId;
+
+        if ((isMy && deleteForAll) || !isMy) {
+          updated = updated.filter(
+            (m) =>
+              !(
+                (msg.id && m.id === msg.id) ||
+                (msg.serverId && msg.serverId > 0 && m.serverId === msg.serverId)
+              )
+          );
+        } else if (isMy && !deleteForAll) {
+          updated = updated.map((m) => {
+            const isMatch =
+              (msg.id && m.id === msg.id) ||
+              (msg.serverId && msg.serverId > 0 && m.serverId === msg.serverId);
+
+            if (isMatch) {
+              return {
+                ...m,
+                attachments: [],
+                text: 'This message was deleted',
+                editedAt: undefined,
+                isDeletedForMe: true,
+                isSelected: false,
+              };
+            }
+            return m;
+          });
+        }
+      }
+
+      updated = updated.map((m) => {
+        if (m.repliedMessages && m.repliedMessages.length > 0) {
+          const remaining = m.repliedMessages.filter((rep: any) => {
+            const rId = Number(rep.id || 0);
+            const rServerId = Number(rep.serverId || 0);
+            return !targets.some((t) =>
+              (t.id && rId > 0 && t.id === rId) ||
+              (t.serverId && rServerId > 0 && t.serverId === rServerId)
+            );
+          });
+          if (remaining.length !== m.repliedMessages.length) {
+            return { ...m, repliedMessages: remaining };
+          }
+        }
+        return m;
+      });
+
+      const updatedPins = state.pinnedMessages.filter(
+        (p) =>
+          !targets.some(
+            (t) =>
+              (t.id && p.id === t.id) ||
+              (t.serverId && t.serverId > 0 && p.serverId === t.serverId)
+          )
+      );
+
+      const updatedSearch = state.chatSearchResults.filter(
+        (s) =>
+          !targets.some(
+            (t) =>
+              (t.id && s.id === t.id) ||
+              (t.serverId && t.serverId > 0 && s.serverId === t.serverId)
+          )
+      );
+
+      return {
+        currentChatMessages: updated.map((m) => ({ ...m, isSelected: false })),
+        pinnedMessages: updatedPins,
+        chatSearchResults: updatedSearch,
+        isSelectionMode: false,
+        selectedCount: 0,
+      };
+    });
+
+    try {
+      for (const msg of targets) {
+        const serverMsgId = msg.serverId > 0 ? msg.serverId : msg.id;
+        await chatService.deleteMessageLocallyAsync(msg.id, msg.serverId, currentUserId, deleteForAll);
+        eventBus.emit('MessageDeletedMessage' as any, { serverId: serverMsgId, isForAll: deleteForAll });
+      }
+    } catch (err) {
+      console.error('[ChatStore ERROR] Ошибка при локальном удалении сообщений:', err);
+    }
+
+    (async () => {
+      for (const msg of targets) {
+        const isMy = msg.isMyMessage || Number(msg.senderId) === currentUserId;
+        if (msg.serverId > 0 && (isMy || !deleteForAll)) {
+          try {
+            await signalRService.deleteMessageAsync(msg.serverId, deleteForAll);
+          } catch (err) {
+            console.error(`[ChatStore ERROR] Ошибка SignalR удаления сообщения ${msg.serverId}:`, err);
+          }
+        }
+      }
+    })();
+
+    const lastTarget = targets[targets.length - 1];
+    if (lastTarget || selectedChatUser) {
+      const sidebarUserId =
+        selectedChatUser && !selectedChatUser.isGroup
+          ? selectedChatUser.id
+          : lastTarget?.senderId === currentUserId
+          ? lastTarget?.receiverId
+          : lastTarget?.senderId;
+
+      const sidebarGroupId =
+        selectedChatUser && selectedChatUser.isGroup ? selectedChatUser.id : lastTarget?.groupId;
+
+      eventBus.emit('SidebarUpdateAfterDeletionMessage' as any, {
+        userId: sidebarUserId,
+        groupId: sidebarGroupId,
+      });
+    }
+  },
+
   isCurrentChatJoined: true,
   isBlockedByMe: false,
   isBlockedByThem: false,
@@ -160,6 +802,83 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isSelectionMode: false,
   selectedCount: 0,
 
+  toggleSelectMessage: (msg: IMessage) => {
+    if (!msg) return;
+    const targetId = Number(msg.id || 0);
+    const targetServerId = Number(msg.serverId || 0);
+
+    set((state) => {
+      const msgs = state.currentChatMessages.map((m) => {
+        const mId = Number(m.id || 0);
+        const mServerId = Number(m.serverId || 0);
+        const isMatch =
+          (targetId > 0 && mId === targetId) ||
+          (targetServerId > 0 && mServerId === targetServerId) ||
+          (targetServerId > 0 && mId === targetServerId) ||
+          (targetId > 0 && mServerId === targetId);
+
+        return isMatch ? { ...m, isSelected: !m.isSelected } : m;
+      });
+
+      const selectedCount = msgs.filter((m) => m.isSelected).length;
+      return {
+        currentChatMessages: msgs,
+        isSelectionMode: selectedCount > 0,
+        selectedCount,
+      };
+    });
+  },
+
+  toggleRowSelection: (msg: IMessage) => {
+    if (get().isSelectionMode) {
+      get().toggleSelectMessage(msg);
+    }
+  },
+
+  clearSelection: () => {
+    set((state) => ({
+      currentChatMessages: state.currentChatMessages.map((m) => ({ ...m, isSelected: false })),
+      isSelectionMode: false,
+      selectedCount: 0,
+    }));
+  },
+
+  replySelected: () => {
+    const { currentChatMessages, currentUserName, selectedChatUser, clearSelection } = get();
+    const selected = currentChatMessages.filter((m) => m.isSelected);
+    if (selected.length === 0) return;
+
+    for (const msg of selected) {
+      let authorName: string;
+      if (msg.isMyMessage) {
+        authorName = currentUserName || 'Me';
+      } else if (selectedChatUser && !selectedChatUser.isGroup) {
+        authorName = selectedChatUser.nickName || 'User';
+      } else {
+        authorName = msg.senderName && msg.senderName !== 'User' ? msg.senderName : currentUserName || 'Me';
+      }
+
+      useMessageInputStore.getState().addReplyMessage({
+        ...msg,
+        senderName: authorName,
+        text: getMessageReplyText(msg),
+      });
+    }
+
+    clearSelection();
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
+  },
+
+  forwardSelected: () => {
+    const selected = get().currentChatMessages.filter((m) => m.isSelected);
+    if (selected.length === 0) return;
+    get().openForwardDialog(selected);
+  },
+
+  deleteSelected: () => {
+    get().openDeleteSelectedDialog();
+  },
+
   ensureMyProfileLoadedAsync: async () => {
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
@@ -168,7 +887,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const { name: localName, avatar: localAvatar } = resolveSessionUser();
     if (localName && localName !== 'Me') {
-      set({ currentUserName: localName, currentUserAvatar: localAvatar });
+      set((state) => ({
+        currentUserName: localName,
+        currentUserAvatar: localAvatar,
+        currentChatMessages: state.currentChatMessages.map((m) =>
+          m.isMyMessage ? { ...m, senderName: localName, senderAvatar: localAvatar || m.senderAvatar } : m
+        ),
+        pinnedMessages: state.pinnedMessages.map((p) =>
+          p.isMyMessage ? { ...p, senderName: localName, senderAvatar: localAvatar || p.senderAvatar } : p
+        ),
+      }));
     }
 
     try {
@@ -179,10 +907,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const u = res.data;
         const freshName = u.nickName || u.username || localName || 'User';
         const freshAvatar = u.avatarPath || u.avatar || localAvatar;
-        set({ currentUserName: freshName, currentUserAvatar: freshAvatar });
+        set((state) => ({
+          currentUserName: freshName,
+          currentUserAvatar: freshAvatar,
+          currentChatMessages: state.currentChatMessages.map((m) =>
+            m.isMyMessage ? { ...m, senderName: freshName, senderAvatar: freshAvatar || m.senderAvatar } : m
+          ),
+          pinnedMessages: state.pinnedMessages.map((p) =>
+            p.isMyMessage ? { ...p, senderName: freshName, senderAvatar: freshAvatar || p.senderAvatar } : p
+          ),
+        }));
       }
     } catch (e) {
-      console.warn('[ChatStore] Ошибка загрузки собственного профиля:', e);
+      console.warn('[ChatStore] Ошибка фоновой загрузки профиля:', e);
     }
   },
 
@@ -214,15 +951,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const count = await chatService.syncDeltaAsync(currentUserId);
       if (count > 0) {
-        const { selectedChatUser, currentChatMessages } = get();
+        const { selectedChatUser, currentChatMessages, currentUserName, currentUserAvatar } = get();
         if (selectedChatUser) {
           const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
           const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
           const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
 
-          // 🟢 ИСПРАВЛЕНИЕ: берем не жесткие 30, а текущую длину сообщений, чтобы не отрезать верхние сообщения диалога
           const takeCount = Math.max(30, currentChatMessages.length);
-
           const updated = await chatService.getLocalMessagesAsync(
             currentUserId,
             targetUserId,
@@ -230,7 +965,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
             secretChatId,
             takeCount
           );
-          set({ currentChatMessages: updated });
+
+          if (getChatKey(get().selectedChatUser) === getChatKey(selectedChatUser)) {
+            const enriched = updated.map((m) =>
+              enrichMessage(m, currentUserId, currentUserName, currentUserAvatar, selectedChatUser)
+            );
+            set({ currentChatMessages: enriched });
+          }
         }
       }
     } catch (e) {
@@ -240,6 +981,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   selectChatUser: async (target) => {
     if (!target) {
+      if (currentChatLoadAbortController) {
+        currentChatLoadAbortController.abort();
+        currentChatLoadAbortController = null;
+      }
+      lastLoadedChatKey = null;
       if (deltaSyncInterval) {
         clearInterval(deltaSyncInterval);
         deltaSyncInterval = null;
@@ -249,13 +995,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentChatMessages: [],
         pinnedMessages: [],
         canWriteMessages: false,
+        isHistoryLoading: false,
+        isSelectionMode: false,
+        selectedCount: 0,
       });
+      useMessageInputStore.getState().cancelReply();
+      useMessageInputStore.getState().cancelEdit();
       get().syncPermissionsWithInput();
       return;
     }
 
+    const newChatKey = getChatKey(target);
+    if (lastLoadedChatKey === newChatKey && !get().isChatSearchMode) {
+      eventBus.emit('FocusMessageInputMessage' as any, undefined);
+      return;
+    }
+    lastLoadedChatKey = newChatKey;
+
+    if (currentChatLoadAbortController) {
+      currentChatLoadAbortController.abort();
+      currentChatLoadAbortController = null;
+    }
+    const abortController = new AbortController();
+    currentChatLoadAbortController = abortController;
+    const thisLoadSequence = ++currentChatLoadSequence;
+
+    if (get().isChatSearchMode) {
+      get().exitSearch();
+    }
+
     alreadyTrackedPostIds.clear();
-    await get().ensureMyProfileLoadedAsync();
 
     const targetUserId = target.isGroup ? null : Number(target.id ?? (target as any).userId ?? 0);
     const groupId = target.isGroup ? Number(target.id ?? (target as any).groupId ?? 0) : null;
@@ -263,7 +1032,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const existingSidebarChat = useSidebarChatsStore
       .getState()
-      .allChats.find((c) => !c.isGroup && Number(c.userId || c.id) === targetId);
+      .allChats.find((c) => (target.isGroup ? c.groupId === targetId : Number(c.userId || c.id) === targetId));
 
     const isOnlineInitial = existingSidebarChat ? existingSidebarChat.isOnline : Boolean(target.isOnline);
     const lastSeenInitial = existingSidebarChat
@@ -285,10 +1054,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const isJoined = !normalizedTarget.isGroup || true;
     const canWrite = computeCanWriteMessages(normalizedTarget, false, false, isJoined, true, currentUserId);
 
-    if (get().isChatSearchMode) {
-      get().exitSearch();
-    }
-
     set({
       selectedChatUser: normalizedTarget,
       isHistoryLoading: true,
@@ -305,7 +1070,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isCurrentChatJoined: isJoined,
       canWriteMessages: canWrite,
     });
+    useMessageInputStore.getState().cancelReply();
+    useMessageInputStore.getState().cancelEdit();
     get().syncPermissionsWithInput();
+
+    void get().ensureMyProfileLoadedAsync();
 
     const secretChatId = normalizedTarget.isSecretChat ? normalizedTarget.secretChatId : null;
 
@@ -317,22 +1086,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      const cached = await chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30);
-      const pinned = await chatService.getLocalPinnedMessagesAsync(currentUserId, targetUserId, groupId, secretChatId);
+      const [cached, pinned] = await Promise.all([
+        chatService.getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30),
+        chatService.getLocalPinnedMessagesAsync(currentUserId, targetUserId, groupId, secretChatId),
+      ]);
+
+      if (abortController.signal.aborted || thisLoadSequence !== currentChatLoadSequence) return;
+      if (getChatKey(get().selectedChatUser) !== newChatKey) return;
+
+      const { currentUserName, currentUserAvatar } = get();
+      const resolvedName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me';
+      const resolvedAvatar = currentUserAvatar || resolveSessionUser().avatar;
+
+      const enrichedCached = (cached || []).map((m) =>
+        enrichMessage(m, currentUserId, resolvedName, resolvedAvatar, normalizedTarget)
+      );
+      const enrichedPinned = (pinned || []).map((p) =>
+        enrichMessage(p, currentUserId, resolvedName, resolvedAvatar, normalizedTarget)
+      );
 
       set({
-        currentChatMessages: cached,
-        pinnedMessages: pinned,
+        currentChatMessages: enrichedCached,
+        pinnedMessages: enrichedPinned,
         isHistoryLoading: false,
       });
 
-      await get().markAsRead();
-      await get().triggerDeltaSync();
+      void get().markAsRead();
+      void get().triggerDeltaSync();
 
       if (deltaSyncInterval) clearInterval(deltaSyncInterval);
       deltaSyncInterval = setInterval(() => {
-        get().triggerDeltaSync();
-        useSidebarChatsStore.getState().syncOnlineStatuses();
+        void get().triggerDeltaSync();
+        void useSidebarChatsStore.getState().syncOnlineStatuses();
       }, 3500);
 
       if (!normalizedTarget.isGroup && targetUserId && !normalizedTarget.isSecretChat) {
@@ -340,6 +1125,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .get<any>(`api/Users/${targetUserId}`)
           .catch(() => apiClient.get<any>(`api/User/${targetUserId}`))
           .then((res) => {
+            if (abortController.signal.aborted || thisLoadSequence !== currentChatLoadSequence) return;
             if (res && res.data) {
               const fresh = res.data;
               const isOnline = Boolean(fresh.isOnline ?? fresh.IsOnline);
@@ -371,15 +1157,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       chatService.syncUnsentMessagesAsync(signalRService).then((sent) => {
-        if (sent > 0) {
+        if (sent > 0 && !abortController.signal.aborted && thisLoadSequence === currentChatLoadSequence) {
           chatService
             .getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30)
             .then((updated) => {
-              set({ currentChatMessages: updated });
+              if (!abortController.signal.aborted && thisLoadSequence === currentChatLoadSequence) {
+                const refreshed = (updated || []).map((m) =>
+                  enrichMessage(m, currentUserId, resolvedName, resolvedAvatar, normalizedTarget)
+                );
+                set({ currentChatMessages: refreshed });
+              }
             });
         }
       });
     } catch (e) {
+      if (abortController.signal.aborted || thisLoadSequence !== currentChatLoadSequence) return;
       console.error('[ChatStore ERROR] Ошибка загрузки чата:', e);
       set({ isHistoryLoading: false });
     }
@@ -411,7 +1203,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   loadOlderMessages: async () => {
-    const { selectedChatUser, currentChatMessages, isHistoryLoading, isLoadingOlder } = get();
+    const { selectedChatUser, currentChatMessages, isHistoryLoading, isLoadingOlder, currentUserName, currentUserAvatar } = get();
     if (!selectedChatUser || currentChatMessages.length === 0 || isHistoryLoading || isLoadingOlder) return;
 
     set({ isLoadingOlder: true });
@@ -419,6 +1211,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
     );
+
+    const activeKeyBefore = getChatKey(selectedChatUser);
 
     try {
       const older = await chatService.getLocalMessagesAsync(
@@ -430,8 +1224,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         oldestTime
       );
 
-      if (older && older.length > 0) {
-        set({ currentChatMessages: [...older, ...currentChatMessages] });
+      if (older && older.length > 0 && getChatKey(get().selectedChatUser) === activeKeyBefore) {
+        const resolvedName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me';
+        const resolvedAvatar = currentUserAvatar || resolveSessionUser().avatar;
+        const enriched = older.map((m) =>
+          enrichMessage(m, currentUserId, resolvedName, resolvedAvatar, selectedChatUser)
+        );
+        set({ currentChatMessages: [...enriched, ...get().currentChatMessages] });
       }
     } catch (err) {
       console.error('[ChatStore ERROR] Ошибка подгрузки старых сообщений:', err);
@@ -462,9 +1261,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // ⏱️ СТАРТ ТАЙМЕРА (высокоточный таймер браузера)
-    const sendTimestamp = performance.now();
-
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
     );
@@ -474,6 +1270,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       clearTimeout(typingDebounceTimer);
       typingDebounceTimer = null;
     }
+
+    (attachments || []).forEach((att) => {
+      const isGif = att.fileSizeStr === 'GIF' || att.fileName?.toLowerCase().endsWith('.gif');
+      const validUrl = att.url && !att.url.startsWith('blob:') ? att.url : '';
+      if (isGif && validUrl) {
+        const savedItem = {
+          serverId: 0,
+          url: validUrl,
+          thumbnailUrl: att.thumbnailUrl && !att.thumbnailUrl.startsWith('blob:') ? att.thumbnailUrl : validUrl,
+          width: att.width || 320,
+          height: att.height || 240,
+          savedAt: new Date().toISOString(),
+        };
+        void gifService.saveGifAsync(savedItem);
+        useEmojiStore.getState().addSavedGifLocally(savedItem);
+      }
+    });
 
     const initialAttachments: IAttachment[] = (attachments || []).map((a) => {
       const cached = mediaDimensionsCache.get(a.url) || mediaDimensionsCache.get(a.fileName);
@@ -502,32 +1315,68 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isDeleted: false,
       isDeletedForMe: false,
       isPinned: false,
-      replyToMessageIds: replyIds || null,
       viewsCount: 1,
+      replyToMessageIds: replyIds || null,
       attachments: initialAttachments,
-      repliedMessages: replies,
+      repliedMessages: replies.map((r) => ({
+        ...r,
+        text: getMessageReplyText(r),
+      })),
     };
 
-    // 🟢 1. Мгновенно рендерим бабл в чате (0 мс)
     set((state) => ({ currentChatMessages: [...state.currentChatMessages, newMsg] }));
 
-    // Фоновая запись в IndexedDB (НЕ блокируем сетевой стек)
+    // 🟢 Если в отправленном сообщении есть аудио — сразу добавляем трек в открытый плейлист плеера
+    (newMsg.attachments || []).forEach((att) => {
+      const ext = (att.fileName || '').slice((att.fileName || '').lastIndexOf('.')).toLowerCase();
+      const isVoice = att.type === AttachmentType.Voice || Boolean(att.waveform) || (att.fileName && att.fileName.toLowerCase().startsWith('voice_'));
+      const isAudio = att.type === AttachmentType.Audio || ['.mp3', '.flac', '.m4a', '.aac', '.wma', '.opus', '.wav', '.ogg'].includes(ext);
+
+      if (isAudio && !isVoice) {
+        const interlocutorAvatar =
+          selectedChatUser?.avatarPath ||
+          (selectedChatUser as any)?.avatar ||
+          (selectedChatUser as any)?.Avatar ||
+          (selectedChatUser as any)?.AvatarPath ||
+          useSidebarChatsStore.getState().allChats.find((c) =>
+            selectedChatUser?.isGroup
+              ? Boolean(c.isGroup && (c.groupId === selectedChatUser.id || c.id === selectedChatUser.id))
+              : Boolean(!c.isGroup && Number(c.userId || c.id) === Number(selectedChatUser?.id))
+          )?.avatarPath || null;
+
+        const track = AudioMetadataHelper.createAudioTrackFromAttachment(
+          att,
+          newMsg,
+          selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'Chat',
+          interlocutorAvatar,
+          Boolean(selectedChatUser?.isGroup),
+          Boolean(selectedChatUser?.isChannel)
+        );
+        useMusicPlayerStore.getState().addTrackIfMatchesChat(track);
+      }
+    });
+
     chatService.saveMessageLocallyAsync(newMsg).catch(() => {});
+
+    const [sidebarPreviewText, sidebarMessageType] = resolveMessagePreview(
+      newMsg,
+      currentUserId,
+      Boolean(selectedChatUser.isGroup),
+      Boolean(selectedChatUser.isChannel)
+    );
 
     useSidebarChatsStore.getState().updateSidebar(
       newMsg.receiverId,
       newMsg.groupId,
-      text || (initialAttachments.length > 0 ? 'Вложение' : ''),
+      sidebarPreviewText,
       false,
-      LastMessageType.Text
+      sidebarMessageType
     );
 
-    // 🟢 2. Отправка через SignalR
     (async () => {
       try {
         let finalAttachments = [...initialAttachments];
 
-        // Если есть файлы — сначала загружаем их
         const filesToUpload: File[] = [];
         const fileIndices: number[] = [];
         initialAttachments.forEach((att, idx) => {
@@ -547,13 +1396,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 const targetAtt = finalAttachments[targetIdx];
                 const rawFile = targetAtt.rawFile;
 
-                // 🟢 Формируем полный постоянный URL бэкенда (порт 7214)
                 const fullServerUrl = UrlHelper.normalize(upDto.url, BASE_SERVER_URL);
                 const fullThumbUrl = upDto.thumbnailUrl
                   ? UrlHelper.normalize(upDto.thumbnailUrl, BASE_SERVER_URL)
                   : fullServerUrl;
 
-                // Сохраняем файл в дисковый CacheStorage браузера
                 if (rawFile) {
                   mediaCacheService.cacheMediaFile(fullServerUrl, rawFile);
                 }
@@ -566,11 +1413,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
                 mediaDimensionsCache.set(fullServerUrl, { width: targetAtt.width, height: targetAtt.height });
                 mediaDimensionsCache.set(upDto.fileName, { width: targetAtt.width, height: targetAtt.height });
+
+                const isGif = targetAtt.fileSizeStr === 'GIF' || targetAtt.fileName?.toLowerCase().endsWith('.gif');
+                if (isGif && fullServerUrl) {
+                  const savedItem = {
+                    serverId: 0,
+                    url: fullServerUrl,
+                    thumbnailUrl: fullThumbUrl || fullServerUrl,
+                    width: targetAtt.width || 320,
+                    height: targetAtt.height || 240,
+                    savedAt: new Date().toISOString(),
+                  };
+                  void gifService.saveGifAsync(savedItem);
+                  useEmojiStore.getState().addSavedGifLocally(savedItem);
+                }
               }
             });
+
+            // 🟢 СРАЗУ обновляем вложения в стейте React (заменяем временные blob-ссылки на реальный URL)
+            set((state) => ({
+              currentChatMessages: state.currentChatMessages.map((m) =>
+                m.id === localTempId
+                  ? { ...m, attachments: finalAttachments.map((a) => ({ ...a })) }
+                  : m
+              ),
+            }));
+
+            // 🟢 И сохраняем реальные ссылки в локальную базу данных IndexedDB
+            try {
+              const db = getLocalDatabase(userSession.userId);
+              db.messages
+                .update(localTempId, {
+                  attachments: finalAttachments.map((a) => {
+                    const { rawFile, ...rest } = a;
+                    return rest;
+                  }),
+                })
+                .catch(() => {});
+            } catch {}
           }
         }
 
+        // 🟢 Передаем waveform на сервер
         const uploadedDtos = finalAttachments.map((a) => ({
           type: a.type,
           fileName: a.fileName,
@@ -582,11 +1466,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           width: a.width || 0,
           height: a.height || 0,
           durationSeconds: a.durationSeconds || 0,
+          waveform: a.waveform || '',
         }));
 
-        // ⏱️ ВЫЗОВ SIGNALR ХАБА
-        const networkStart = performance.now();
-        
         const realId = await signalRService.sendMessageAsync(
           newMsg.receiverId ?? null,
           newMsg.groupId ?? null,
@@ -600,22 +1482,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
         );
 
         if (realId && realId > 0) {
-          const totalElapsed = (performance.now() - sendTimestamp).toFixed(1);
-          const networkElapsed = (performance.now() - networkStart).toFixed(1);
-
-          // 🟢 ВЫВОД В КОНСОЛЬ ТОЧНОГО ВРЕМЕНИ
-          console.log(
-            `%c⚡ [CONFIRMED] ID: ${realId} | Общее время (с клика): ${totalElapsed} мс | SignalR roundtrip: ${networkElapsed} мс`,
-            'color: #00FF66; font-weight: bold; font-size: 13px;'
-          );
-
+          // 🟢 Обновляем сообщение, фиксируя постоянный serverId и финальные ссылки вложений
           set((state) => ({
             currentChatMessages: state.currentChatMessages.map((m) =>
-              m.id === localTempId ? { ...m, serverId: realId, isSentToServer: true } : m
+              m.id === localTempId
+                ? {
+                    ...m,
+                    serverId: realId,
+                    isSentToServer: true,
+                    attachments: finalAttachments.map((a) => ({ ...a })),
+                  }
+                : m
             ),
           }));
 
-          void chatService.markAsSentAsync(localTempId, realId, undefined, text);
+          void chatService.markAsSentAsync(localTempId, realId, finalAttachments as any, text);
+
+          try {
+            const db = getLocalDatabase(userSession.userId);
+            db.messages
+              .update(localTempId, {
+                serverId: realId,
+                isSentToServer: true,
+                attachments: finalAttachments.map((a) => {
+                  const { rawFile, ...rest } = a;
+                  return rest;
+                }),
+              })
+              .catch(() => {});
+          } catch {}
         }
       } catch (err) {
         console.error('[ChatStore ERROR] Ошибка отправки:', err);
@@ -638,62 +1533,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  deleteMessage: async (msg, deleteForAll) => {
-    const currentUserId = Number(
-      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
-    );
-    await chatService.deleteMessageLocallyAsync(msg.id, msg.serverId, currentUserId, deleteForAll);
-
-    set((state) => ({
-      currentChatMessages:
-        deleteForAll || msg.senderId !== currentUserId
-          ? state.currentChatMessages.filter((m) => m.id !== msg.id && m.serverId !== msg.serverId)
-          : state.currentChatMessages.map((m) =>
-              m.id === msg.id ? { ...m, isDeletedForMe: true, text: 'This message was deleted' } : m
-            ),
-    }));
-
-    if (msg.serverId > 0) {
-      await signalRService.deleteMessageAsync(msg.serverId, deleteForAll);
-    }
+  deleteMessage: async (msg, _deleteForAll) => {
+    get().openDeleteDialog(msg);
   },
 
   togglePinMessage: async (msg, pinForAll) => {
     const isPinned = !msg.isPinned;
     await chatService.setMessagePinLocallyAsync(msg.id, msg.serverId, isPinned);
 
-    set((state) => ({
-      currentChatMessages: state.currentChatMessages.map((m) => (m.id === msg.id ? { ...m, isPinned } : m)),
-      pinnedMessages: isPinned
-        ? [...state.pinnedMessages, msg]
-        : state.pinnedMessages.filter((p) => p.id !== msg.id && p.serverId !== msg.serverId),
-    }));
+    const { selectedChatUser, currentUserName, currentUserAvatar } = get();
+    const currentUserId = Number(userSession.userId || 0);
+    const resolvedName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me';
+    const resolvedAvatar = currentUserAvatar || resolveSessionUser().avatar;
+
+    const enrichedMsg = enrichMessage({ ...msg, isPinned }, currentUserId, resolvedName, resolvedAvatar, selectedChatUser);
+
+    set((state) => {
+      let newPins = isPinned
+        ? [...state.pinnedMessages, enrichedMsg]
+        : state.pinnedMessages.filter((p) => p.id !== msg.id && p.serverId !== msg.serverId);
+
+      newPins.sort((a, b) => {
+        const idA = Number(a.serverId && a.serverId > 0 ? a.serverId : (a.id || 0));
+        const idB = Number(b.serverId && b.serverId > 0 ? b.serverId : (b.id || 0));
+        if (idA > 0 && idB > 0 && idA !== idB) return idA - idB;
+        return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+      });
+
+      return {
+        currentChatMessages: state.currentChatMessages.map((m) => (m.id === msg.id ? { ...m, isPinned } : m)),
+        pinnedMessages: newPins,
+      };
+    });
 
     if (msg.serverId > 0) {
       await signalRService.setPinAsync(msg.serverId, pinForAll, isPinned);
     }
-  },
-
-  toggleSelectMessage: (msg) => {
-    set((state) => {
-      const msgs = state.currentChatMessages.map((m) =>
-        m.id === msg.id ? { ...m, isSelected: !m.isSelected } : m
-      );
-      const count = msgs.filter((m) => m.isSelected).length;
-      return { currentChatMessages: msgs, isSelectionMode: count > 0, selectedCount: count };
-    });
-  },
-
-  clearSelection: () => {
-    set((state) => ({
-      currentChatMessages: state.currentChatMessages.map((m) => ({ ...m, isSelected: false })),
-      isSelectionMode: false,
-      selectedCount: 0,
-    }));
-  },
-
-  forwardMessages: (messages) => {
-    eventBus.emit('OpenConfirmDialogMessage' as any, { messages });
   },
 
   startSearch: () => {
@@ -705,8 +1580,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    get().ensureMyProfileLoadedAsync();
-
     set({
       isChatSearchMode: true,
       chatSearchText: '',
@@ -714,7 +1587,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isChatSearching: false,
     });
 
-    eventBus.emit('FocusSearchBoxMessage', undefined);
+    eventBus.emit('FocusSearchBoxMessage' as any, undefined);
   },
 
   exitSearch: () => {
@@ -725,7 +1598,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isChatSearching: false,
     });
 
-    eventBus.emit('EndSearchBoxMessage', undefined);
+    eventBus.emit('EndSearchBoxMessage' as any, undefined);
   },
 
   onChatSearchTextChanged: (query: string) => {
@@ -751,7 +1624,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
         );
 
-        await get().ensureMyProfileLoadedAsync();
         const { currentUserName, currentUserAvatar } = get();
 
         const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
@@ -857,8 +1729,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
 
     eventBus.emit('ActiveChatUnreadResetMessage' as any, {
-      targetUserId,
-      targetGroupId,
+      userId: targetUserId,
+      groupId: targetGroupId,
       secretChatId,
     });
 
@@ -961,15 +1833,158 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { currentChatMessages: newMessages };
     });
   },
+
+  toggleAudio: (clickedAtt: IAttachment) => {
+    if (!clickedAtt) return;
+
+    // 🟢 1. Точная детекция: это голос ТОЛЬКО если тип Voice, либо есть waveform, либо системный voice_
+    const isVoice =
+      clickedAtt.type === AttachmentType.Voice ||
+      (Boolean(clickedAtt.waveform) && String(clickedAtt.waveform).trim().length > 0) ||
+      (Boolean(clickedAtt.fileName) && clickedAtt.fileName.toLowerCase().startsWith('voice_'));
+
+    if (isVoice) {
+      // 🟢 АВТОВОССТАНОВЛЕНИЕ: Если в объекте застрял старый мертвый blob: — восстанавливаем реальный серверный URL
+      if (clickedAtt.url && clickedAtt.url.startsWith('blob:') && clickedAtt.fileName) {
+        const cleanName = clickedAtt.fileName.replace(/^.*[\\/]/, '');
+        clickedAtt.url = UrlHelper.normalize(`uploads/attachments/${cleanName}`, BASE_SERVER_URL);
+      }
+
+      audioPlayerService.togglePlay(clickedAtt, BASE_SERVER_URL);
+      return;
+    }
+
+    // 🟢 2. Это музыкальный трек или аудиозапись
+    const { currentChatMessages, selectedChatUser } = get();
+    const audioTracks: IAudioTrackModel[] = [];
+    let targetTrack: IAudioTrackModel | null = null;
+
+    const audioExtensions = new Set(['.mp3', '.flac', '.m4a', '.aac', '.wma', '.opus', '.wav', '.ogg']);
+
+    const interlocutorAvatar =
+      selectedChatUser?.avatarPath ||
+      (selectedChatUser as any)?.avatar ||
+      (selectedChatUser as any)?.Avatar ||
+      (selectedChatUser as any)?.AvatarPath ||
+      useSidebarChatsStore.getState().allChats.find((c) =>
+        selectedChatUser?.isGroup
+          ? Boolean(c.isGroup && (c.groupId === selectedChatUser.id || c.id === selectedChatUser.id))
+          : Boolean(!c.isGroup && Number(c.userId || c.id) === Number(selectedChatUser?.id))
+      )?.avatarPath || null;
+
+    if (currentChatMessages && currentChatMessages.length > 0) {
+      for (const msg of currentChatMessages) {
+        if (!msg.attachments || msg.attachments.length === 0) continue;
+
+        for (const att of msg.attachments) {
+          const isAttVoice =
+            att.type === AttachmentType.Voice ||
+            (Boolean(att.waveform) && String(att.waveform).trim().length > 0) ||
+            (Boolean(att.fileName) && att.fileName.toLowerCase().startsWith('voice_'));
+          if (isAttVoice) continue;
+
+          const ext = (att.fileName || '').slice((att.fileName || '').lastIndexOf('.')).toLowerCase();
+          const isAudio = att.type === AttachmentType.Audio || audioExtensions.has(ext);
+
+          if (isAudio) {
+            const track = AudioMetadataHelper.createAudioTrackFromAttachment(
+              att,
+              msg,
+              selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'Chat',
+              interlocutorAvatar,
+              Boolean(selectedChatUser?.isGroup),
+              Boolean(selectedChatUser?.isChannel)
+            );
+
+            audioTracks.push(track);
+
+            // 🟢 Точное совпадение именно с выбранным треком (без коллизии id === 1)
+            const isTarget =
+              att === clickedAtt ||
+              AudioConverterHelper.isSameAttachment(att, clickedAtt) ||
+              (Boolean(att.url) && Boolean(clickedAtt.url) && att.url.toLowerCase() === clickedAtt.url.toLowerCase()) ||
+              (Boolean(att.fileHash) && Boolean(clickedAtt.fileHash) && att.fileHash === clickedAtt.fileHash) ||
+              (Boolean(att.fileName) &&
+                Boolean(clickedAtt.fileName) &&
+                att.fileName.toLowerCase() === clickedAtt.fileName.toLowerCase() &&
+                msg.id === (clickedAtt as any).messageId);
+
+            if (isTarget) {
+              targetTrack = track;
+            }
+          }
+        }
+      }
+    }
+
+    if (!targetTrack) {
+      targetTrack = AudioMetadataHelper.createAudioTrackFromAttachment(
+        clickedAtt,
+        null,
+        selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'Chat',
+        interlocutorAvatar,
+        Boolean(selectedChatUser?.isGroup),
+        Boolean(selectedChatUser?.isChannel)
+      );
+      audioTracks.unshift(targetTrack);
+    }
+
+    eventBus.emit('PlayPlaylistMessage' as any, { tracks: audioTracks, selectedTrack: targetTrack });
+  },
+
+  seekAudio: (seconds: number) => {
+    audioPlayerService.seek(seconds);
+  },
 }));
 
-// ================= СЛУШАТЕЛИ EVENTBUS =================
+// ================= ВСЕ СЛУШАТЕЛИ EVENTBUS =================
+
+eventBus.on('TriggerSelectMessageMessage' as any, ({ message }: { message: IMessage }) => {
+  useChatStore.getState().toggleSelectMessage(message);
+});
+
+eventBus.on('TriggerForwardMessageMessage' as any, ({ message }: { message: IMessage }) => {
+  useChatStore.getState().openForwardDialog([message]);
+});
+
+eventBus.on('TriggerForwardMessagesMessage' as any, ({ messages }: { messages: IMessage[] }) => {
+  useChatStore.getState().openForwardDialog(messages);
+});
+
+eventBus.on('TriggerDeleteMessageMessage' as any, ({ message }: { message: IMessage }) => {
+  useChatStore.getState().openDeleteDialog(message);
+});
+
+eventBus.on('GifPickedMessage' as any, async ({ gif }: { gif: ISavedGif }) => {
+  if (!gif || !gif.url) return;
+
+  const { selectedChatUser, sendMessage } = useChatStore.getState();
+  if (!selectedChatUser) return;
+
+  const fileName = gif.url.split('/').pop()?.split('?')[0] || 'animation.mp4';
+
+  const gifAtt: IAttachment = {
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    messageId: 0,
+    type: AttachmentType.Video,
+    fileName,
+    fileSizeStr: 'GIF',
+    fileSizeBytes: 0,
+    url: gif.url,
+    thumbnailUrl: gif.thumbnailUrl || gif.url,
+    hasAudio: false,
+    width: gif.width || 320,
+    height: gif.height || 240,
+    durationSeconds: 0,
+    isSilentVideo: true,
+  };
+
+  await sendMessage('', [gifAtt], null, []);
+});
 
 eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
   const target = data?.target || data;
-  if (target) {
-    await useChatStore.getState().selectChatUser(target);
-  }
+  await useChatStore.getState().selectChatUser(target);
 });
 
 eventBus.on('ChatSearchQueryChangedMessage', ({ query }) => {
@@ -1047,37 +2062,35 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   if (isMy) {
     incoming.senderName = currentUserName;
     incoming.senderAvatar = currentUserAvatar;
+  } else {
+    if (!incoming.groupId && selectedChatUser && !selectedChatUser.isGroup) {
+      incoming.senderName = selectedChatUser.nickName || (selectedChatUser as any).groupName || 'User';
+      incoming.senderAvatar = selectedChatUser.avatarPath || (selectedChatUser as any).avatar;
+    }
   }
 
   const activeChatId = selectedChatUser
     ? Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? 0)
     : 0;
 
-  if (selectedChatUser && activeChatId > 0) {
-    const isFromCurrentChat = incoming.groupId
+  const isFromCurrentChat = Boolean(
+    selectedChatUser && activeChatId > 0 &&
+    (incoming.groupId
       ? selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)
-      : !selectedChatUser.isGroup &&
-        (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId));
+      : !selectedChatUser.isGroup && (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId)))
+  );
 
-    if (isFromCurrentChat) {
-      if (activeChatTypingTimer) {
-        clearTimeout(activeChatTypingTimer);
-        activeChatTypingTimer = null;
-      }
-      if (selectedChatUser.isTyping) {
-        useChatStore.setState({ selectedChatUser: { ...selectedChatUser, isTyping: false } });
-      }
+  if (isFromCurrentChat) {
+    if (activeChatTypingTimer) {
+      clearTimeout(activeChatTypingTimer);
+      activeChatTypingTimer = null;
+    }
+    if (selectedChatUser?.isTyping) {
+      useChatStore.setState({ selectedChatUser: { ...selectedChatUser, isTyping: false } });
     }
   }
 
-  const isChatOpen = Boolean(
-    selectedChatUser &&
-      activeChatId > 0 &&
-      ((incoming.groupId && selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)) ||
-        (!incoming.groupId &&
-          !selectedChatUser.isGroup &&
-          (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId))))
-  );
+  const isChatOpen = isFromCurrentChat;
 
   if (isMy) {
     let matched = false;
@@ -1089,11 +2102,26 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
           (m.serverId === 0 && m.isMyMessage && (m.text === incoming.text || m.id === incoming.id))
         ) {
           matched = true;
+          // 🟢 Сохраняем локальные вложения и волны, но заменяем временные blob на постоянный серверный URL
+          const mergedAttachments = (m.attachments || []).map((att, idx) => {
+            const inc = incoming.attachments?.[idx];
+            const rawIncUrl = inc?.url || (inc as any)?.Url || '';
+            const normalizedIncUrl = rawIncUrl ? UrlHelper.normalize(rawIncUrl, BASE_SERVER_URL) : '';
+
+            return {
+              ...att,
+              ...(inc || {}),
+              url: normalizedIncUrl || (att.url && !att.url.startsWith('blob:') ? att.url : normalizedIncUrl),
+              waveform: (inc?.waveform && String(inc.waveform).trim().length > 0) ? inc.waveform : att.waveform,
+            };
+          });
+
           return {
             ...m,
             serverId: incoming.serverId,
             isSentToServer: true,
-            isRead: incoming.isRead, // 🟢 Берем честный статус от сервера, без принудительного true
+            isRead: incoming.isRead,
+            attachments: mergedAttachments.length > 0 ? mergedAttachments : (m.attachments || incoming.attachments),
           };
         }
         return m;
@@ -1124,7 +2152,6 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
   } else {
     if (isChatOpen) {
       useChatStore.setState((state) => {
-        // 🟢 Проверяем дубликат СТРОГО по serverId или local id, без опасного m.text === incoming.text
         const alreadyExists = state.currentChatMessages.some(
           (m) =>
             (incoming.serverId > 0 && m.serverId === incoming.serverId) ||
@@ -1138,6 +2165,57 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
       useChatStore.getState().markAsRead();
     }
   }
+
+  // 🟢 Если пришло сообщение с аудиофайлом — сразу добавляем его в открытый плейлист плеера
+  (incoming.attachments || []).forEach((att) => {
+    const ext = (att.fileName || '').slice((att.fileName || '').lastIndexOf('.')).toLowerCase();
+    const isVoice = att.type === AttachmentType.Voice || Boolean(att.waveform) || (att.fileName && att.fileName.toLowerCase().startsWith('voice_'));
+    const isAudio = att.type === AttachmentType.Audio || ['.mp3', '.flac', '.m4a', '.aac', '.wma', '.opus', '.wav', '.ogg'].includes(ext);
+
+    if (isAudio && !isVoice) {
+      const interlocutorAvatar =
+        selectedChatUser?.avatarPath ||
+        (selectedChatUser as any)?.avatar ||
+        (selectedChatUser as any)?.Avatar ||
+        (selectedChatUser as any)?.AvatarPath ||
+        useSidebarChatsStore.getState().allChats.find((c) =>
+          selectedChatUser?.isGroup
+            ? Boolean(c.isGroup && (c.groupId === selectedChatUser.id || c.id === selectedChatUser.id))
+            : Boolean(!c.isGroup && Number(c.userId || c.id) === Number(selectedChatUser?.id))
+        )?.avatarPath || null;
+
+      const track = AudioMetadataHelper.createAudioTrackFromAttachment(
+        att,
+        incoming,
+        selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'Chat',
+        interlocutorAvatar,
+        Boolean(selectedChatUser?.isGroup),
+        Boolean(selectedChatUser?.isChannel)
+      );
+      useMusicPlayerStore.getState().addTrackIfMatchesChat(track);
+    }
+  });
+
+  const isGroupChat = Boolean(selectedChatUser?.isGroup || incoming.groupId);
+  const isChannelChat = Boolean(selectedChatUser?.isChannel);
+
+  const [previewText, messageType] = resolveMessagePreview(
+    incoming,
+    currentUserId,
+    isGroupChat,
+    isChannelChat
+  );
+
+  const sidebarUserId = isMy ? incoming.receiverId : incoming.senderId;
+  const shouldIncrementUnread = !isMy && (!isChatOpen || !useChatStore.getState().isScrolledToBottom);
+
+  useSidebarChatsStore.getState().updateSidebar(
+    sidebarUserId,
+    incoming.groupId,
+    previewText,
+    shouldIncrementUnread,
+    messageType
+  );
 });
 
 eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; maxReadId: number }) => {
@@ -1146,7 +2224,6 @@ eventBus.on('MessagesWereReadMessage' as any, async (data: { readerId: number; m
     userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
   );
 
-  // 🟢 Отмечаем прочитанными только те исходящие сообщения, чей ID <= maxReadId (и строго maxReadId > 0)
   if (selectedChatUser && !selectedChatUser.isGroup && selectedChatUser.id === data.readerId) {
     if (data.maxReadId > 0) {
       useChatStore.setState((state) => ({
@@ -1188,16 +2265,56 @@ eventBus.on('MessageEditedMessage' as any, ({ serverId, newText, attachments }: 
 });
 
 eventBus.on('MessageDeletedMessage' as any, ({ serverId, isForAll }: { serverId: number; isForAll: boolean }) => {
-  useChatStore.setState((state) => ({
-    currentChatMessages: isForAll
+  const currentReplies = useMessageInputStore.getState().replyingToMessages || [];
+  if (currentReplies.length > 0) {
+    const remaining = currentReplies.filter((rep) => {
+      const rId = Number(rep.id || 0);
+      const rServerId = Number(rep.serverId || 0);
+      return rServerId !== serverId && rId !== serverId;
+    });
+    if (remaining.length !== currentReplies.length) {
+      useMessageInputStore.setState({ replyingToMessages: remaining });
+    }
+  }
+
+  const currentEdit = useMessageInputStore.getState().editingMessage;
+  if (currentEdit) {
+    const eId = Number(currentEdit.id || 0);
+    const eServerId = Number(currentEdit.serverId || 0);
+    if (eServerId === serverId || eId === serverId) {
+      useMessageInputStore.getState().cancelEdit();
+    }
+  }
+
+  useChatStore.setState((state) => {
+    const updatedChatMessages = (isForAll
       ? state.currentChatMessages.filter((m) => m.serverId !== serverId && m.id !== serverId)
       : state.currentChatMessages.map((m) =>
           m.serverId === serverId
             ? { ...m, isDeletedForMe: true, text: 'This message was deleted' }
             : m
-        ),
-    pinnedMessages: state.pinnedMessages.filter((p) => p.serverId !== serverId && p.id !== serverId),
-  }));
+        )
+    ).map((m) => {
+      if (m.repliedMessages && m.repliedMessages.length > 0) {
+        const remaining = m.repliedMessages.filter((rep: any) => {
+          const rId = Number(rep.id || 0);
+          const rServerId = Number(rep.serverId || 0);
+          return rServerId !== serverId && rId !== serverId;
+        });
+        if (remaining.length !== m.repliedMessages.length) {
+          return { ...m, repliedMessages: remaining };
+        }
+      }
+      return m;
+    });
+
+    const updatedPinned = state.pinnedMessages.filter((p) => p.serverId !== serverId && p.id !== serverId);
+
+    return {
+      currentChatMessages: updatedChatMessages,
+      pinnedMessages: updatedPinned,
+    };
+  });
 });
 
 eventBus.on('MessagePinnedMessage' as any, ({ serverMessageId, isPinned }: { serverMessageId: number; isPinned: boolean }) => {
@@ -1210,11 +2327,23 @@ eventBus.on('MessagePinnedMessage' as any, ({ serverMessageId, isPinned }: { ser
     if (isPinned) {
       const target = updatedMessages.find((m) => m.serverId === serverMessageId || m.id === serverMessageId);
       if (target && !updatedPins.some((p) => p.serverId === serverMessageId || p.id === serverMessageId)) {
-        updatedPins.push(target);
+        const currentUserId = Number(
+          userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
+        );
+        const resolvedName = state.currentUserName && state.currentUserName !== 'Me' ? state.currentUserName : resolveSessionUser().name || 'Me';
+        const resolvedAvatar = state.currentUserAvatar || resolveSessionUser().avatar;
+        updatedPins.push(enrichMessage(target, currentUserId, resolvedName, resolvedAvatar, state.selectedChatUser));
       }
     } else {
       updatedPins = updatedPins.filter((p) => p.serverId !== serverMessageId && p.id !== serverMessageId);
     }
+
+    updatedPins.sort((a, b) => {
+      const idA = Number(a.serverId && a.serverId > 0 ? a.serverId : (a.id || 0));
+      const idB = Number(b.serverId && b.serverId > 0 ? b.serverId : (b.id || 0));
+      if (idA > 0 && idB > 0 && idA !== idB) return idA - idB;
+      return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    });
 
     return { currentChatMessages: updatedMessages, pinnedMessages: updatedPins };
   });
@@ -1240,6 +2369,8 @@ eventBus.on('BlockStatusChangedMessage' as any, ({ blockerId, isBlocked }: { blo
 });
 
 eventBus.on('ClearActiveChatMessagesMessage' as any, () => {
+  useMessageInputStore.getState().cancelReply();
+  useMessageInputStore.getState().cancelEdit();
   useChatStore.setState({
     currentChatMessages: [],
     pinnedMessages: [],
@@ -1249,7 +2380,7 @@ eventBus.on('ClearActiveChatMessagesMessage' as any, () => {
 });
 
 eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
-  const { selectedChatUser, currentChatMessages } = useChatStore.getState();
+  const { selectedChatUser, currentChatMessages, currentUserName, currentUserAvatar } = useChatStore.getState();
   if (selectedChatUser) {
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
@@ -1258,7 +2389,6 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
     const groupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
     const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
 
-    // 🟢 ИСПРАВЛЕНИЕ: сохраняем всю текущую длину списка сообщений
     const takeCount = Math.max(30, currentChatMessages.length);
 
     const [messages, pinned] = await Promise.all([
@@ -1266,10 +2396,22 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
       chatService.getLocalPinnedMessagesAsync(currentUserId, targetUserId, groupId, secretChatId),
     ]);
 
-    useChatStore.setState({ currentChatMessages: messages, pinnedMessages: pinned });
+    if (getChatKey(useChatStore.getState().selectedChatUser) === getChatKey(selectedChatUser)) {
+      const resolvedName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me';
+      const resolvedAvatar = currentUserAvatar || resolveSessionUser().avatar;
+
+      const enrichedMessages = (messages || []).map((m) =>
+        enrichMessage(m, currentUserId, resolvedName, resolvedAvatar, selectedChatUser)
+      );
+      const enrichedPinned = (pinned || []).map((p) =>
+        enrichMessage(p, currentUserId, resolvedName, resolvedAvatar, selectedChatUser)
+      );
+
+      useChatStore.setState({ currentChatMessages: enrichedMessages, pinnedMessages: enrichedPinned });
+    }
   }
 });
 
 eventBus.on('SyncTimerMessage' as any, () => {
-  useChatStore.getState().triggerDeltaSync();
+  void useChatStore.getState().triggerDeltaSync();
 });

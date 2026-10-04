@@ -15,10 +15,11 @@ import {
 } from '@mdi/js';
 import { mediaDimensionsCache } from '../../utils/mediaDimensionsCache';
 import { useMessageInputStore } from '../../stores/messageInputStore';
-import { useChatStore } from '../../stores/chatStore';
+import { useChatStore, getMessageReplyText } from '../../stores/chatStore';
 import { useEmojiStore } from '../../stores/emojiStore';
 import { EmojiPickerUserControl } from './EmojiPickerUserControl';
 import { AttachmentType } from '../../types/enums';
+import { eventBus } from '../../services/eventBus';
 
 const COLORS = {
   accent: '#1E9BEB',
@@ -29,7 +30,7 @@ const COLORS = {
   warningBg: '#1C212D',
   warningBorder: '#E74C3C',
   warningText: '#FFFFFF',
-  activeToggleBg: '#2AFFFFFF',
+  activeToggleBg: 'rgba(255, 255, 255, 0.12)',
   hoverWhite: '#FFFFFF',
 };
 
@@ -77,7 +78,7 @@ export const MessageInputUserControl: React.FC = () => {
     stopAndSendVoiceRecording,
   } = useMessageInputStore();
 
-  const { sendMessage } = useChatStore();
+  const { selectedChatUser, isHistoryLoading, sendMessage } = useChatStore();
   const { isEmojiPickerOpen, togglePicker } = useEmojiStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -87,12 +88,27 @@ export const MessageInputUserControl: React.FC = () => {
   const [isEmojiHovered, setIsEmojiHovered] = useState(false);
 
   const focusInputField = useCallback(() => {
-    if (inputTextBoxRef.current) {
-      inputTextBoxRef.current.focus();
-      const len = inputTextBoxRef.current.value.length;
-      inputTextBoxRef.current.setSelectionRange(len, len);
-    }
+    requestAnimationFrame(() => {
+      if (inputTextBoxRef.current) {
+        inputTextBoxRef.current.focus();
+        const len = inputTextBoxRef.current.value.length;
+        inputTextBoxRef.current.setSelectionRange(len, len);
+      }
+    });
   }, []);
+
+  useEffect(() => {
+    const unbind = eventBus.on('FocusMessageInputMessage' as any, () => {
+      focusInputField();
+    });
+    return () => unbind();
+  }, [focusInputField]);
+
+  useEffect(() => {
+    if (selectedChatUser && !isHistoryLoading) {
+      focusInputField();
+    }
+  }, [selectedChatUser?.id, isHistoryLoading, focusInputField]);
 
   useEffect(() => {
     if (inputTextBoxRef.current) {
@@ -107,6 +123,30 @@ export const MessageInputUserControl: React.FC = () => {
     }
   }, [editingMessage, replyingToMessages.length, focusInputField]);
 
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!canWriteMessages || isRecordingVoice || !selectedChatUser) return;
+
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.ctrlKey || e.altKey || e.metaKey || e.key.length > 1) {
+        return;
+      }
+
+      focusInputField();
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [canWriteMessages, isRecordingVoice, selectedChatUser, focusInputField]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
       if (e.shiftKey) return;
@@ -118,6 +158,7 @@ export const MessageInputUserControl: React.FC = () => {
   const handleSendAction = () => {
     if (isRecordingVoice) {
       void stopAndSendVoiceRecording();
+      focusInputField();
       return;
     }
 
@@ -136,6 +177,7 @@ export const MessageInputUserControl: React.FC = () => {
     }
 
     void sendMessage(text, attachmentsToSend, editMsg, replies);
+    focusInputField();
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,6 +207,7 @@ export const MessageInputUserControl: React.FC = () => {
       }
 
       void addPendingAttachments(fileList);
+      focusInputField();
     }
   };
 
@@ -187,17 +230,29 @@ export const MessageInputUserControl: React.FC = () => {
           font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
           font-size: 14px !important;
         }
-        .wpf-message-input::-moz-placeholder {
-          color: rgba(255, 255, 255, 0.56) !important;
-          opacity: 1 !important;
-          font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
-          font-size: 14px !important;
+        .wpf-message-input {
+          scrollbar-width: thin !important;
+          scrollbar-color: rgba(255, 255, 255, 0.25) transparent !important;
         }
-        .wpf-message-input:-ms-input-placeholder {
-          color: rgba(255, 255, 255, 0.56) !important;
-          opacity: 1 !important;
-          font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
-          font-size: 14px !important;
+        .wpf-message-input::-webkit-scrollbar {
+          width: 4px !important;
+          height: 4px !important;
+          background: transparent !important;
+        }
+        .wpf-message-input::-webkit-scrollbar-track {
+          background: transparent !important;
+        }
+        .wpf-message-input::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.25) !important;
+          border-radius: 2px !important;
+        }
+        .wpf-message-input::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.45) !important;
+        }
+        .wpf-message-input::-webkit-scrollbar-button {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
         }
       `}</style>
 
@@ -237,11 +292,18 @@ export const MessageInputUserControl: React.FC = () => {
                 textOverflow: 'ellipsis',
               }}
             >
-              {editingMessage.text || 'Media message'}
+              {getMessageReplyText(editingMessage)}
             </div>
           </div>
 
-          <button onClick={cancelEdit} title="Cancel edit" style={actionCloseButtonStyle(26)}>
+          <button
+            onClick={() => {
+              cancelEdit();
+              focusInputField();
+            }}
+            title="Cancel edit"
+            style={actionCloseButtonStyle(26)}
+          >
             <MdiIcon path={mdiClose} size={16} color={COLORS.textMuted} />
           </button>
         </div>
@@ -289,24 +351,36 @@ export const MessageInputUserControl: React.FC = () => {
                       textOverflow: 'ellipsis',
                     }}
                   >
-                    {rep.text || 'Attachment'}
+                    {getMessageReplyText(rep)}
                   </div>
                 </div>
 
-                <button onClick={() => cancelReply(rep)} style={{ ...actionCloseButtonStyle(24), margin: '0 15px 0 10px' }}>
+                <button
+                  onClick={() => {
+                    cancelReply(rep);
+                    focusInputField();
+                  }}
+                  style={{ ...actionCloseButtonStyle(24), margin: '0 15px 0 10px' }}
+                >
                   <MdiIcon path={mdiClose} size={16} color="#777777" />
                 </button>
               </div>
             ))}
           </div>
 
-          <button onClick={() => cancelReply()} style={actionCloseButtonStyle(28)}>
+          <button
+            onClick={() => {
+              cancelReply();
+              focusInputField();
+            }}
+            style={actionCloseButtonStyle(28)}
+          >
             <MdiIcon path={mdiClose} size={20} color={COLORS.textMuted} />
           </button>
         </div>
       )}
 
-      {/* 3. ОСНОВНАЯ ОБЛАСТЬ ВВОДА / ПРЕДУПРЕЖДЕНИЯ */}
+      {/* 3. ОСНОВНАЯ ОБЛАСТЬ ВВОДА */}
       <div>
         {isBlockedByMe && (
           <div style={warningBarStyle}>
@@ -351,10 +425,8 @@ export const MessageInputUserControl: React.FC = () => {
           </div>
         )}
 
-        {/* АКТИВНОЕ ПОЛЕ ВВОДА */}
         {canWriteMessages && (
           <div>
-            {/* 🟢 ЛЕНТА ПРИКРЕПЛЕННЫХ ФАЙЛОВ С ПОДДЕРЖКОЙ ВИДЕО И ГИФ */}
             {hasAttachments && (
               <div
                 style={{
@@ -419,7 +491,10 @@ export const MessageInputUserControl: React.FC = () => {
                       )}
 
                       <button
-                        onClick={() => removePendingAttachment(idx)}
+                        onClick={() => {
+                          removePendingAttachment(idx);
+                          focusInputField();
+                        }}
                         style={{
                           position: 'absolute',
                           top: 2,
@@ -445,8 +520,8 @@ export const MessageInputUserControl: React.FC = () => {
               </div>
             )}
 
-            {/* ИНПУТ-КАПСУЛА */}
             <div
+              onClick={focusInputField}
               style={{
                 border: `1.2px solid ${COLORS.inputBorder}`,
                 borderRadius: 20,
@@ -458,11 +533,15 @@ export const MessageInputUserControl: React.FC = () => {
                 alignItems: 'flex-end',
                 boxSizing: 'border-box',
                 position: 'relative',
+                cursor: 'text',
               }}
             >
               {!isRecordingVoice && (
                 <button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
                   onMouseEnter={() => setIsClipHovered(true)}
                   onMouseLeave={() => setIsClipHovered(false)}
                   title="Attach file"
@@ -511,9 +590,11 @@ export const MessageInputUserControl: React.FC = () => {
                     caretColor: '#FFFFFF',
                     fontSize: 14,
                     lineHeight: '20px',
-                    padding: '8px 8px 10px 8px',
+                    padding: '8px 6px 10px 8px',
                     resize: 'none',
                     maxHeight: 180,
+                    overflowY: 'auto',
+                    overflowX: 'hidden',
                     fontFamily: 'Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif',
                     boxSizing: 'border-box',
                   }}
@@ -544,14 +625,21 @@ export const MessageInputUserControl: React.FC = () => {
               {!isRecordingVoice && (
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end' }}>
                   <button
-                    onClick={togglePicker}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePicker();
+                    }}
                     onMouseEnter={() => setIsEmojiHovered(true)}
                     onMouseLeave={() => setIsEmojiHovered(false)}
                     title="Emoji"
                     style={{
                       width: 36,
                       height: 36,
-                      background: isEmojiPickerOpen ? COLORS.activeToggleBg : 'transparent',
+                      background: isEmojiPickerOpen
+                        ? COLORS.activeToggleBg
+                        : isEmojiHovered
+                        ? 'rgba(255, 255, 255, 0.08)'
+                        : 'transparent',
                       border: 'none',
                       cursor: 'pointer',
                       padding: 0,
@@ -561,7 +649,7 @@ export const MessageInputUserControl: React.FC = () => {
                       margin: '0 5px 2px 0',
                       borderRadius: 18,
                       flexShrink: 0,
-                      transition: 'background-color 0.15s ease',
+                      transition: 'background-color 0.15s ease, color 0.15s ease',
                     }}
                   >
                     <MdiIcon
@@ -577,7 +665,11 @@ export const MessageInputUserControl: React.FC = () => {
 
               {isRecordingVoice && (
                 <button
-                  onClick={cancelVoiceRecording}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    cancelVoiceRecording();
+                    focusInputField();
+                  }}
                   title="Cancel recording"
                   style={{
                     width: 37,
@@ -599,13 +691,16 @@ export const MessageInputUserControl: React.FC = () => {
               )}
 
               <button
-                onClick={
-                  isRecordingVoice
-                    ? stopAndSendVoiceRecording
-                    : hasAttachments || hasText
-                    ? handleSendAction
-                    : startVoiceRecording
-                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isRecordingVoice) {
+                    stopAndSendVoiceRecording();
+                  } else if (hasAttachments || hasText) {
+                    handleSendAction();
+                  } else {
+                    startVoiceRecording();
+                  }
+                }}
                 title={isRecordingVoice ? 'Send recording' : hasAttachments || hasText ? 'Send message' : 'Record voice'}
                 style={{
                   width: 38,

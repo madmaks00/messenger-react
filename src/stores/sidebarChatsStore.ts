@@ -6,12 +6,12 @@ import { userSession } from '../services/userSession';
 import { signalRService } from '../services/signalr.service';
 import { chatService } from '../services/chat.service';
 import { apiClient } from '../services/apiClient';
-import { MessagePreviewHelper } from '../utils/helpers';
+import { MessagePreviewHelper } from '../utils/messagePreviewHelper';
 import { useChatStore } from './chatStore';
 
 interface SidebarChatsState {
   allChats: IChatListItem[];
-  filteredChats: IChatListItem[]; // 🟢 1-в-1 аналог FilteredChatsView из SidebarChatsViewModel.cs
+  filteredChats: IChatListItem[];
   selectedChatUser: IUserSearchResult | null;
   currentSidebarChat: IChatListItem | null;
   selectedFolderId: number | null;
@@ -61,7 +61,6 @@ function sortChats(chats: IChatListItem[]): IChatListItem[] {
   });
 }
 
-// 🟢 Логика фильтрации строго 1-в-1 с C# SidebarChatsViewModel.FilterChats:
 function applyFolderFilter(
   chats: IChatListItem[],
   selectedFolderId: number | null,
@@ -134,7 +133,6 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     });
   },
 
-  // 🟢 Обновление принадлежности чата к папкам при ToggleChatInFolder
   updateChatFolderIds: (chatId: number, isGroup: boolean, folderId: number, isAdded: boolean) => {
     const { allChats, selectedFolderId, isSystemFolder } = get();
 
@@ -197,12 +195,29 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
           })
           .map((c: any) => {
             const isGroup = Boolean(c.isGroup ?? c.IsGroup);
+            const isChannel = Boolean(c.isChannel ?? c.IsChannel);
             const uid = isGroup ? null : Number(c.userId ?? c.UserId ?? c.id ?? c.Id ?? 0);
             const gid = isGroup ? Number(c.groupId ?? c.GroupId ?? c.id ?? c.Id ?? 0) : null;
 
-            // 🟢 Парсим FolderIds как с camelCase, так и с PascalCase
             const rawFolderIds = c.folderIds ?? c.FolderIds;
             const parsedFolderIds = Array.isArray(rawFolderIds) ? rawFolderIds.map(Number) : [];
+
+            const rawLastMessage = c.rawLastMessage ?? c.RawLastMessage ?? c.lastMessage ?? c.LastMessage ?? null;
+            const lastAttachmentType = c.lastAttachmentType ?? c.LastAttachmentType ?? null;
+            const lastMessageSenderId = c.lastMessageSenderId ?? c.LastMessageSenderId ?? null;
+            const isLastAttachmentGif = Boolean(c.isLastAttachmentGif ?? c.IsLastAttachmentGif);
+            const isLastMessageDeletedForMe = Boolean(c.isLastMessageDeletedForMe ?? c.IsLastMessageDeletedForMe);
+
+            const [displayText, msgType] = MessagePreviewHelper.formatPreview(
+              rawLastMessage,
+              lastAttachmentType,
+              lastMessageSenderId,
+              currentUserId,
+              isLastMessageDeletedForMe,
+              isGroup,
+              isChannel,
+              isLastAttachmentGif
+            );
 
             return {
               ...c,
@@ -210,9 +225,17 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
               userId: uid,
               groupId: gid,
               isGroup,
-              lastMessage: c.lastMessage || c.rawLastMessage || c.RawLastMessage || '',
+              isChannel,
+              rawLastMessage,
+              lastAttachmentType,
+              lastMessageSenderId,
+              isLastAttachmentGif,
+              isLastMessageDeletedForMe,
+              lastMessage: displayText,
+              lastMessageType: msgType,
               isOnline: Boolean(c.isOnline ?? c.IsOnline),
               nickName: c.nickName ?? c.NickName ?? c.groupName ?? c.GroupName ?? 'Chat',
+              groupName: c.groupName ?? c.GroupName ?? c.nickName ?? c.NickName ?? 'Chat',
               avatarPath: c.avatarPath ?? c.AvatarPath ?? null,
               lastSeen: c.lastSeen ?? c.LastSeen ?? new Date().toISOString(),
               unreadCount: Number(c.unreadCount ?? c.UnreadCount ?? 0),
@@ -230,12 +253,15 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
         const lastSecretMsg = secretMessages?.length ? secretMessages[secretMessages.length - 1] : null;
 
         let displayText = sc.lastMessage || (sc.isEstablished ? '🔒 Секретный чат создан.' : '🔒 Ожидание подключения собеседника...');
-        let finalType = LastMessageType.Text;
+        let finalType = LastMessageType.None;
 
         if (lastSecretMsg) {
-          const [preview, type] = MessagePreviewHelper.formatPreview(lastSecretMsg, currentUserId, false, false);
+          const [preview, type] = MessagePreviewHelper.formatPreviewFromMessage(lastSecretMsg, currentUserId, false, false);
           displayText = preview;
           finalType = type;
+        } else if (sc.lastMessage) {
+          displayText = sc.lastMessage;
+          finalType = LastMessageType.Text;
         }
 
         merged.push({
@@ -285,7 +311,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     }
   },
 
-  openChat: (target, userService) => {
+  openChat: (target) => {
     let resolvedUser: IUserSearchResult;
     let sidebarItem: IChatListItem | null = null;
 
@@ -332,27 +358,33 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
 
     set({ selectedChatUser: resolvedUser, currentSidebarChat: sidebarItem });
     eventBus.emit('SelectChatUserMessage', { target: resolvedUser });
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   updateSidebar: (userId, groupId, lastMessage, incrementUnread = false, messageType = LastMessageType.Text, secretChatId = null) => {
+    const finalMessage = lastMessage;
+    const finalType = messageType;
+
     const chats = [...get().allChats];
     const index = chats.findIndex((c) =>
       (Boolean(secretChatId) && c.isSecretChat && c.secretChatId === secretChatId) ||
       (!secretChatId && !c.isSecretChat &&
         ((Boolean(groupId) && c.isGroup && c.groupId === groupId) ||
-         (Boolean(userId) && !c.isGroup && Number(c.userId || c.id) === Number(userId))))
+          (Boolean(userId) && !c.isGroup && Number(c.userId || c.id) === Number(userId))))
     );
 
     if (index >= 0) {
       const chat = { ...chats[index] };
-      if (lastMessage !== undefined) {
-        chat.lastMessage = lastMessage;
-        chat.lastMessageType = messageType;
+      if (finalMessage !== undefined && finalMessage !== null && finalMessage.trim().length > 0) {
+        chat.lastMessage = finalMessage;
+        chat.lastMessageType = finalType;
       }
       chat.lastMessageTime = new Date().toISOString();
+
       if (incrementUnread) {
         chat.unreadCount = (chat.unreadCount || 0) + 1;
       }
+
       chats[index] = chat;
       const sorted = sortChats(chats);
       const { selectedFolderId, isSystemFolder } = get();
@@ -361,6 +393,8 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
         allChats: sorted,
         filteredChats: applyFolderFilter(sorted, selectedFolderId, isSystemFolder),
       });
+    } else {
+      get().loadChats(true);
     }
   },
 
@@ -377,7 +411,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       );
 
       if (chat) {
-        const [formattedText, msgType] = MessagePreviewHelper.formatPreview(
+        const [formattedText, msgType] = MessagePreviewHelper.formatPreviewFromMessage(
           lastMsg,
           currentUserId,
           chat.isGroup,
@@ -610,9 +644,30 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
   },
 }));
 
-// ================= ВСЕ СЛУШАТЕЛИ EVENTBUS (1 В 1 С SidebarChatsViewModel.cs) =================
+// ================= ВСЕ СЛУШАТЕЛИ EVENTBUS =================
 
-// 🟢 1. Статус онлайна (UserStatusChangedMessage)
+eventBus.on('NewMessageAddedMessage' as any, (m: any) => {
+  if (!m) return;
+  const currentUserId = Number(userSession.userId || 0);
+  const otherUserId = m.isMyMessage ? m.receiverId : m.senderId;
+
+  const [previewText, msgType] = MessagePreviewHelper.formatPreviewFromMessage(
+    m,
+    currentUserId,
+    Boolean(m.groupId && m.groupId > 0),
+    false
+  );
+
+  useSidebarChatsStore.getState().updateSidebar(
+    otherUserId,
+    m.groupId,
+    previewText,
+    !m.isMyMessage,
+    msgType,
+    m.secretChatId
+  );
+});
+
 eventBus.on('UserStatusChangedMessage' as any, ({ userId, isOnline, lastSeen }: { userId: number; isOnline: boolean; lastSeen: string }) => {
   const numId = Number(userId);
 
@@ -647,7 +702,6 @@ eventBus.on('UserStatusChangedMessage' as any, ({ userId, isOnline, lastSeen }: 
   }
 });
 
-// 🟢 2. Синхронизация при выборе чата (SelectChatUserMessage)
 eventBus.on('SelectChatUserMessage' as any, (data: any) => {
   const target = data?.target || data;
   if (target) {
@@ -661,17 +715,14 @@ eventBus.on('SelectChatUserMessage' as any, (data: any) => {
   }
 });
 
-// 🟢 3. Обновление сайдбара после удаления сообщения (SidebarUpdateAfterDeletionMessage)
 eventBus.on('SidebarUpdateAfterDeletionMessage' as any, ({ userId, groupId }: { userId: number | null; groupId: number | null }) => {
   useSidebarChatsStore.getState().updateSidebarAfterDeletion(userId, groupId);
 });
 
-// 🟢 4. Обновление сайдбара при редактировании сообщения (SidebarUpdateForEditMessage)
 eventBus.on('SidebarUpdateForEditMessage' as any, ({ userId, groupId, localId, serverId, newText }: any) => {
   useSidebarChatsStore.getState().updateSidebarForEdit(userId, groupId, localId, serverId, newText);
 });
 
-// 🟢 5. Создание секретного чата (SecretChatCreatedMessage)
 eventBus.on('SecretChatCreatedMessage' as any, ({ secretChat }: any) => {
   if (!secretChat) return;
   const store = useSidebarChatsStore.getState();
@@ -684,7 +735,6 @@ eventBus.on('SecretChatCreatedMessage' as any, ({ secretChat }: any) => {
   });
 });
 
-// 🟢 6. Секретный чат подтверждён собеседником (SecretChatEstablishedMessage)
 eventBus.on('SecretChatEstablishedMessage' as any, ({ secretChatId, keyFingerprint }: any) => {
   useSidebarChatsStore.setState((state) => {
     const updated = state.allChats.map((c) =>
@@ -699,7 +749,6 @@ eventBus.on('SecretChatEstablishedMessage' as any, ({ secretChatId, keyFingerpri
   });
 });
 
-// 🟢 7. Секретный чат сброшен/удалён (SecretChatDiscardedMessage)
 eventBus.on('SecretChatDiscardedMessage' as any, ({ secretChatId }: any) => {
   const store = useSidebarChatsStore.getState();
   const updated = store.allChats.filter((c) => c.secretChatId !== secretChatId);
@@ -714,17 +763,14 @@ eventBus.on('SecretChatDiscardedMessage' as any, ({ secretChatId }: any) => {
   }
 });
 
-// 🟢 8. Серверный таймер синхронизации (SyncTimerMessage)
 eventBus.on('SyncTimerMessage' as any, () => {
   useSidebarChatsStore.getState().syncOnlineStatuses();
 });
 
-// 🟢 9. Восстановление сокета SignalR (SignalRConnectedMessage)
 eventBus.on('SignalRConnectedMessage' as any, () => {
   useSidebarChatsStore.getState().syncOnlineStatuses();
 });
 
-// 🟢 10. Обычное обновление превью (SidebarUpdateMessage)
 eventBus.on('SidebarUpdateMessage' as any, (data: any) => {
   useSidebarChatsStore.getState().updateSidebar(
     data.userId,
@@ -736,7 +782,6 @@ eventBus.on('SidebarUpdateMessage' as any, (data: any) => {
   );
 });
 
-// 🟢 11. Индикатор тайпинга (UserTypingMessage)
 eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
   const store = useSidebarChatsStore.getState();
   const key = groupId ? `g_${groupId}` : `u_${senderId}`;
@@ -777,7 +822,6 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
   store.typingTimers.set(key, timer);
 });
 
-// 🟢 12. Сброс счётчика непрочитанных (ActiveChatUnreadResetMessage)
 eventBus.on('ActiveChatUnreadResetMessage' as any, (data: any) => {
   useSidebarChatsStore.setState((state) => {
     const updated = state.allChats.map((chat) => {
@@ -797,7 +841,6 @@ eventBus.on('ActiveChatUnreadResetMessage' as any, (data: any) => {
   });
 });
 
-// 🟢 13. Обновление информации о группе (GroupUpdatedMessage)
 eventBus.on('GroupUpdatedMessage' as any, ({ groupId, newName, newAvatar, newDescription }: any) => {
   useSidebarChatsStore.setState((state) => {
     const updated = state.allChats.map((c) =>
@@ -819,7 +862,6 @@ eventBus.on('GroupUpdatedMessage' as any, ({ groupId, newName, newAvatar, newDes
   });
 });
 
-// 🟢 14. Очистка диалога собеседником для обоих (ChatClearedForBothMessage)
 eventBus.on('ChatClearedForBothMessage' as any, ({ blockerId }: { blockerId: number }) => {
   const store = useSidebarChatsStore.getState();
   const updated = store.allChats.map((c) =>
@@ -838,7 +880,6 @@ eventBus.on('ChatClearedForBothMessage' as any, ({ blockerId }: { blockerId: num
   }
 });
 
-// 🟢 15. Переключение папки через Messenger (ChatFolderSelectedMessage)
 eventBus.on('ChatFolderSelectedMessage' as any, ({ folder }: { folder: any }) => {
   if (!folder) return;
   const isSystem = Boolean(folder.isSystem ?? folder.IsSystem);

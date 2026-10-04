@@ -15,7 +15,7 @@ import { IMessage, IUser, IChatFolder } from '../types/models';
 import { parsePrivacyVisibility } from '../components/profile/profileView.utils';
 import { useChatFolderStore } from '../stores/chatFolderStore';
 import { useSidebarChatsStore } from '../stores/sidebarChatsStore';
-
+import { MessagePreviewHelper } from '../utils/messagePreviewHelper';
 function getCleanToken(): string {
   let raw =
     userSession.token ||
@@ -258,12 +258,20 @@ export class SignalRService {
 
       eventBus.emit('ReceiveMessage', newMsg);
       if (!noteId) {
+        // 🟢 Формируем честное превью с правильной иконкой и текстом (Voice message, Photo, Video и т.д.)
+        const [previewText, msgType] = MessagePreviewHelper.formatPreviewFromMessage(
+          newMsg,
+          currentId,
+          Boolean(groupId && groupId > 0),
+          false
+        );
+
         eventBus.emit('SidebarUpdateMessage', {
           userId: isMyMessage ? receiverId : senderId,
           groupId,
-          previewText: text || ((newMsg.attachments?.length ?? 0) > 0 ? 'Вложение' : ''),
+          previewText,
           incrementUnread: !isMyMessage,
-          messageType: LastMessageType.Text,
+          messageType: msgType,
         });
       }
     });

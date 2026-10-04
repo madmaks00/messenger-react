@@ -5,6 +5,7 @@ import { voiceRecordingService } from '../services/voiceRecording.service';
 import { eventBus } from '../services/eventBus';
 import { useChatStore } from './chatStore';
 import { mediaDimensionsCache } from '../utils/mediaDimensionsCache';
+import { AudioMetadataHelper } from '../types/audio.types';
 
 interface MessageInputState {
   newMessageText: string;
@@ -49,6 +50,9 @@ interface MessageInputState {
   }) => void;
 }
 
+let recordingTimer: ReturnType<typeof setInterval> | null = null;
+let recordingStartTime = 0;
+
 export const useMessageInputStore = create<MessageInputState>((set, get) => ({
   newMessageText: '',
   editingMessage: null,
@@ -79,6 +83,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       newMessageText: msg.text || '',
       pendingAttachments: msg.attachments ? [...msg.attachments] : [],
     });
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   cancelEdit: () => {
@@ -87,6 +92,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       newMessageText: '',
       pendingAttachments: [],
     });
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   addReplyMessage: (msg) => {
@@ -94,6 +100,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     if (!existing.some((m) => (m.serverId > 0 && m.serverId === msg.serverId) || (m.id > 0 && m.id === msg.id))) {
       set({ replyingToMessages: [...existing, msg] });
     }
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   cancelReply: (msg) => {
@@ -102,6 +109,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     } else {
       set({ replyingToMessages: get().replyingToMessages.filter((m) => m !== msg) });
     }
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   addPendingAttachments: async (files: File[]) => {
@@ -115,7 +123,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       if (file.size > maxFileSize) continue;
 
       let type = AttachmentType.Document;
-      
+
       const cached = mediaDimensionsCache.get(file.name);
       let width = Number((file as any).width || cached?.width || 0);
       let height = Number((file as any).height || cached?.height || 0);
@@ -133,7 +141,6 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         type = AttachmentType.Video;
         hasAudio = false;
 
-        // Для GIF генерируем кадр превью через Canvas
         try {
           const videoMeta = await new Promise<{ width: number; height: number; thumbUrl: string }>((resolve) => {
             const video = document.createElement('video');
@@ -172,15 +179,12 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
           if (videoMeta.width > 0 && width === 0) width = videoMeta.width;
           if (videoMeta.height > 0 && height === 0) height = videoMeta.height;
         } catch {}
-
       } else if (['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext) || file.type.startsWith('image/')) {
         type = AttachmentType.Photo;
         displayImageUrl = objectUrl;
-
       } else if (isVideoExt) {
         type = AttachmentType.Video;
 
-        // Для обычного видео считываем метаданные, звук и первый кадр
         try {
           const videoMeta = await new Promise<{
             hasAudio: boolean;
@@ -214,8 +218,8 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
               const anyVid = video as any;
               const hasSound = Boolean(
                 anyVid.mozHasAudio ||
-                anyVid.webkitAudioDecodedByteCount > 0 ||
-                Boolean(anyVid.audioTracks && anyVid.audioTracks.length > 0)
+                  anyVid.webkitAudioDecodedByteCount > 0 ||
+                  Boolean(anyVid.audioTracks && anyVid.audioTracks.length > 0)
               );
 
               resolve({
@@ -239,9 +243,56 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         } catch {
           hasAudio = true;
         }
-
       } else if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus'].includes(ext) || file.type.startsWith('audio/')) {
         type = AttachmentType.Audio;
+        hasAudio = true;
+
+        // 🟢 1. Извлекаем встроенную обложку ID3 (APIC)
+        try {
+          const extractedCover = await AudioMetadataHelper.extractCoverArtFromFile(file);
+          if (extractedCover) {
+            displayImageUrl = extractedCover;
+          }
+        } catch {}
+
+        // 🟢 2. Мгновенный расчет длительности для WAV-файлов по бинарному заголовку
+        if (ext === 'wav' && file.size > 44) {
+          try {
+            const headerBuf = await file.slice(0, 44).arrayBuffer();
+            const view = new DataView(headerBuf);
+            const riff = view.getUint32(0, false);
+            const wave = view.getUint32(8, false);
+            if (riff === 0x52494646 && wave === 0x57415645) {
+              const byteRate = view.getUint32(28, true);
+              if (byteRate > 0) {
+                durationSeconds = Math.round((file.size - 44) / byteRate);
+              }
+            }
+          } catch {}
+        }
+
+        // 🟢 3. Для MP3 и остальных форматов — через браузерный Audio
+        if (durationSeconds <= 0) {
+          try {
+            const audio = new Audio();
+            audio.preload = 'metadata';
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, 800);
+              audio.onloadedmetadata = () => {
+                clearTimeout(timer);
+                if (isFinite(audio.duration) && audio.duration > 0) {
+                  durationSeconds = Math.round(audio.duration);
+                }
+                resolve();
+              };
+              audio.onerror = () => {
+                clearTimeout(timer);
+                resolve();
+              };
+              audio.src = objectUrl;
+            });
+          } catch {}
+        }
       }
 
       const units = ['B', 'KB', 'MB', 'GB'];
@@ -251,10 +302,11 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         size /= 1024;
         unitIdx++;
       }
-      
-      const fileSizeStr = (isGifExt || (type === AttachmentType.Video && !hasAudio))
-        ? 'GIF'
-        : `${size.toFixed(2)} ${units[unitIdx]}`;
+
+      const fileSizeStr =
+        isGifExt || (type === AttachmentType.Video && !hasAudio)
+          ? 'GIF'
+          : `${size.toFixed(2)} ${units[unitIdx]}`;
 
       newAtts.push({
         id: Date.now() + Math.random(),
@@ -265,6 +317,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
         fileSizeBytes: file.size,
         url: objectUrl,
         localImagePath: objectUrl,
+        thumbnailUrl: displayImageUrl || undefined,
         displayImageUrl: displayImageUrl || undefined,
         rawFile: file,
         hasAudio,
@@ -275,12 +328,14 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     }
 
     set({ pendingAttachments: [...get().pendingAttachments, ...newAtts] });
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   removePendingAttachment: (index) => {
     const atts = [...get().pendingAttachments];
     atts.splice(index, 1);
     set({ pendingAttachments: atts });
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   startVoiceRecording: async () => {
@@ -288,42 +343,72 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     if (state.isRecordingVoice || !state.canWriteMessages) return;
 
     await voiceRecordingService.startRecording();
+    recordingStartTime = Date.now();
+
+    if (recordingTimer) clearInterval(recordingTimer);
+    recordingTimer = setInterval(() => {
+      const elapsedSec = Math.floor((Date.now() - recordingStartTime) / 1000);
+      const m = Math.floor(elapsedSec / 60);
+      const s = elapsedSec % 60;
+      const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      set({ recordingTimeStr: timeStr });
+    }, 250);
+
     set({ isRecordingVoice: true, recordingTimeStr: '00:00' });
   },
 
   cancelVoiceRecording: () => {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = null;
+    }
     voiceRecordingService.cancelRecording();
     set({ isRecordingVoice: false, recordingTimeStr: '00:00' });
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   stopAndSendVoiceRecording: async () => {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = null;
+    }
     const result = await voiceRecordingService.stopRecording();
     set({ isRecordingVoice: false, recordingTimeStr: '00:00' });
 
     if (!result) return;
 
     const url = URL.createObjectURL(result.file);
+    const durSec = Math.max(
+      1,
+      Math.round(result.durationSeconds || Math.floor((Date.now() - recordingStartTime) / 1000))
+    );
+
     const voiceAtt: IAttachment = {
       id: Date.now(),
       messageId: 0,
       type: AttachmentType.Voice,
-      fileName: result.file.name,
-      fileSizeStr: `${result.durationSeconds}s, ${(result.file.size / 1024).toFixed(1)} KB`,
+      fileName: result.file.name || `voice_${Date.now()}.ogg`,
+      fileSizeStr: `${durSec}s, ${(result.file.size / 1024).toFixed(1)} KB`,
       fileSizeBytes: result.file.size,
       url,
       localImagePath: url,
       rawFile: result.file,
-      waveform: result.waveform,
-      durationSeconds: result.durationSeconds,
+      waveform: result.waveform || '',
+      durationSeconds: durSec,
       hasAudio: true,
       width: 0,
       height: 0,
     };
 
-    set({ pendingAttachments: [voiceAtt] });
+    await useChatStore.getState().sendMessage('', [voiceAtt], null, []);
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   reset: () => {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = null;
+    }
     set({
       newMessageText: '',
       editingMessage: null,
@@ -341,5 +426,6 @@ eventBus.on('EmojiPickedMessage' as any, (data: any) => {
   if (data?.emoji) {
     const current = useMessageInputStore.getState().newMessageText;
     useMessageInputStore.getState().setNewMessageText(current + data.emoji);
+    eventBus.emit('FocusMessageInputMessage' as any, undefined);
   }
 });

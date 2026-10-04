@@ -5,8 +5,8 @@ const CACHE_NAME = 'messenger-media-cache-v1';
 
 class MediaCacheService {
   private inMemoryUrlMap = new Map<string, string>();
+  private failedCorsUrls = new Set<string>(); // Запоминаем URL с CORS-ошибками, чтобы не долбить сеть впустую
 
-  // Записывает бинарный файл в CacheStorage под полным серверным адресом бэкенда
   public async cacheMediaFile(serverUrl: string, file: File | Blob): Promise<void> {
     if (!serverUrl || serverUrl.startsWith('blob:') || !('caches' in window)) return;
 
@@ -22,7 +22,6 @@ class MediaCacheService {
       });
       await cache.put(normalizedUrl, response);
 
-      // Сохраняем локальный blob в оперативной памяти для моментального отображения за 0 мс
       const localUrl = URL.createObjectURL(file);
       this.inMemoryUrlMap.set(normalizedUrl, localUrl);
       this.inMemoryUrlMap.set(serverUrl, localUrl);
@@ -31,7 +30,6 @@ class MediaCacheService {
     }
   }
 
-  // Сначала ищет в локальном кэше браузера, и только если нет — скачивает с бэкенда
   public async getCachedMediaUrl(serverUrl: string): Promise<string> {
     if (!serverUrl) return '';
     if (serverUrl.startsWith('blob:') || serverUrl.startsWith('data:')) {
@@ -47,6 +45,11 @@ class MediaCacheService {
       return this.inMemoryUrlMap.get(serverUrl)!;
     }
 
+    // Если бэкенд блокирует CORS для этого URL — отдаем напрямую для тега <img> (он не требует CORS)
+    if (this.failedCorsUrls.has(normalizedUrl)) {
+      return normalizedUrl;
+    }
+
     try {
       if ('caches' in window) {
         const cache = await caches.open(CACHE_NAME);
@@ -60,8 +63,8 @@ class MediaCacheService {
           return localUrl;
         }
 
-        // Если файла еще нет в кэше — скачиваем с ASP.NET Core бэкенда (порт 7214) и кэшируем
-        const networkResponse = await fetch(normalizedUrl);
+        // Пытаемся закэшировать с бэкенда
+        const networkResponse = await fetch(normalizedUrl, { mode: 'cors' });
         if (networkResponse.ok) {
           const clone = networkResponse.clone();
           await cache.put(normalizedUrl, clone);
@@ -72,8 +75,9 @@ class MediaCacheService {
           return localUrl;
         }
       }
-    } catch (err) {
-      console.warn('[MediaCache] Ошибка загрузки медиа из кэша/сети:', err);
+    } catch {
+      // 🟢 Если бэкенд выбросил CORS TypeError — помечаем URL и отдаем напрямую для <img> без спама в консоль
+      this.failedCorsUrls.add(normalizedUrl);
     }
 
     return normalizedUrl;

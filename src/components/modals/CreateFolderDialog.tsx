@@ -36,7 +36,6 @@ import { useNotesStore } from '../../stores/notesStore';
 import { eventBus } from '../../services/eventBus';
 import { ITodoList, INote } from '../../types/models';
 
-// 🟢 ВСЕ 28 ЦВЕТОВ (4 ряда по 7) ИЗ ChatFolderViewModel.cs
 export const AVAILABLE_COLORS: string[] = [
   '#FFB3B3', '#FBD38D', '#FAF089', '#9AE6B4', '#90CDF4', '#D6BCFA', '#FBB6CE',
   '#FF6B6B', '#FFB84D', '#FDE047', '#6EE7B7', '#60A5FA', '#C4B5FD', '#F472B6',
@@ -44,7 +43,6 @@ export const AVAILABLE_COLORS: string[] = [
   '#C53030', '#DD6B20', '#D69E2E', '#276749', '#2B6CB0', '#6B46C1', '#B83280',
 ];
 
-// 🟢 ВСЕ 28 ИКОНОК (4 ряда по 7) ИЗ AvailableIcons В ChatFolderViewModel.cs
 export const AVAILABLE_ICONS: { kind: string; path: string }[] = [
   { kind: 'FolderOutline', path: mdiFolderOutline },
   { kind: 'BriefcaseOutline', path: mdiBriefcaseOutline },
@@ -89,7 +87,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
   confirmButtonText: propConfirmText,
   onClose: propOnClose,
 }) => {
-  // 🟢 Подписываемся на состояние модального окна напрямую из useChatFolderStore
   const isStoreOpen = useChatFolderStore((s) => s.isCreateFolderDialogOpen);
   const storeTitle = useChatFolderStore((s) => s.folderDialogTitle);
   const storeConfirmText = useChatFolderStore((s) => s.folderDialogConfirmButtonText);
@@ -103,7 +100,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
   const setSelectedFolderColor = useChatFolderStore((s) => s.setSelectedFolderColor);
   const setSelectedFolderIcon = useChatFolderStore((s) => s.setSelectedFolderIcon);
 
-  // Режимы редактирования для TaskList и Note (по C# ChatFolderViewModel.cs)
   const [mode, setMode] = useState<'Folder' | 'TaskList' | 'Note'>('Folder');
   const [targetList, setTargetList] = useState<ITodoList | null>(null);
   const [targetNote, setTargetNote] = useState<INote | null>(null);
@@ -115,9 +111,29 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
   const [localIcon, setLocalIcon] = useState('FolderOutline');
   const [isInputFocused, setIsInputFocused] = useState(false);
 
-  // Окно открыто, если активен стор папок ИЛИ внешние props
   const isOpen = Boolean(propIsOpen || isStoreOpen);
   const maxLength = 12;
+
+  // Анимация плавного исчезновения
+  const [isRendered, setIsRendered] = useState(isOpen);
+  const [isFadingOut, setIsFadingOut] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsRendered(true);
+      setIsFadingOut(false);
+    } else if (isRendered) {
+      setIsFadingOut(true);
+      const timer = setTimeout(() => {
+        setIsRendered(false);
+        setIsFadingOut(false);
+        setTargetList(null);
+        setTargetNote(null);
+        setMode('Folder');
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
 
   const currentTitle = mode === 'Folder' ? (propTitle || storeTitle) : localTitle;
   const currentConfirmText = mode === 'Folder' ? (propConfirmText || storeConfirmText) : localConfirmText;
@@ -186,7 +202,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
     const unbindNote = eventBus.on('OpenEditNoteDialogMessage' as any, handleOpenNote);
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isRendered) {
         handleClose();
       }
     };
@@ -197,15 +213,12 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
       unbindNote();
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isRendered]);
 
-  if (!isOpen) return null;
+  if (!isRendered) return null;
 
   const handleClose = () => {
     cancelCreateFolder();
-    setTargetList(null);
-    setTargetNote(null);
-    setMode('Folder');
     if (propOnClose) propOnClose();
   };
 
@@ -256,7 +269,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
       };
       await useNotesStore.getState().commitEditNote(updated, updated.title);
     } else {
-      // 🟢 Вызывает сохранение (Создание или Обновление существующей папки через PUT)
       await confirmCreateFolder();
     }
 
@@ -278,10 +290,11 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
         userSelect: 'none',
         padding: 16,
         boxSizing: 'border-box',
+        opacity: isFadingOut ? 0 : 1,
+        transition: 'opacity 0.12s ease-out',
       }}
     >
       <style>{`
-        /* Кнопка закрытия (круглый эллипс) */
         .btn-close {
           width: 28px !important;
           height: 28px !important;
@@ -305,7 +318,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           background-color: rgba(255, 255, 255, 0.16) !important;
         }
 
-        /* Кнопка Cancel */
         .btn-cancel {
           height: 36px;
           padding: 0 16px;
@@ -327,7 +339,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           background-color: rgba(255, 255, 255, 0.14) !important;
         }
 
-        /* Кнопка Create / Save (PrimaryActionButtonStyle) */
         .btn-create {
           height: 36px;
           padding: 0 22px;
@@ -431,7 +442,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
         }
       `}</style>
 
-      {/* Карточка окна */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -448,7 +458,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           position: 'relative',
         }}
       >
-        {/* Шапка с названием и круглым крестиком */}
         <div
           style={{
             display: 'flex',
@@ -493,7 +502,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               boxSizing: 'border-box',
             }}
           >
-            {/* Поле ввода имени */}
             <div style={{ position: 'relative', marginBottom: 20 }}>
               <input
                 type="text"
@@ -527,7 +535,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               </div>
             </div>
 
-            {/* Выбор цвета */}
             <div style={{ fontSize: 13, fontWeight: 600, color: '#7D8494', marginBottom: 8 }}>Color</div>
             <div
               style={{
@@ -554,7 +561,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               })}
             </div>
 
-            {/* Выбор иконки */}
             <div style={{ fontSize: 13, fontWeight: 600, color: '#7D8494', marginBottom: 8 }}>Icon</div>
             <div
               style={{
@@ -589,7 +595,6 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
             </div>
           </div>
 
-          {/* Кнопки Cancel / Create (Save) */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 10, flexShrink: 0 }}>
             <button
               type="button"

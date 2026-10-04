@@ -19,7 +19,7 @@ import {
   mdiLock,
   mdiCamera,
   mdiVideo,
-  mdiAnimation,
+  mdiFileGifBox,
   mdiMicrophone,
   mdiMusic,
   mdiFileDocumentOutline,
@@ -120,12 +120,10 @@ export const SidebarChatsView: React.FC = () => {
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   const [hoveredChatKey, setHoveredChatKey] = useState<string | null>(null);
 
-  // Контекстные меню
   const [chatContextMenu, setChatContextMenu] = useState<{ x: number; y: number; chat: IChatListItem } | null>(null);
   const [isFolderSubmenuOpen, setIsFolderSubmenuOpen] = useState(false);
   const [folderContextMenu, setFolderContextMenu] = useState<{ x: number; y: number; folder: IChatFolder } | null>(null);
 
-  // Скролл списка чатов
   const [isListHovered, setIsListHovered] = useState(false);
   const [isScrollDragging, setIsScrollDragging] = useState(false);
   const [isThumbHovered, setIsThumbHovered] = useState(false);
@@ -134,7 +132,6 @@ export const SidebarChatsView: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const foldersScrollRef = useRef<HTMLDivElement>(null);
 
-  // Drag & drop папок
   const [draggedFolderId, setDraggedFolderId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState<number>(0);
 
@@ -377,11 +374,12 @@ export const SidebarChatsView: React.FC = () => {
     window.addEventListener('mouseup', onMouseUp);
   };
 
+  // 🟢 Иконки типа последнего сообщения: mdiFileGifBox вместо mdiAnimation
   const getLastMessageIcon = (type: LastMessageType | undefined) => {
     switch (type) {
       case LastMessageType.Photo: return mdiCamera;
       case LastMessageType.Video: return mdiVideo;
-      case LastMessageType.Gif: return mdiAnimation;
+      case LastMessageType.Gif: return mdiFileGifBox;
       case LastMessageType.Voice: return mdiMicrophone;
       case LastMessageType.Audio: return mdiMusic;
       case LastMessageType.Document: return mdiFileDocumentOutline;
@@ -404,7 +402,6 @@ export const SidebarChatsView: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* Стили для сброса нативного крестика поля поиска как в SearchInputUserControl */}
       <style>{`
         .wpf-search-input::-webkit-search-cancel-button,
         .wpf-search-input::-webkit-search-decoration,
@@ -435,7 +432,7 @@ export const SidebarChatsView: React.FC = () => {
         }}
       />
 
-      {/* 🟢 РЯД 1: СТРОКА ПОИСКА (1 в 1 как в задачах: высота 37px, цвет, радиус 9px и шрифт) */}
+      {/* РЯД 1: СТРОКА ПОИСКА */}
       <div
         style={{
           margin: hasFolders ? '0 6px 2px 6px' : '0 6px 8px 6px',
@@ -668,15 +665,28 @@ export const SidebarChatsView: React.FC = () => {
                 );
                 const isHovered = hoveredChatKey === key;
 
-                const rawLastMsg = String(chat.lastMessage || '');
-                const isCallLast = Boolean(
-                  chat.lastMessageType === LastMessageType.Call ||
-                  rawLastMsg.includes('_CALL:') ||
-                  rawLastMsg.includes('CALL:')
-                );
+                // Внутри рендера элемента чата (строки 470–515 в SidebarChatsView.tsx):
+const rawLastMsg = String(chat.lastMessage || '');
+const isCallLast = Boolean(
+  chat.lastMessageType === LastMessageType.Call ||
+  rawLastMsg.includes('_CALL:') ||
+  rawLastMsg.includes('CALL:')
+);
 
-                let displayLastMessage = rawLastMsg;
-                let msgIcon = getLastMessageIcon(chat.lastMessageType);
+let displayLastMessage = rawLastMsg;
+let msgIcon = getLastMessageIcon(chat.lastMessageType);
+
+// 🟢 Автоматический UI-санитайзер: если пришло 'Вложение', но это GIF -> показать 'GIF' и mdiFileGifBox
+if (
+  chat.lastMessageType === LastMessageType.Gif ||
+  chat.isLastAttachmentGif ||
+  displayLastMessage === 'Вложение'
+) {
+  if (chat.lastMessageType === LastMessageType.Gif || chat.isLastAttachmentGif) {
+    displayLastMessage = 'GIF';
+    msgIcon = mdiFileGifBox;
+  }
+}
 
                 if (isCallLast) {
                   msgIcon = mdiPhone;
@@ -824,8 +834,16 @@ export const SidebarChatsView: React.FC = () => {
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        {msgIcon && <MdiIcon path={msgIcon} size={15} color="var(--text-muted)" />}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {msgIcon && (
+                          <MdiIcon
+                            path={msgIcon}
+                            size={15}
+                            color="var(--text-muted)"
+                            style={{ marginRight: 2 }}
+                          />
+                        )}
+
                         <span
                           style={{
                             color: 'var(--text-muted)',
@@ -834,9 +852,14 @@ export const SidebarChatsView: React.FC = () => {
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
                             lineHeight: '1.35',
+                            fontStyle: chat.lastMessageType === LastMessageType.Deleted ? 'italic' : 'normal',
                           }}
                         >
-                          {chat.isTyping ? <span style={{ color: 'var(--app-accent)' }}>typing...</span> : displayLastMessage}
+                          {chat.isTyping ? (
+                            <span style={{ color: 'var(--app-accent)' }}>typing...</span>
+                          ) : (
+                            displayLastMessage ? displayLastMessage.replace(/[\r\n]+/g, ' ').trim() : ''
+                          )}
                         </span>
                       </div>
                     </div>
@@ -878,7 +901,6 @@ export const SidebarChatsView: React.FC = () => {
           )}
         </div>
 
-        {/* Скроллбар */}
         {isScrollable && (
           <div
             style={{
@@ -936,7 +958,6 @@ export const SidebarChatsView: React.FC = () => {
             : 'opacity 120ms ease-out, transform 120ms ease-in, visibility 0ms 120ms',
         }}
       >
-        {/* БЛОК 1: НЕДАВНИЕ ПОИСКИ */}
         {!isChatSearchMode && searchText.trim().length === 0 && (
           <div style={{ marginTop: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, padding: '0 5px' }}>
@@ -978,7 +999,6 @@ export const SidebarChatsView: React.FC = () => {
           </div>
         )}
 
-        {/* БЛОК 2: ГЛОБАЛЬНЫЙ ПОИСК */}
         {!isChatSearchMode && searchText.trim().length > 0 && (
           <div style={{ marginTop: 6 }}>
             {isGlobalSearching ? (
@@ -1046,7 +1066,6 @@ export const SidebarChatsView: React.FC = () => {
           </div>
         )}
 
-        {/* БЛОК 3: РЕЗУЛЬТАТЫ ПОИСКА В АКТИВНОМ ЧАТЕ */}
         {isChatSearchMode && (
           <div style={{ marginTop: 6 }}>
             {isChatSearching ? (

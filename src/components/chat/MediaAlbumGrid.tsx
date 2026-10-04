@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { IAttachment, AttachmentHelper } from '../../types/models';
+import { AttachmentType } from '../../types/enums';
 import { TelegramInlinePlayer } from './TelegramInlinePlayer';
 import { mediaCacheService } from '../../services/mediaCache.service';
 import { BASE_SERVER_URL } from '../../services/apiClient';
@@ -14,7 +15,10 @@ interface MediaAlbumGridProps {
   onImageDimensionsLoaded?: (attachment: IAttachment, naturalWidth: number, naturalHeight: number) => void;
 }
 
-// Константы точных кистей WPF темы из DefaultDark.xaml
+// Порог автовоспроизведения для веба (100 МБ)
+const AUTO_PLAY_SIZE_LIMIT = 100 * 1024 * 1024;
+
+// Кисти темы из DefaultDark.xaml
 const BRUSHES = {
   videoOverlayBg: 'rgba(0, 0, 0, 0.125)', // #20000000
   videoLabelTagBg: 'rgba(0, 0, 0, 0.6)',   // #99000000
@@ -24,7 +28,7 @@ const BRUSHES = {
   moreMediaOverlayBg: 'rgba(0, 0, 0, 0.7)',// #B3000000
 };
 
-// Векторы стандартных PackIcon Kind Material Design
+// Material Design SVG иконки
 const MATERIAL_ICONS = {
   videoOutline: 'M15,8V16H5V8H15M16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5V7A1,1 0 0,0 16,6Z',
   play: 'M8,5.14V19.14L19,12.14L8,5.14Z',
@@ -45,32 +49,19 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
   const displayItems = media.slice(0, 4);
   const extraCount = totalCount > 4 ? totalCount - 3 : 0;
 
-  // Точный маппинг behaviors:GridCellHelper.CornerRadius и Triggers AlternationIndex из XAML:
-  // WPF CornerRadius: TopLeft, TopRight, BottomRight, BottomLeft
-  // CSS borderRadius: TopLeft TopRight BottomRight BottomLeft
+  // Маппинг углов сетки WPF: TopLeft, TopRight, BottomRight, BottomLeft
   const getCornerRadius = (index: number): string => {
     if (totalCount === 1) {
-      // DataTrigger Value="1" -> 16,16,16,16
       return '16px 16px 16px 16px';
     }
     if (totalCount === 2) {
-      // MultiDataTrigger Value="2", AlternationIndex="0" -> 16,2,2,16
-      // MultiDataTrigger Value="2", AlternationIndex="1" -> 2,16,16,2
       return index === 0 ? '16px 2px 2px 16px' : '2px 16px 16px 2px';
     }
     if (totalCount === 3) {
-      // AlternationIndex="0" -> 16,2,2,2
-      // AlternationIndex="1" -> 2,16,2,2
-      // MultiDataTrigger Value="3", AlternationIndex="2" -> 2,2,16,16
       if (index === 0) return '16px 2px 2px 2px';
       if (index === 1) return '2px 16px 2px 2px';
       return '2px 2px 16px 16px';
     }
-    // 4 фото: ячейки сетки 2x2
-    // AlternationIndex="0" -> 16,2,2,2
-    // AlternationIndex="1" -> 2,16,2,2
-    // AlternationIndex="2" -> 2,2,2,16
-    // AlternationIndex="3" -> 2,2,16,2
     switch (index) {
       case 0:
         return '16px 2px 2px 2px';
@@ -134,11 +125,18 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
         const isLastWithOverlay = index === 3 && extraCount > 0;
         const cellRadius = getCornerRadius(index);
 
-        // Строгий расчет статусов из моделей C# (AttachmentHelper)
+        const isVideo = item.type === AttachmentType.Video || AttachmentHelper.isVideo(item);
         const isSilent = Boolean(forceSilent || AttachmentHelper.isSilentVideo(item));
-        const isNormal = AttachmentHelper.isNormalVideo(item);
-        const isOverLimit = AttachmentHelper.isOverAutoDownloadLimit(item);
+        const fileSizeBytes = item.fileSizeBytes || 0;
         const isDownloaded = Boolean(item.isDownloaded);
+
+        // 🟢 Логика Варианта Б:
+        // Если видео весит <= 100 МБ (или без звука / GIF) -> автовоспроизводится в ленте без звука (muted)
+        const isOver100MB = fileSizeBytes > AUTO_PLAY_SIZE_LIMIT;
+        const shouldAutoPlayInline = isVideo && (isSilent || !isOver100MB);
+
+        // Оверлей со стрелкой/кнопкой Play отображается только для видео со звуком тяжелее 100 МБ
+        const showHeavyVideoOverlay = isVideo && !isSilent && isOver100MB;
 
         const durationFormatted = AttachmentHelper.formatDuration(item.durationSeconds);
         const durationStr = durationFormatted && durationFormatted.length > 0 ? durationFormatted : 'Video';
@@ -150,16 +148,15 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
             onClick={() => onMediaClick?.(item)}
             style={{
               ...getGridItemStyle(index),
-              margin: '1px', // Соответствует Margin="1" в XAML DataTemplate
+              margin: '1px',
               position: 'relative',
               overflow: 'hidden',
               cursor: 'pointer',
               backgroundColor: 'transparent',
             }}
           >
-            {/* 1. СТАТИЧЕСКАЯ ПОДЛОЖКА (ФОТО ИЛИ ВИДЕО) ЧЕРЕЗ ImageBrush */}
-            {/* Visibility="{Binding IsSilentVideo, Converter={StaticResource InverseBooleanToVisibilityConverter}}" */}
-            {!isSilent && (
+            {/* 1. СТАТИЧЕСКАЯ ПОДЛОЖКА (Для фото или для видео > 100 МБ) */}
+            {!shouldAutoPlayInline && (
               <CachedImageItem
                 imageUrl={displayImageUrl}
                 altText={item.fileName}
@@ -168,9 +165,8 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               />
             )}
 
-            {/* 2. АВТОПРОИГРЫВАТЕЛЬ ДЛЯ GIF/ВИДЕО БЕЗ ЗВУКА */}
-            {/* Visibility="{Binding IsSilentVideo, Converter={StaticResource BooleanToVisibilityConverter}}" */}
-            {isSilent && (
+            {/* 2. ИНЛАЙН-ПЛЕЕР ДЛЯ ВИДЕО <= 100 МБ И ДЛЯ GIF (Без звука, автоплей) */}
+            {shouldAutoPlayInline && (
               <TelegramInlinePlayer
                 sourceUrl={item.url}
                 thumbnailUrl={displayImageUrl}
@@ -179,9 +175,48 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               />
             )}
 
-            {/* 3. ОВЕРЛЕЙ И КНОПКА PLAY / DOWNLOAD ДЛЯ ОБЫЧНОГО ВИДЕО СО ЗВУКОМ */}
-            {/* Visibility="{Binding IsNormalVideo, Converter={StaticResource BooleanToVisibilityConverter}}" */}
-            {isNormal && (
+            {/* 3. ПЛАШКА ДЛИТЕЛЬНОСТИ ДЛЯ ИНЛАЙН-ВИДЕО СО ЗВУКОМ (≤ 100 МБ) */}
+            {shouldAutoPlayInline && isVideo && !isSilent && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 6,
+                  left: 6,
+                  backgroundColor: BRUSHES.videoLabelTagBg,
+                  borderRadius: 4,
+                  padding: '3px 6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  zIndex: 2,
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill={BRUSHES.videoPlayIcon}
+                  style={{ marginRight: 4, flexShrink: 0, display: 'block' }}
+                >
+                  <path d={MATERIAL_ICONS.videoOutline} />
+                </svg>
+                <span
+                  style={{
+                    color: BRUSHES.videoPlayLabel,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    lineHeight: '14px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {durationStr}
+                </span>
+              </div>
+            )}
+
+            {/* 4. ОВЕРЛЕЙ И КНОПКА PLAY / DOWNLOAD ДЛЯ ВИДЕО ТЯЖЕЛЕЕ 100 МБ */}
+            {showHeavyVideoOverlay && (
               <div
                 style={{
                   position: 'absolute',
@@ -192,9 +227,10 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center',
                   pointerEvents: 'none',
+                  zIndex: 2,
                 }}
               >
-                {/* 🟢 ВЕРХНЯЯ ПЛАШКА: "Video 01:24" И ЕСЛИ > 50 MB ДОБАВЛЯЕТСЯ "⬇ 78.4 MB" */}
+                {/* Верхняя плашка: "Video 01:24 • ⬇ 125 MB" */}
                 <div
                   style={{
                     position: 'absolute',
@@ -202,14 +238,13 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
                     left: 6,
                     backgroundColor: BRUSHES.videoLabelTagBg,
                     borderRadius: 4,
-                    padding: '3px 6px', // Padding="6,3" (left/right 6, top/bottom 3)
+                    padding: '3px 6px',
                     display: 'flex',
                     alignItems: 'center',
                     pointerEvents: 'none',
                     userSelect: 'none',
                   }}
                 >
-                  {/* Иконка видеокамеры: Kind="VideoOutline" Width="14" Height="14" */}
                   <svg
                     width="14"
                     height="14"
@@ -220,7 +255,6 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
                     <path d={MATERIAL_ICONS.videoOutline} />
                   </svg>
 
-                  {/* Надпись: Video или Длительность (например, 02:15) */}
                   <span
                     style={{
                       color: BRUSHES.videoPlayLabel,
@@ -233,50 +267,45 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
                     {durationStr}
                   </span>
 
-                  {/* Дополнительная плашка с весом файла и стрелкой, если видео > 50 МБ */}
-                  {isOverLimit && (
-                    <div style={{ display: 'flex', alignItems: 'center', marginLeft: 6 }}>
-                      {/* Разделитель "•" */}
-                      <span
-                        style={{
-                          color: BRUSHES.videoPlayLabel,
-                          fontSize: 11,
-                          opacity: 0.6,
-                          marginRight: 5,
-                          lineHeight: '14px',
-                        }}
-                      >
-                        •
-                      </span>
+                  {/* Вес файла и стрелочка */}
+                  <div style={{ display: 'flex', alignItems: 'center', marginLeft: 6 }}>
+                    <span
+                      style={{
+                        color: BRUSHES.videoPlayLabel,
+                        fontSize: 11,
+                        opacity: 0.6,
+                        marginRight: 5,
+                        lineHeight: '14px',
+                      }}
+                    >
+                      •
+                    </span>
 
-                      {/* materialDesign:PackIcon Kind="ArrowDown" Width="12" Height="12" */}
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill={BRUSHES.videoPlayIcon}
-                        style={{ marginRight: 2, flexShrink: 0, display: 'block' }}
-                      >
-                        <path d={MATERIAL_ICONS.arrowDown} />
-                      </svg>
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill={BRUSHES.videoPlayIcon}
+                      style={{ marginRight: 2, flexShrink: 0, display: 'block' }}
+                    >
+                      <path d={MATERIAL_ICONS.arrowDown} />
+                    </svg>
 
-                      {/* Текст размера файла */}
-                      <span
-                        style={{
-                          color: BRUSHES.videoPlayLabel,
-                          fontSize: 10.5,
-                          fontWeight: 600,
-                          lineHeight: '14px',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {item.fileSizeStr}
-                      </span>
-                    </div>
-                  )}
+                    <span
+                      style={{
+                        color: BRUSHES.videoPlayLabel,
+                        fontSize: 10.5,
+                        fontWeight: 600,
+                        lineHeight: '14px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {item.fileSizeStr}
+                    </span>
+                  </div>
                 </div>
 
-                {/* 🟢 ЦЕНТРАЛЬНАЯ КНОПКА: Play (если <= 50 МБ или уже скачано) / Стрелка Скачать (если > 50 МБ и не скачано) */}
+                {/* Центральная кнопка: Play (если скачано) / Скачать (если не скачано) */}
                 <div
                   style={{
                     width: 48,
@@ -291,8 +320,7 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
                     boxSizing: 'border-box',
                   }}
                 >
-                  {isOverLimit && !isDownloaded ? (
-                    /* 2. Иконка СТРЕЛКА СКАЧАТЬ (если видео > 50 МБ и еще не скачано): Width="26" Height="26" */
+                  {!isDownloaded ? (
                     <svg
                       width="26"
                       height="26"
@@ -303,7 +331,6 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
                       <path d={MATERIAL_ICONS.arrowDown} />
                     </svg>
                   ) : (
-                    /* 1. Иконка PLAY (для видео <= 50 МБ или уже скачанных файлов): Width="32" Height="32" Margin="2,0,0,0" */
                     <svg
                       width="32"
                       height="32"
@@ -318,8 +345,7 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               </div>
             )}
 
-            {/* 4. ИКОНКА GIF В УГЛУ */}
-            {/* Visibility="{Binding IsSilentVideo, Converter={StaticResource BooleanToVisibilityConverter}}" */}
+            {/* 5. ИКОНКА GIF В УГЛУ (Только для реальных GIF / беззвучных видео) */}
             {isSilent && (
               <div
                 style={{
@@ -328,12 +354,13 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
                   left: 6,
                   backgroundColor: BRUSHES.gifTagBg,
                   borderRadius: 4,
-                  padding: '2px 4px', // Padding="4,2" (left/right 4, top/bottom 2)
+                  padding: '2px 4px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   pointerEvents: 'none',
                   userSelect: 'none',
+                  zIndex: 2,
                 }}
               >
                 <span
@@ -349,20 +376,20 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               </div>
             )}
 
-            {/* 5. ОВЕРЛЕЙ «+X ФОТО» ДЛЯ АЛЬБОМОВ */}
-            {/* Visibility="{Binding ShowMoreOverlay, Converter={StaticResource BooleanToVisibilityConverter}}" */}
+            {/* 6. ОВЕРЛЕЙ «+X ФОТО» ДЛЯ АЛЬБОМОВ */}
             {isLastWithOverlay && (
               <div
                 style={{
                   position: 'absolute',
                   inset: 0,
                   borderRadius: cellRadius,
-                  backgroundColor: BRUSHES.moreMediaOverlayBg, // Background="#B3000000"
+                  backgroundColor: BRUSHES.moreMediaOverlayBg,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   pointerEvents: 'none',
                   userSelect: 'none',
+                  zIndex: 3,
                 }}
               >
                 <span
@@ -383,7 +410,6 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
   );
 };
 
-// Вспомогательный компонент статического изображения с декодированием и локальным кэшем
 const CachedImageItem: React.FC<{
   imageUrl: string;
   altText?: string;

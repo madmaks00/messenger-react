@@ -7,6 +7,8 @@ import { UrlHelper } from '../utils/helpers';
 interface VideoViewerState {
   isOpen: boolean;
   videoUrl: string;
+  fileHeader?: string;
+  senderMeta?: string;
   isPlaying: boolean;
   isBuffering: boolean;
   isFullscreen: boolean;
@@ -22,7 +24,7 @@ interface VideoViewerState {
   playbackSpeed: number;
   rotationAngle: number;
 
-  open: (videoUrl: string, initialDuration?: number) => void;
+  open: (videoUrl: string, initialDurationOrFileName?: number | string, senderName?: string) => void;
   close: () => void;
   togglePlay: () => void;
   toggleFullscreen: () => void;
@@ -56,7 +58,7 @@ const formatDuration = (totalSeconds: number): string => {
   return `${pad(minutes)}:${pad(seconds)}`;
 };
 
-let autoHideTimer: NodeJS.Timeout | null = null;
+let autoHideTimer: ReturnType<typeof setTimeout> | null = null;
 let previousVolume = 1.0;
 let isDraggingSliderInternal = false;
 
@@ -82,6 +84,8 @@ export const useVideoViewerStore = create<VideoViewerState>((set, get) => {
   return {
     isOpen: false,
     videoUrl: '',
+    fileHeader: '',
+    senderMeta: '',
     isPlaying: false,
     isBuffering: false,
     isFullscreen: false,
@@ -97,13 +101,17 @@ export const useVideoViewerStore = create<VideoViewerState>((set, get) => {
     playbackSpeed: 1.0,
     rotationAngle: 0,
 
-    open: (videoUrl: string, initialDuration?: number) => {
+    open: (videoUrl: string, initialDurationOrFileName?: number | string, senderName?: string) => {
       if (!videoUrl || videoUrl.trim().length === 0) return;
 
-      const dur = initialDuration && initialDuration > 0 ? initialDuration : 0;
+      const dur = typeof initialDurationOrFileName === 'number' && initialDurationOrFileName > 0 ? initialDurationOrFileName : 0;
+      const header = typeof initialDurationOrFileName === 'string' ? initialDurationOrFileName : 'Video';
+      const meta = senderName || '';
 
       set({
         videoUrl,
+        fileHeader: header,
+        senderMeta: meta,
         isOpen: true,
         isPlaying: true,
         isBuffering: true,
@@ -130,6 +138,8 @@ export const useVideoViewerStore = create<VideoViewerState>((set, get) => {
         isFullscreen: false,
         rotationAngle: 0,
         videoUrl: '',
+        fileHeader: '',
+        senderMeta: '',
       });
     },
 
@@ -217,7 +227,6 @@ export const useVideoViewerStore = create<VideoViewerState>((set, get) => {
       resetAutoHideTimer();
     },
 
-    // 🟢 ФИКС 4: Защита от сброса длительности в 0/NaN во время тиканья видео
     updatePlaybackInfo: (currentPos: number, duration?: number) => {
       const curDur = get().durationSeconds;
       const validDuration =
@@ -295,6 +304,6 @@ export const useVideoViewerStore = create<VideoViewerState>((set, get) => {
 });
 
 eventBus.on('OpenVideoViewerRequestMessage' as any, (payload: any) => {
-  const { videoUrl, durationSeconds } = payload || {};
-  useVideoViewerStore.getState().open(videoUrl, durationSeconds);
+  const { videoUrl, durationSeconds, fileName, senderName } = payload || {};
+  useVideoViewerStore.getState().open(videoUrl, durationSeconds || fileName, senderName);
 });

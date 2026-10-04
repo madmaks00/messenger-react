@@ -15,6 +15,7 @@ import {
 import { AttachmentDto, ChunkUploadStatusDto } from '../types/dtos';
 import { AttachmentType } from '../types/enums';
 import { mediaDimensionsCache } from '../utils/mediaDimensionsCache';
+
 const CHUNK_SIZE = 512 * 1024;
 const LINK_REGEX = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)|(\/[a-zA-Z0-9_\-]{3,})/i;
 
@@ -31,7 +32,7 @@ async function computeSha256(data: ArrayBuffer | Uint8Array | string): Promise<s
 export interface IChatService {
   syncDeltaAsync(userId: number): Promise<number>;
   syncUnsentMessagesAsync(signalRHub: any): Promise<number>;
-  markAsSentAsync(localId: number, serverId: number, videoUrl?: string | null, text?: string | null): Promise<void>;
+  markAsSentAsync(localId: number, serverId: number, attachments?: IAttachment[] | null, text?: string | null): Promise<void>;
   syncGroupHistoryAsync(groupId: number, currentUserId: number): Promise<void>;
   getChatsAsync(): Promise<IChatListItem[]>;
   toggleMuteChatAsync(targetUserId?: number | null, targetGroupId?: number | null): Promise<boolean | null>;
@@ -78,15 +79,17 @@ export class ChatService implements IChatService {
     if (!files || files.length === 0) return null;
 
     try {
+      console.log(`[ChatService] Начинаем загрузку ${files.length} файл(ов)...`);
       const resultDtos: AttachmentDto[] = [];
       for (const file of files) {
+        console.log(`[ChatService] Обработка файла: "${file.name}", размер: ${file.size} байт (${(file.size / 1024).toFixed(1)} КБ)`);
         const dto = await this.uploadSingleFileChunkedAsync(file);
         if (dto) {
           resultDtos.push(dto);
         }
       }
       return resultDtos;
-    } catch (ex) {
+    } catch (ex: any) {
       console.error('[ChatService ERROR] Сбой чанковой загрузки файлов:', ex);
       return null;
     }
@@ -96,6 +99,11 @@ export class ChatService implements IChatService {
     const totalFileSize = file.size;
     const fileName = file.name;
 
+    if (totalFileSize <= 0) {
+      console.error(`[ChatService ❌] Ошибка: файл "${fileName}" пустой (0 байт)! Загрузка отменена.`);
+      return null;
+    }
+
     const fileBuffer = await file.arrayBuffer();
     const fileHash = await computeSha256(fileBuffer);
 
@@ -104,28 +112,38 @@ export class ChatService implements IChatService {
 
     const uploadId = await computeSha256(`${fileHash}_${totalFileSize}_${totalChunks}`);
 
+    console.log(`[ChatService 🛰️] Подготовка к чанковой загрузке: FileHash=${fileHash.substring(0, 10)}..., UploadId=${uploadId.substring(0, 10)}..., Чанков=${totalChunks}, Размер=${totalFileSize} байт`);
+
     const alreadyUploaded = new Set<number>();
     try {
       const statusUrl = `api/Messages/upload-status?uploadId=${uploadId}&fileHash=${fileHash}&totalChunks=${totalChunks}&fileName=${encodeURIComponent(fileName)}`;
       const statusRes = await apiClient.get<ChunkUploadStatusDto>(statusUrl);
       if (statusRes.status === 200 && statusRes.data) {
         if (statusRes.data.isCompleted && statusRes.data.attachment) {
+          console.log('[ChatService ⚡] Файл уже был загружен ранее (дедупликация)!');
           return statusRes.data.attachment;
         }
         if (statusRes.data.uploadedChunks) {
           statusRes.data.uploadedChunks.forEach((c) => alreadyUploaded.add(c));
         }
       }
-    } catch {}
+    } catch (statusErr) {
+      console.warn('[ChatService] Статус загрузки не получен, продолжаем загрузку с 0 чанка:', statusErr);
+    }
 
     let finalAttachment: AttachmentDto | null = null;
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-      if (alreadyUploaded.has(chunkIndex)) continue;
+      if (alreadyUploaded.has(chunkIndex)) {
+        console.log(`[ChatService ⏩] Чанк ${chunkIndex + 1}/${totalChunks} уже на сервере, пропускаем.`);
+        continue;
+      }
 
       const start = chunkIndex * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, totalFileSize);
       const chunkBlob = file.slice(start, end);
+
+      console.log(`[ChatService 🚀] Отправка чанка ${chunkIndex + 1}/${totalChunks} (Размер чанка: ${chunkBlob.size} байт)...`);
 
       const formData = new FormData();
       formData.append('UploadId', uploadId);
@@ -134,19 +152,29 @@ export class ChatService implements IChatService {
       formData.append('TotalFileSize', totalFileSize.toString());
       formData.append('FileHash', fileHash);
       formData.append('FileName', fileName);
+
+      // 🟢 1 в 1 с C# WPF: formContent.Add(memoryContent, "chunk", $"{chunkIndex}.part")
       formData.append('chunk', chunkBlob, `${chunkIndex}.part`);
 
-      const res = await apiClient.post<ChunkUploadStatusDto>('api/Messages/upload-chunk', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      try {
+        const res = await apiClient.post<ChunkUploadStatusDto>('api/Messages/upload-chunk', formData);
 
-      if (res.status >= 200 && res.status < 300 && res.data) {
-        if (res.data.isCompleted && res.data.attachment) {
-          finalAttachment = res.data.attachment;
-          break;
+        if (res.status >= 200 && res.status < 300 && res.data) {
+          console.log(`[ChatService ✅] Чанк ${chunkIndex + 1}/${totalChunks} успешно принят сервером.`);
+          if (res.data.isCompleted && res.data.attachment) {
+            console.log('[ChatService 🎉] Все чанки собраны! Сервер вернул AttachmentDto:', res.data.attachment);
+            finalAttachment = res.data.attachment;
+            break;
+          }
+        } else {
+          console.error(`[ChatService ❌] Сервер вернул статус ${res.status} для чанка ${chunkIndex + 1}/${totalChunks}`);
+          return null;
         }
-      } else {
-        console.error(`[RESUMABLE ❌] Ошибка загрузки чанка ${chunkIndex + 1}/${totalChunks}`);
+      } catch (err: any) {
+        console.error(`[ChatService ❌] Ошибка запроса на чанке ${chunkIndex + 1}/${totalChunks}:`, err);
+        if (err?.response?.data) {
+          console.error('[ChatService ❌ ДЕТАЛИ ОШИБКИ СЕРВЕРА]:', err.response.data);
+        }
         return null;
       }
     }
@@ -154,7 +182,6 @@ export class ChatService implements IChatService {
     return finalAttachment;
   }
 
-  // 🟢 ДЕЛЬТА-СИНХРОНИЗАЦИЯ С ЗАЩИТОЙ ОТ ДУБЛИРОВАНИЯ
   public async syncDeltaAsync(userId: number): Promise<number> {
     try {
       const db = getLocalDatabase(userId);
@@ -202,10 +229,8 @@ export class ChatService implements IChatService {
 
         const isMy = msg.senderId === userId;
 
-        // 🟢 Ищем существующее сообщение по serverId
         let existing = await db.messages.where('serverId').equals(serverId).first();
 
-        // 🟢 ЕСЛИ НЕ НАЙДЕНО ПО SERVER_ID — ИЩЕМ ОПТИМИСТИЧНОЕ СООБЩЕНИЕ (serverId = 0) С ТЕМ ЖЕ ТЕКСТОМ И ВРЕМЕНЕМ
         if (!existing && isMy) {
           const msgTime = new Date(msg.timestamp).getTime();
           existing = await db.messages
@@ -220,38 +245,41 @@ export class ChatService implements IChatService {
         }
 
         const formattedAttachments: IAttachment[] = (msg.attachments || []).map((a: any, idx: number) => {
-  const existingAtt = existing?.attachments?.[idx];
-  const cached = mediaDimensionsCache.get(a.url) || mediaDimensionsCache.get(a.fileName);
+          const existingAtt = existing?.attachments?.[idx];
+          const cached = mediaDimensionsCache.get(a.url) || mediaDimensionsCache.get(a.fileName);
 
-  // 🟢 Если сервер прислал 0, но клиент уже замерил картинку — сохраняем реальные пиксели!
-  const resolvedWidth = a.width > 0 ? a.width : (existingAtt?.width && existingAtt.width > 0 ? existingAtt.width : (cached?.width || 0));
-  const resolvedHeight = a.height > 0 ? a.height : (existingAtt?.height && existingAtt.height > 0 ? existingAtt.height : (cached?.height || 0));
+          const resolvedWidth = a.width > 0 ? a.width : (existingAtt?.width && existingAtt.width > 0 ? existingAtt.width : (cached?.width || 0));
+          const resolvedHeight = a.height > 0 ? a.height : (existingAtt?.height && existingAtt.height > 0 ? existingAtt.height : (cached?.height || 0));
 
-  if (resolvedWidth > 0 && resolvedHeight > 0) {
-    mediaDimensionsCache.set(a.url, { width: resolvedWidth, height: resolvedHeight });
-    mediaDimensionsCache.set(a.fileName, { width: resolvedWidth, height: resolvedHeight });
-  }
+          const serverWave = a.waveform || a.Waveform;
+          const resolvedWaveform = (serverWave && String(serverWave).trim().length > 0)
+            ? serverWave
+            : (existingAtt?.waveform || '');
 
-  return {
-    id: idx + 1,
-    messageId: existing?.id || 0,
-    type: a.type as AttachmentType,
-    fileName: a.fileName,
-    fileSizeStr: a.fileSizeStr,
-    fileSizeBytes: a.fileSizeBytes || 0,
-    url: UrlHelper.normalize(a.url, BASE_SERVER_URL),
-    thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, BASE_SERVER_URL),
-    fileHash: a.fileHash,
-    hasAudio: a.hasAudio,
-    width: resolvedWidth,
-    height: resolvedHeight,
-    durationSeconds: a.durationSeconds,
-    waveform: a.waveform,
-  };
-});
+          if (resolvedWidth > 0 && resolvedHeight > 0) {
+            mediaDimensionsCache.set(a.url, { width: resolvedWidth, height: resolvedHeight });
+            mediaDimensionsCache.set(a.fileName, { width: resolvedWidth, height: resolvedHeight });
+          }
+
+          return {
+            id: idx + 1,
+            messageId: existing?.id || 0,
+            type: a.type as AttachmentType,
+            fileName: a.fileName,
+            fileSizeStr: a.fileSizeStr,
+            fileSizeBytes: a.fileSizeBytes || 0,
+            url: UrlHelper.normalize(a.url, BASE_SERVER_URL),
+            thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, BASE_SERVER_URL),
+            fileHash: a.fileHash,
+            hasAudio: a.hasAudio,
+            width: resolvedWidth,
+            height: resolvedHeight,
+            durationSeconds: a.durationSeconds,
+            waveform: resolvedWaveform,
+          };
+        });
 
         if (existing && existing.id) {
-          // Обновляем найденную оптимистичную запись, проставляя serverId (БЕЗ ДУБЛИРОВАНИЯ)
           await (db.messages.update as any)(existing.id, {
             serverId,
             isSentToServer: true,
@@ -397,12 +425,9 @@ export class ChatService implements IChatService {
 
   public async clearChatHistoryAsync(targetUserId?: number | null, targetGroupId?: number | null, deleteForAll: boolean = false): Promise<boolean> {
     try {
-      const res = await apiClient.post('api/Messages/clear', {
-        TargetUserId: targetUserId,
-        TargetGroupId: targetGroupId,
-        DeleteForAll: deleteForAll,
-      });
-      return res.status >= 200 && res.status < 300;
+      const payload = { TargetUserId: targetUserId, TargetGroupId: targetGroupId, DeleteForAll: deleteForAll };
+      const response = await apiClient.post('api/Messages/clear', payload);
+      return response.status >= 200 && response.status < 300;
     } catch (ex) {
       console.error('[ChatService ERROR] Ошибка очистки истории чата:', ex);
       return false;
@@ -551,8 +576,6 @@ export class ChatService implements IChatService {
     }
   }
 
-  // 🟢 1 В 1 С WPF ChatService.cs: ДЕДУПЛИКАЦИЯ СООБЩЕНИЙ (.GroupBy(m => m.ServerId > 0 ? m.ServerId : m.Id))
-  // 🟢 1 В 1 С WPF ChatService.cs: ДЕДУПЛИКАЦИЯ СТРОГО ПО УНИКАЛЬНЫМ ИДЕНТИФИКАТОРАМ
   public async getLocalMessagesAsync(
     currentUserId: number,
     targetUserId?: number | null,
@@ -562,42 +585,55 @@ export class ChatService implements IChatService {
     beforeTimestamp?: string | null
   ): Promise<IMessage[]> {
     const db = getLocalDatabase(currentUserId);
-    let collection = db.messages.toCollection();
+    const maxTime = beforeTimestamp || '\uffff';
+
+    let rawList: IMessage[] = [];
 
     if (secretChatId) {
-      collection = db.messages.where('secretChatId').equals(secretChatId);
+      rawList = await db.messages
+        .where('[secretChatId+timestamp]')
+        .between([secretChatId, ''], [secretChatId, maxTime], true, false)
+        .reverse()
+        .limit(take)
+        .toArray();
     } else if (groupId && groupId > 0) {
-      collection = db.messages.where('groupId').equals(groupId);
+      rawList = await db.messages
+        .where('[groupId+timestamp]')
+        .between([groupId, ''], [groupId, maxTime], true, false)
+        .reverse()
+        .limit(take)
+        .toArray();
     } else if (targetUserId && targetUserId > 0) {
-      collection = db.messages.filter(
-        (m) =>
-          !m.groupId &&
-          !m.secretChatId &&
-          ((m.senderId === currentUserId && m.receiverId === targetUserId) ||
-            (m.senderId === targetUserId && m.receiverId === currentUserId))
-      );
+      const [sent, received] = await Promise.all([
+        db.messages
+          .where('[senderId+receiverId+timestamp]')
+          .between([currentUserId, targetUserId, ''], [currentUserId, targetUserId, maxTime], true, false)
+          .reverse()
+          .limit(take)
+          .toArray(),
+        db.messages
+          .where('[senderId+receiverId+timestamp]')
+          .between([targetUserId, currentUserId, ''], [targetUserId, currentUserId, maxTime], true, false)
+          .reverse()
+          .limit(take)
+          .toArray(),
+      ]);
+
+      rawList = [...sent, ...received];
     } else {
       return [];
     }
 
-    let list = await collection
-      .filter((m) => !m.isDeleted && !m.isDeletedForMe && m.text !== 'This message was deleted')
-      .toArray();
+    let list = rawList.filter(
+      (m) => !m.isDeleted && !m.isDeletedForMe && m.text !== 'This message was deleted'
+    );
 
-    if (beforeTimestamp) {
-      const beforeTime = new Date(beforeTimestamp).getTime();
-      list = list.filter((m) => new Date(m.timestamp).getTime() < beforeTime);
-    }
-
-    // 🟢 Сортируем: более новые первыми для среза take
     list.sort((a, b) => {
       const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
       if (timeDiff !== 0) return timeDiff;
-      return ((b.serverId || 0) - (a.serverId || 0)) || ((b.id || 0) - (a.id || 0));
+      return (b.serverId || 0) - (a.serverId || 0) || (b.id || 0) - (a.id || 0);
     });
 
-    // 🟢 Строго как в C# WPF: GroupBy(m => m.ServerId > 0 ? m.ServerId : m.Id)
-    // Больше НИКАКИХ удалений одинаковых текстов или фото, отправленных подряд!
     const seenKeys = new Set<string>();
     const deduplicated: IMessage[] = [];
 
@@ -608,7 +644,6 @@ export class ChatService implements IChatService {
       deduplicated.push(m);
     }
 
-    // Возвращаем в хронологическом порядке (старые вверху, новые внизу)
     return deduplicated.slice(0, take).reverse();
   }
 
@@ -619,22 +654,47 @@ export class ChatService implements IChatService {
     secretChatId?: string | null
   ): Promise<IMessage[]> {
     const db = getLocalDatabase(currentUserId);
-    return await db.messages
-      .filter((m) => {
-        if (!m.isPinned || m.isDeleted || (m.isDeletedForMe && m.senderId !== currentUserId)) return false;
-        if (secretChatId) return m.secretChatId === secretChatId;
-        if (groupId && groupId > 0) return m.groupId === groupId;
-        if (targetUserId && targetUserId > 0) {
-          return (
-            !m.groupId &&
-            !m.secretChatId &&
-            ((m.senderId === currentUserId && m.receiverId === targetUserId) ||
-              (m.senderId === targetUserId && m.receiverId === currentUserId))
-          );
-        }
-        return false;
-      })
-      .toArray();
+    let list: IMessage[] = [];
+
+    if (secretChatId) {
+      list = await db.messages
+        .where('[secretChatId+timestamp]')
+        .between([secretChatId, ''], [secretChatId, '\uffff'])
+        .filter((m) => Boolean(m.isPinned) && !m.isDeleted && !m.isDeletedForMe)
+        .toArray();
+    } else if (groupId && groupId > 0) {
+      list = await db.messages
+        .where('[groupId+timestamp]')
+        .between([groupId, ''], [groupId, '\uffff'])
+        .filter((m) => Boolean(m.isPinned) && !m.isDeleted && !m.isDeletedForMe)
+        .toArray();
+    } else if (targetUserId && targetUserId > 0) {
+      const [sent, received] = await Promise.all([
+        db.messages
+          .where('[senderId+receiverId+timestamp]')
+          .between([currentUserId, targetUserId, ''], [currentUserId, targetUserId, '\uffff'])
+          .filter((m) => Boolean(m.isPinned) && !m.isDeleted && !m.isDeletedForMe)
+          .toArray(),
+        db.messages
+          .where('[senderId+receiverId+timestamp]')
+          .between([targetUserId, currentUserId, ''], [targetUserId, currentUserId, '\uffff'])
+          .filter((m) => Boolean(m.isPinned) && !m.isDeleted && !m.isDeletedForMe)
+          .toArray(),
+      ]);
+
+      list = [...sent, ...received];
+    } else {
+      return [];
+    }
+
+    return list.sort((a, b) => {
+      const idA = Number(a.serverId && a.serverId > 0 ? a.serverId : (a.id || 0));
+      const idB = Number(b.serverId && b.serverId > 0 ? b.serverId : (b.id || 0));
+      if (idA > 0 && idB > 0 && idA !== idB) {
+        return idA - idB;
+      }
+      return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    });
   }
 
   public async getMissingQuotedMessagesAsync(messageIds: number[]): Promise<IMessage[]> {
@@ -793,11 +853,21 @@ export class ChatService implements IChatService {
     }
   }
 
-  // 🟢 ОБНОВЛЕНИЕ СТАТУСА ОТПРАВКИ СООБЩЕНИЯ В ЛОКАЛЬНОЙ БАЗЕ
-  public async markAsSentAsync(localId: number, serverId: number, _videoUrl?: string | null, text?: string | null): Promise<void> {
+  public async markAsSentAsync(
+    localId: number,
+    serverId: number,
+    attachments?: IAttachment[] | null,
+    text?: string | null
+  ): Promise<void> {
     const db = getLocalDatabase(userSession.userId);
     const updates: Partial<IMessage> = { serverId, isSentToServer: true };
     if (text) updates.text = text;
+    if (attachments && attachments.length > 0) {
+      updates.attachments = attachments.map((a) => {
+        const { rawFile, ...rest } = a;
+        return rest;
+      });
+    }
 
     if (localId > 0) {
       try {
