@@ -19,7 +19,7 @@ const RTC_CONFIGURATION: RTCConfiguration = {
 };
 
 export class WebRtcCallService {
-  // 🟢 Канал 1: Аудио + Камера лица
+  // 🟢 Канал 1: Голос + Веб-камера (постоянный)
   private peerConnections: Map<number, RTCPeerConnection> = new Map();
   public remoteCameraStreams: Map<number, MediaStream> = new Map();
   private candidateQueue: Map<number, RTCIceCandidateInit[]> = new Map();
@@ -89,7 +89,7 @@ export class WebRtcCallService {
     this.syncMediaState();
   }
 
-  // ================= 1. КАМЕРА =================
+  // ================= 1. КАМЕРА (БЕЗ РИСКОВАННЫХ RE-OFFER) =================
 
   public async startCamera(): Promise<MediaStreamTrack | null> {
     try {
@@ -113,7 +113,7 @@ export class WebRtcCallService {
         void this.stopCamera();
       };
 
-      // 🟢 1. Находим единственный реальный видео-трансивер и привязываем живой трек камеры
+      // 🟢 Подменяем трек напрямую через replaceTrack (по спецификации WebRTC пересогласование не требуется!)
       for (const [peerId, pc] of this.peerConnections.entries()) {
         try {
           const videoTransceiver = pc.getTransceivers().find(
@@ -121,30 +121,17 @@ export class WebRtcCallService {
           );
 
           if (videoTransceiver && videoTransceiver.sender) {
-            console.log(`[WebRTC 📷 Cam] Привязка трека камеры к видео-трансиверу пира ${peerId}`);
+            console.log(`[WebRTC 📷 Cam] replaceTrack(LIVE) для пира ${peerId}`);
             await videoTransceiver.sender.replaceTrack(track);
-            videoTransceiver.direction = 'sendrecv';
-
-            // 🟢 2. Отправляем Re-Offer: теперь оффер будет содержать честный a=sendrecv без дублей!
-            console.log(`%c[WebRTC 📷 Cam Re-Offer] Отправка Re-Offer камеры пиру ${peerId}`, 'color: #3B82F6;');
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-
-            this.invokeSignaling(
-              peerId,
-              JSON.stringify({
-                sdp: { type: offer.type, sdp: offer.sdp },
-              })
-            );
           }
-        } catch (renegErr) {
-          console.error(`[WebRTC ❌ Cam Re-Offer] Ошибка ренеготиации камеры для пира ${peerId}:`, renegErr);
+        } catch (ex) {
+          console.error(`[WebRTC ❌ Cam] Ошибка replaceTrack для пира ${peerId}:`, ex);
         }
       }
 
       this.emitLocalStreams();
       this.syncMediaState();
-      console.log('%c[WebRTC 📷 Cam] Камера успешно запущена и согласована с пирами.', 'color: #10B981;');
+      console.log('%c[WebRTC 📷 Cam] Камера успешно запущена и подменена на пирах.', 'color: #10B981;');
       return track;
     } catch (e) {
       console.error('[WebRTC ❌ Cam] Ошибка включения веб-камеры:', e);
@@ -174,18 +161,8 @@ export class WebRtcCallService {
           (t) => t.receiver?.track?.kind === 'video'
         );
         if (videoTransceiver && videoTransceiver.sender) {
+          console.log(`[WebRTC 📷 Cam] replaceTrack(null) для пира ${peerId}`);
           await videoTransceiver.sender.replaceTrack(null);
-          videoTransceiver.direction = 'recvonly';
-
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-
-          this.invokeSignaling(
-            peerId,
-            JSON.stringify({
-              sdp: { type: offer.type, sdp: offer.sdp },
-            })
-          );
         }
       } catch {}
     }
@@ -496,13 +473,13 @@ export class WebRtcCallService {
       }
 
       if (sdpType === 'offer') {
-        // 🟢 Принимающая сторона: setRemoteDescription только что создал видео-трансивер автоматически!
+        // 🟢 Видеотрансивер создан браузером автоматически из входящего оффера с mid: 1!
         const videoTransceiver = pc.getTransceivers().find((t) => t.receiver?.track?.kind === 'video');
         if (videoTransceiver) {
           this.applyVp8CodecPreference(videoTransceiver);
+          videoTransceiver.direction = 'sendrecv';
           if (this.localCameraTrack && this.localCameraTrack.readyState === 'live') {
             await videoTransceiver.sender.replaceTrack(this.localCameraTrack);
-            videoTransceiver.direction = 'sendrecv';
           }
         }
 
@@ -565,10 +542,8 @@ export class WebRtcCallService {
       pc.addTrack(track, audioStream);
     });
 
-    // 🟢 КЛЮЧЕВОЙ ФИКС:
-    // Если мы инициатор (isOfferer=true) — добавляем видеотрансивер.
-    // Если мы принимающая сторона (isOfferer=false) — НЕ создаем трансивер вручную! 
-    // Его создаст setRemoteDescription(offer), чтобы исключить раздвоение трансиверов!
+    // 🟢 Если мы Offerer — объявляем видео-трансивер sendrecv.
+    // Если мы Answerer — НЕ создаем заранее, его создаст setRemoteDescription(offer)!
     if (isOfferer) {
       const activeCam = this.localCameraTrack && this.localCameraTrack.readyState === 'live' ? this.localCameraTrack : null;
       let videoTransceiver: RTCRtpTransceiver;

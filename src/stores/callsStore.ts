@@ -685,10 +685,21 @@ eventBus.on('UserJoinedGroupCallMessage' as any, (data: { groupId: number; parti
   }
   startTimer(useCallsStore.setState);
 
+  // 1. Главный канал (голос + камера) по правилу меньшего ID
   if (myUserId < pUserId) {
     webRtcCallService.startCallWithPeerAsync(pUserId).catch((ex) => {
       console.error('[CallsStore ERROR] Ошибка подключения к новому участнику:', ex);
     });
+  }
+
+  // 🟢 2. ЭКРАННЫЙ КАНАЛ: Независимо от ID, если МЫ транслируем экран — немедленно шлем его новичку!
+  if (useCallsStore.getState().isScreenSharing && webRtcCallService.localScreenTrack) {
+    console.log(`%c[WebRTC 🖥️ Screen] Новый участник ${pUserId} зашел в звонок — отправляем ему экран!`, 'color: #9B51E0; font-weight: bold;');
+    setTimeout(() => {
+      webRtcCallService.startScreenCallWithPeerAsync(pUserId).catch((ex) => {
+        console.error('[WebRTC ❌ Screen] Ошибка отправки экрана новому участнику:', ex);
+      });
+    }, 300);
   }
 });
 
