@@ -9,13 +9,16 @@ import { eventBus } from './eventBus';
 import { UrlHelper } from '../utils/helpers';
 import { BASE_SERVER_URL } from './apiClient';
 import { getLocalDatabase } from '../db/localDb';
-import { AttachmentDto, PrivacySettingsDto } from '../types/dtos';
+import { AttachmentDto, PrivacySettingsDto, GroupCallParticipantDto } from '../types/dtos';
 import { AttachmentType, LastMessageType } from '../types/enums';
-import { IMessage, IUser, IChatFolder } from '../types/models';
+import { IMessage, IUser, IChatFolder, IChatListItem, ICachedSecretChat } from '../types/models';
 import { parsePrivacyVisibility } from '../components/profile/profileView.utils';
 import { useChatFolderStore } from '../stores/chatFolderStore';
 import { useSidebarChatsStore } from '../stores/sidebarChatsStore';
 import { MessagePreviewHelper } from '../utils/messagePreviewHelper';
+import { secretChatCrypto } from './secretChatCrypto.service';
+import { userService } from './user.service';
+
 function getCleanToken(): string {
   let raw =
     userSession.token ||
@@ -109,6 +112,19 @@ export class SignalRService {
 
         this.hubConnection.onreconnected(async (id) => {
           console.info('[SignalR] Соединение восстановлено. ConnectionId:', id);
+
+          // 🟢 Переподписываемся на группы после разрыва соединения
+          try {
+            const chats = useSidebarChatsStore.getState().allChats;
+            chats.forEach((c) => {
+              if (c.isGroup && c.groupId) {
+                void this.subscribeToGroupAsync(c.groupId);
+              }
+            });
+          } catch (e) {
+            console.warn('[SignalR] Ошибка переподписки на группы:', e);
+          }
+
           eventBus.emit('SignalRConnectedMessage' as any, undefined);
           if (onReconnected) {
             try {
@@ -157,7 +173,18 @@ export class SignalRService {
     this.hubConnection.on('StoryPosted', (userId: number, userName: string, userAvatar: any) => {
       eventBus.emit('StoryPostedMessage', { userId, userName, userAvatar });
     });
-
+this.hubConnection.on(
+      'UserMediaStateChanged',
+      (groupId: number, userId: number, isMuted: boolean, isVideoOn: boolean, isScreenSharing: boolean) => {
+        eventBus.emit('UserMediaStateChangedMessage' as any, {
+          groupId: Number(groupId),
+          userId: Number(userId),
+          isMuted: Boolean(isMuted),
+          isVideoOn: Boolean(isVideoOn),
+          isScreenSharing: Boolean(isScreenSharing),
+        });
+      }
+    );
     this.hubConnection.on('StoryDeleted', (storyId: number, userId: number) => {
       eventBus.emit('StoryDeletedMessage', { storyId, userId });
     });
@@ -165,10 +192,11 @@ export class SignalRService {
     this.hubConnection.on('StoryCommentAdded', (storyId: number, commentsCount: number) => {
       eventBus.emit('StoryCommentAddedMessage', { storyId, commentsCount });
     });
-
-    // 🟢 1. ВХОДЯЩИЕ СООБЩЕНИЯ
+    this.hubConnection.on('GroupMessagesWereRead', (groupId: number, readerId: number, maxReadId: number) => {
+      eventBus.emit('MessagesWereReadMessage' as any, { readerId: Number(readerId), maxReadId: Number(maxReadId) });
+    });
+    // 🟢 1. ВХОДЯЩИЕ ОБЫЧНЫЕ СООБЩЕНИЯ
     this.hubConnection.on('ReceiveMessage', async (rawDto: any) => {
-      console.log('⚡ [SignalR] Входящее сообщение ReceiveMessage:', rawDto);
       if (!rawDto) return;
 
       const currentId = Number(
@@ -196,17 +224,25 @@ export class SignalRService {
           : null;
       const serverId = Number(rawDto.serverId ?? rawDto.ServerId ?? rawDto.id ?? rawDto.Id ?? 0);
       const text = String(rawDto.text ?? rawDto.Text ?? '');
-
-      // 🟢 ИСПРАВЛЕНИЕ: Читаем реальный статус из DTO сервера, а не принудительный true для своих сообщений
       const isRead = Boolean(rawDto.isRead ?? rawDto.IsRead ?? false);
-
       const replyToMessageIds = rawDto.replyToMessageIds ?? rawDto.ReplyToMessageIds ?? null;
       const rawAttachments = rawDto.attachments ?? rawDto.Attachments ?? [];
       const timestamp = rawDto.timestamp ?? rawDto.Timestamp ?? new Date().toISOString();
-      const senderName = String(rawDto.senderName ?? rawDto.SenderName ?? '');
-      const senderAvatar = rawDto.senderAvatar ?? rawDto.SenderAvatar ?? null;
+      let senderName = String(rawDto.senderName ?? rawDto.SenderName ?? '');
+      let senderAvatar = rawDto.senderAvatar ?? rawDto.SenderAvatar ?? null;
 
       const isMyMessage = senderId === currentId;
+
+      // 🟢 Обогащаем имя и аватарку автора чужого сообщения в группе
+      if (!isMyMessage && groupId && senderId > 0 && !senderName) {
+        try {
+          const profile = await userService.getUserProfileAsync(senderId);
+          if (profile) {
+            senderName = profile.nickName || profile.username || `User ${senderId}`;
+            senderAvatar = profile.avatarPath || profile.avatar || null;
+          }
+        } catch {}
+      }
 
       const newMsg: IMessage = {
         id: 0,
@@ -220,7 +256,7 @@ export class SignalRService {
         isMyMessage,
         isSentToServer: true,
         text,
-        isRead, // 🟢 ЧЕСТНЫЙ СТАТУС (для нового исходящего сообщения — строго false)
+        isRead,
         timestamp: new Date(timestamp).toISOString(),
         isDeleted: false,
         isDeletedForMe: false,
@@ -258,7 +294,6 @@ export class SignalRService {
 
       eventBus.emit('ReceiveMessage', newMsg);
       if (!noteId) {
-        // 🟢 Формируем честное превью с правильной иконкой и текстом (Voice message, Photo, Video и т.д.)
         const [previewText, msgType] = MessagePreviewHelper.formatPreviewFromMessage(
           newMsg,
           currentId,
@@ -276,7 +311,358 @@ export class SignalRService {
       }
     });
 
-    // 🟢 2. СТАТУС ОНЛАЙНА
+    this.hubConnection.on(
+      'AttachmentProcessed',
+      (
+        fileHash: string,
+        fileName: string,
+        finalUrl: string,
+        thumbnailUrl: string,
+        width: number,
+        height: number,
+        hasAudio: boolean,
+        finalType: number
+      ) => {
+        eventBus.emit('AttachmentProcessedMessage' as any, {
+          fileHash,
+          fileName,
+          finalUrl: UrlHelper.normalize(finalUrl, this.serverUrl),
+          thumbnailUrl: UrlHelper.normalize(thumbnailUrl, this.serverUrl),
+          width,
+          height,
+          hasAudio,
+          finalType,
+        });
+      }
+    );
+
+    // 🟢 2. ВХОДЯЩИЙ ХЭНДШЕЙК СЕКРЕТНОГО ЧАТА (БОБ)
+    this.hubConnection.on(
+      'IncomingSecretChatRequest',
+      async (
+        initiatorId: number,
+        initiatorName: string,
+        initiatorAvatar: any,
+        secretChatId: string,
+        pubKey: string
+      ) => {
+        console.log(
+          `%c[SignalR 📥 IncomingSecretChatRequest] От InitiatorId=${initiatorId}, ChatId=${secretChatId}`,
+          'color: #4ADE80; font-weight: bold;'
+        );
+
+        try {
+          const currentUserId = Number(userSession.userId || 0);
+          const { publicKeyBase64: bobPubKey, fingerprint, protectedState } =
+            await secretChatCrypto.processIncomingHandshake(secretChatId, initiatorId, pubKey);
+
+          const db = getLocalDatabase(currentUserId);
+          const existing = await db.cachedSecretChats.get(secretChatId);
+
+          const cachedItem: ICachedSecretChat = {
+            secretChatId,
+            targetUserId: initiatorId,
+            targetName: initiatorName,
+            targetAvatar: typeof initiatorAvatar === 'string' ? initiatorAvatar : null,
+            sharedKey: protectedState,
+            keyFingerprint: fingerprint,
+            isEstablished: true,
+            lastMessage: '🔒 Секретный чат создан.',
+            lastMessageTime: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          };
+
+          if (!existing) {
+            await db.cachedSecretChats.add(cachedItem);
+          } else {
+            await db.cachedSecretChats.put(cachedItem);
+          }
+
+          await this.acceptSecretChatAsync(initiatorId, secretChatId, bobPubKey);
+
+          const secretChat: IChatListItem = {
+            id: initiatorId,
+            userId: initiatorId,
+            groupId: null,
+            nickName: initiatorName,
+            groupName: '',
+            avatarPath: typeof initiatorAvatar === 'string' ? initiatorAvatar : null,
+            isGroup: false,
+            isChannel: false,
+            isSecretChat: true,
+            secretChatId,
+            keyFingerprint: fingerprint,
+            lastMessage: '🔒 Секретный чат создан.',
+            lastMessageType: LastMessageType.None,
+            lastMessageTime: new Date().toISOString(),
+            unreadCount: 0,
+            isPinned: false,
+            isMuted: false,
+            isBlocked: false,
+            isOnline: false,
+            isTyping: false,
+            adminId: 0,
+            memberCount: 0,
+            onlineCount: 0,
+            lastSeen: new Date().toISOString(),
+            groupDescription: '',
+            isPublic: false,
+            groupLink: '',
+            folderIds: [],
+            isLastAttachmentGif: false,
+            isLastMessageDeletedForMe: false,
+          };
+
+          eventBus.emit('SecretChatCreatedMessage' as any, { secretChat });
+          eventBus.emit('SecretChatEstablishedMessage' as any, { secretChatId, keyFingerprint: fingerprint });
+        } catch (ex) {
+          console.error('[E2EE ERROR] Ошибка обработки IncomingSecretChatRequest:', ex);
+        }
+      }
+    );
+
+    // 🟢 3. ХЭНДШЕЙК ПРИНЯТ (АЛИСА)
+    this.hubConnection.on(
+      'SecretChatAccepted',
+      async (responderId: number, secretChatId: string, pubKey: string) => {
+        console.log(
+          `%c[SignalR 📥 SecretChatAccepted] Боб принял чат! ResponderId=${responderId}, ChatId=${secretChatId}`,
+          'color: #F59E0B; font-weight: bold;'
+        );
+
+        try {
+          const currentUserId = Number(userSession.userId || 0);
+          const db = getLocalDatabase(currentUserId);
+          const cached = await db.cachedSecretChats.get(secretChatId);
+          if (!cached) {
+            console.error(`[E2EE ❌] CachedSecretChat не найден для ${secretChatId}!`);
+            return;
+          }
+
+          const { fingerprint, protectedState } = await secretChatCrypto.completeOutgoingHandshake(
+            secretChatId,
+            pubKey,
+            cached.localPrivateKeyBase64
+          );
+
+          cached.sharedKey = protectedState;
+          cached.keyFingerprint = fingerprint;
+          cached.isEstablished = true;
+          cached.localPrivateKeyBase64 = null;
+          cached.lastMessage = '🔒 Секретный чат создан.';
+          cached.lastMessageTime = new Date().toISOString();
+
+          await db.cachedSecretChats.put(cached);
+
+          eventBus.emit('SecretChatEstablishedMessage' as any, { secretChatId, keyFingerprint: fingerprint });
+          eventBus.emit('SidebarUpdateMessage', {
+            userId: responderId,
+            groupId: null,
+            previewText: '🔒 Секретный чат создан.',
+            incrementUnread: false,
+            messageType: LastMessageType.None,
+            secretChatId,
+          });
+        } catch (ex) {
+          console.error('[E2EE ERROR] Ошибка завершения хэндшейка в SecretChatAccepted:', ex);
+        }
+      }
+    );
+
+    // 🟢 4. ВХОДЯЩЕЕ СЕКРЕТНОЕ СООБЩЕНИЕ
+    this.hubConnection.on(
+      'ReceiveSecretMessage',
+      async (
+        senderId: number,
+        secretChatId: string,
+        ciphertext: string,
+        nonce: string,
+        tag: string,
+        seq: number,
+        timestamp: any
+      ) => {
+        console.log(
+          `%c[SignalR 📥 ReceiveSecretMessage] Получен пакет: SenderId=${senderId}, ChatId=${secretChatId}, Seq=${seq}`,
+          'color: #3B82F6; font-weight: bold;'
+        );
+
+        try {
+          const currentUserId = Number(userSession.userId || 0);
+          const db = getLocalDatabase(currentUserId);
+
+          let session = secretChatCrypto.getSession(secretChatId);
+          if (!session || !session.isEstablished) {
+            console.warn(`[SignalR ⚡] Сессия ${secretChatId} отсутствует в памяти, восстанавливаем из IndexedDB...`);
+            const cached = await db.cachedSecretChats.get(secretChatId);
+            if (cached?.sharedKey) {
+              secretChatCrypto.restoreSessionFromProtectedState(
+                cached.secretChatId,
+                typeof cached.sharedKey === 'string' ? cached.sharedKey : ''
+              );
+              session = secretChatCrypto.getSession(secretChatId);
+            } else {
+              console.error(`[SignalR ❌] В IndexedDB не найден SharedKey для секретного чата ${secretChatId}!`);
+              return;
+            }
+          }
+
+          const { decryptedText: decryptedPayload, updatedProtectedState } =
+            await secretChatCrypto.decryptText(secretChatId, ciphertext, nonce, tag, Number(seq));
+
+          console.log(
+            `%c[SignalR 📥 ✅ РАСШИФРОВАНО] Payload='${decryptedPayload.substring(0, 50)}...'`,
+            'color: #10B981; font-weight: bold;'
+          );
+
+          let finalText = decryptedPayload;
+          let replyText: string | null = null;
+          let replySender: string | null = null;
+          let incomingAttachments: AttachmentDto[] | null = null;
+
+          if (decryptedPayload.startsWith('{') && decryptedPayload.endsWith('}')) {
+            try {
+              const payload = JSON.parse(decryptedPayload);
+              if (payload) {
+                finalText = payload.text ?? payload.Text ?? '';
+                replyText = payload.replyText ?? payload.ReplyText ?? null;
+                replySender = payload.replySender ?? payload.ReplySender ?? null;
+                incomingAttachments = payload.attachments ?? payload.Attachments ?? null;
+              }
+            } catch (jsonErr) {
+              console.warn('[SignalR] Payload не является JSON, обрабатывается как обычный текст.');
+            }
+          }
+
+          const isoTimestamp = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
+
+          const newMsg: IMessage = {
+            id: 0,
+            serverId: 0,
+            senderId,
+            receiverId: currentUserId,
+            secretChatId,
+            text: finalText,
+            timestamp: isoTimestamp,
+            isMyMessage: false,
+            isSentToServer: true,
+            isRead: false,
+            isDeleted: false,
+            isDeletedForMe: false,
+            isPinned: false,
+            viewsCount: 1,
+            replyToMessageIds: replyText ? `sec::${replySender}::${replyText}` : null,
+            attachments: (incomingAttachments || []).map((a, idx) => ({
+              id: idx + 1,
+              messageId: 0,
+              type: a.type as AttachmentType,
+              fileName: a.fileName,
+              fileSizeStr: a.fileSizeStr,
+              fileSizeBytes: 0,
+              url: a.url,
+              thumbnailUrl: a.thumbnailUrl,
+              fileHash: a.fileHash,
+              hasAudio: Boolean(a.hasAudio),
+              width: a.width || 0,
+              height: a.height || 0,
+              durationSeconds: a.durationSeconds || 0,
+            })),
+            repliedMessages: replyText
+              ? [
+                  {
+                    id: 0,
+                    senderName: replySender || 'User',
+                    text: replyText,
+                  } as any,
+                ]
+              : [],
+          };
+
+          const { id: _, ...toInsert } = newMsg;
+          const localId = await db.messages.add(toInsert as any);
+          newMsg.id = Number(localId);
+
+          const cachedChat = await db.cachedSecretChats.get(secretChatId);
+          const [sidebarPreview, msgType] = MessagePreviewHelper.formatPreviewFromMessage(newMsg, currentUserId, false, false);
+
+          if (cachedChat) {
+            cachedChat.sharedKey = updatedProtectedState;
+            cachedChat.lastMessage = sidebarPreview;
+            cachedChat.lastMessageTime = new Date().toISOString();
+            await db.cachedSecretChats.put(cachedChat);
+          }
+
+          console.log(
+            `%c[SignalR 📢 EventBus] Эмитим SecretMessageReceivedMessage для ChatId=${secretChatId}`,
+            'color: #3B82F6;'
+          );
+
+          eventBus.emit('SecretMessageReceivedMessage' as any, {
+            senderId,
+            secretChatId,
+            ciphertext: finalText,
+            nonce,
+            tag,
+            timestamp: isoTimestamp,
+            replyText,
+            replySender,
+            incomingAttachments,
+            message: newMsg,
+          });
+
+          eventBus.emit('SidebarUpdateMessage', {
+            userId: senderId,
+            groupId: null,
+            previewText: sidebarPreview,
+            incrementUnread: true,
+            messageType: msgType,
+            secretChatId,
+          });
+        } catch (ex) {
+          console.error(`❌ [SIGNALR CRITICAL] Сбой расшифровки секретного сообщения: SenderId=${senderId}, ChatId=${secretChatId}, Seq=${seq}`, ex);
+        }
+      }
+    );
+
+    // 🟢 5. СБРОС И ПРОЧТЕНИЕ
+    this.hubConnection.on('SecretChatDiscarded', async (senderId: number, secretChatId: string) => {
+      console.log(
+        `%c[SignalR 📥 SecretChatDiscarded] Собеседник сбросил чат: SenderId=${senderId}, ChatId=${secretChatId}`,
+        'color: #EF4444; font-weight: bold;'
+      );
+
+      try {
+        const currentUserId = Number(userSession.userId || 0);
+        const db = getLocalDatabase(currentUserId);
+
+        await db.cachedSecretChats.delete(secretChatId);
+        await db.messages.where('secretChatId').equals(secretChatId).delete();
+      } catch (ex) {
+        console.error('[SignalRService] Ошибка локального удаления сброшенного секретного чата:', ex);
+      }
+
+      eventBus.emit('SecretChatDiscardedMessage' as any, { senderId, secretChatId });
+    });
+
+    this.hubConnection.on('SecretChatWereRead', async (readerId: number, secretChatId: string) => {
+      try {
+        const currentUserId = Number(userSession.userId || 0);
+        const db = getLocalDatabase(currentUserId);
+
+        const myMsgs = await db.messages
+          .filter((m) => m.secretChatId === secretChatId && Boolean(m.isMyMessage) && !m.isRead)
+          .toArray();
+
+        for (const m of myMsgs) {
+          if (m.id) await db.messages.update(m.id, { isRead: true });
+        }
+      } catch (ex) {
+        console.error('[SignalRService] Ошибка обновления статуса прочтения секретного чата:', ex);
+      }
+
+      eventBus.emit('SecretChatWereReadMessage' as any, { readerId, secretChatId });
+    });
+
+    // 🟢 6. СТАТУСЫ ОНЛАЙНА
     this.hubConnection.on('UserStatusChanged', (userId: any, isOnline: any, lastSeen: any) => {
       const uid = Number(userId);
       const online = Boolean(isOnline);
@@ -294,22 +680,8 @@ export class SignalRService {
       });
     });
 
-    // 🟢 3. СЕРВЕРНЫЙ ТАЙМЕР
     this.hubConnection.on('SyncTimer', () => {
       eventBus.emit('SyncTimerMessage' as any, undefined);
-    });
-
-    // 🟢 4. СЕКРЕТНЫЕ ЧАТЫ
-    this.hubConnection.on('IncomingSecretChatRequest', (initiatorId: number, initiatorName: string, initiatorAvatar: any, secretChatId: string, pubKey: string) => {
-      eventBus.emit('IncomingSecretChatRequestMessage' as any, { initiatorId, initiatorName, initiatorAvatar, secretChatId, pubKey });
-    });
-
-    this.hubConnection.on('SecretChatAccepted', (responderId: number, secretChatId: string, pubKey: string) => {
-      eventBus.emit('SecretChatAcceptedMessage' as any, { responderId, secretChatId, pubKey });
-    });
-
-    this.hubConnection.on('ReceiveSecretMessage', (senderId: number, secretChatId: string, ciphertext: string, nonce: string, tag: string, seq: number, timestamp: any) => {
-      eventBus.emit('ReceiveSecretMessage' as any, { senderId, secretChatId, ciphertext, nonce, tag, seq, timestamp });
     });
 
     this.hubConnection.on('NoteUpdated', (noteId: number) => {
@@ -320,15 +692,6 @@ export class SignalRService {
       eventBus.emit('NoteDeleted' as any, Number(noteId));
     });
 
-    this.hubConnection.on('SecretChatDiscarded', (senderId: number, secretChatId: string) => {
-      eventBus.emit('SecretChatDiscardedMessage' as any, { senderId, secretChatId });
-    });
-
-    this.hubConnection.on('SecretChatWereRead', (readerId: number, secretChatId: string) => {
-      eventBus.emit('SecretChatWereReadMessage' as any, { readerId, secretChatId });
-    });
-
-    // 🟢 5. ДЕЙСТВИЯ НАД СООБЩЕНИЯМИ
     this.hubConnection.on('MessagesWereRead', (readerId: number, maxReadId: number) => {
       eventBus.emit('MessagesWereReadMessage', { readerId: Number(readerId), maxReadId: Number(maxReadId) });
     });
@@ -365,7 +728,10 @@ export class SignalRService {
       eventBus.emit('UserTypingMessage', { senderId: Number(senderId), groupId: groupId ? Number(groupId) : null });
     });
 
-    // 🟢 6. ГРУППЫ И ЗВОНКИ
+    this.hubConnection.on('KickedFromGroup', (groupId: number) => {
+      eventBus.emit('KickedFromGroupMessage' as any, { groupId: Number(groupId) });
+    });
+
     this.hubConnection.on('UserJoinedGroup', (groupId: number, member: any, memberCount: number, onlineCount: number) => {
       eventBus.emit('UserJoinedGroupMessage' as any, { groupId, member, memberCount, onlineCount });
     });
@@ -418,35 +784,15 @@ export class SignalRService {
       eventBus.emit('GroupCallWebRTCDataMessage', { groupId: Number(groupId), senderId: Number(senderId), data });
     });
 
-    // 🟢 7. ЗАДАЧИ И СПИСКИ
-    this.hubConnection.on('TaskCreated', (taskDto: any) => {
-      eventBus.emit('TaskCreated', taskDto);
-    });
+    this.hubConnection.on('TaskCreated', (taskDto: any) => eventBus.emit('TaskCreated', taskDto));
+    this.hubConnection.on('TaskUpdated', (taskDto: any) => eventBus.emit('TaskUpdated', taskDto));
+    this.hubConnection.on('TaskDeleted', (taskId: number) => eventBus.emit('TaskDeleted', { taskId: Number(taskId) }));
+    this.hubConnection.on('TaskListCreated', (listDto: any) => eventBus.emit('TaskListCreated', listDto));
+    this.hubConnection.on('TaskListUpdated', (listDto: any) => eventBus.emit('TaskListUpdated', listDto));
+    this.hubConnection.on('TaskListDeleted', (listId: number) => eventBus.emit('TaskListDeleted', { listId: Number(listId) }));
 
-    this.hubConnection.on('TaskUpdated', (taskDto: any) => {
-      eventBus.emit('TaskUpdated', taskDto);
-    });
-
-    this.hubConnection.on('TaskDeleted', (taskId: number) => {
-      eventBus.emit('TaskDeleted', { taskId: Number(taskId) });
-    });
-
-    this.hubConnection.on('TaskListCreated', (listDto: any) => {
-      eventBus.emit('TaskListCreated', listDto);
-    });
-
-    this.hubConnection.on('TaskListUpdated', (listDto: any) => {
-      eventBus.emit('TaskListUpdated', listDto);
-    });
-
-    this.hubConnection.on('TaskListDeleted', (listId: number) => {
-      eventBus.emit('TaskListDeleted', { listId: Number(listId) });
-    });
-
-    // 🟢 8. СИНХРОНИЗАЦИЯ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ
     this.hubConnection.on('UserProfileUpdated', (rawUser: any) => {
       if (!rawUser) return;
-
       const updatedUser: IUser = {
         id: Number(rawUser.id ?? rawUser.Id),
         username: String(rawUser.username ?? rawUser.Username ?? ''),
@@ -464,14 +810,11 @@ export class SignalRService {
         isOnline: Boolean(rawUser.isOnline ?? rawUser.IsOnline),
         lastSeen: rawUser.lastSeen ?? rawUser.LastSeen ?? new Date().toISOString(),
       };
-
       eventBus.emit('UserProfileUpdatedMessage', { user: updatedUser });
     });
 
-    // 🟢 9. СИНХРОНИЗАЦИЯ НАСТРОЕК ПРИВАТНОСТИ
     this.hubConnection.on('PrivacySettingsUpdated', (rawSettings: any) => {
       if (!rawSettings) return;
-
       const dto: PrivacySettingsDto = {
         fullNameVisibility: parsePrivacyVisibility(rawSettings.fullNameVisibility ?? rawSettings.FullNameVisibility),
         genderVisibility: parsePrivacyVisibility(rawSettings.genderVisibility ?? rawSettings.GenderVisibility),
@@ -482,14 +825,11 @@ export class SignalRService {
         phoneVisibility: parsePrivacyVisibility(rawSettings.phoneVisibility ?? rawSettings.PhoneVisibility),
         birthdayVisibility: parsePrivacyVisibility(rawSettings.birthdayVisibility ?? rawSettings.BirthdayVisibility),
       };
-
       eventBus.emit('PrivacySettingsUpdatedMessage', { settings: dto });
     });
 
-    // 🟢 10. ПАПКИ ЧАТОВ
     this.hubConnection.on('ChatFolderCreated', (rawFolder: any) => {
       if (!rawFolder) return;
-
       const folder: IChatFolder = {
         id: Number(rawFolder.id ?? rawFolder.Id),
         name: String(rawFolder.name ?? rawFolder.Name ?? ''),
@@ -503,18 +843,15 @@ export class SignalRService {
 
       const { chatFolders, customFolders } = useChatFolderStore.getState();
       if (!chatFolders.some((f) => f.id === folder.id)) {
-        const updatedChatFolders = [...chatFolders, folder].sort((a, b) => a.orderIndex - b.orderIndex);
-        const updatedCustom = [...customFolders, folder].sort((a, b) => a.orderIndex - b.orderIndex);
         useChatFolderStore.setState({
-          chatFolders: updatedChatFolders,
-          customFolders: updatedCustom,
+          chatFolders: [...chatFolders, folder].sort((a, b) => a.orderIndex - b.orderIndex),
+          customFolders: [...customFolders, folder].sort((a, b) => a.orderIndex - b.orderIndex),
         });
       }
     });
 
     this.hubConnection.on('ChatFolderUpdated', (rawFolder: any) => {
       if (!rawFolder) return;
-
       const folderId = Number(rawFolder.id ?? rawFolder.Id);
       const name = String(rawFolder.name ?? rawFolder.Name ?? '');
       const icon = rawFolder.icon ?? rawFolder.Icon ?? 'FolderOutline';
@@ -523,17 +860,9 @@ export class SignalRService {
       const isSystem = Boolean(rawFolder.isSystem ?? rawFolder.IsSystem);
 
       const { chatFolders, customFolders, selectedFolderId } = useChatFolderStore.getState();
-
-      const updatedChatFolders = chatFolders.map((f) =>
-        f.id === folderId ? { ...f, name, icon, color, orderIndex, isSystem } : f
-      );
-      const updatedCustom = customFolders.map((f) =>
-        f.id === folderId ? { ...f, name, icon, color, orderIndex, isSystem } : f
-      );
-
       useChatFolderStore.setState({
-        chatFolders: updatedChatFolders,
-        customFolders: updatedCustom,
+        chatFolders: chatFolders.map((f) => (f.id === folderId ? { ...f, name, icon, color, orderIndex, isSystem } : f)),
+        customFolders: customFolders.map((f) => (f.id === folderId ? { ...f, name, icon, color, orderIndex, isSystem } : f)),
       });
 
       if (selectedFolderId === folderId) {
@@ -543,28 +872,20 @@ export class SignalRService {
 
     this.hubConnection.on('ChatFolderDeleted', (deletedFolderId: any) => {
       const id = Number(deletedFolderId);
-
       const { chatFolders, customFolders, selectedFolderId, selectFolder } = useChatFolderStore.getState();
-
       const filteredChatFolders = chatFolders.filter((f) => f.id !== id);
       const filteredCustom = customFolders.filter((f) => f.id !== id);
 
-      useChatFolderStore.setState({
-        chatFolders: filteredChatFolders,
-        customFolders: filteredCustom,
-      });
+      useChatFolderStore.setState({ chatFolders: filteredChatFolders, customFolders: filteredCustom });
 
       if (selectedFolderId === id) {
         const allFolder = filteredChatFolders.find((f) => f.isSystem && f.name === 'All') || filteredChatFolders[0];
-        if (allFolder) {
-          selectFolder(allFolder);
-        }
+        if (allFolder) selectFolder(allFolder);
       }
     });
 
     this.hubConnection.on('ChatFoldersOrderUpdated', (rawOrders: any[]) => {
       if (!Array.isArray(rawOrders)) return;
-
       const orderMap = new Map<number, number>(
         rawOrders.map((o: any) => [
           Number(o.folderId ?? o.FolderId ?? o.id ?? o.Id),
@@ -573,41 +894,24 @@ export class SignalRService {
       );
 
       const { chatFolders, customFolders } = useChatFolderStore.getState();
-
-      const updatedChatFolders = chatFolders
-        .map((f) => ({
-          ...f,
-          orderIndex: orderMap.has(f.id) ? orderMap.get(f.id)! : f.orderIndex,
-        }))
-        .sort((a, b) => a.orderIndex - b.orderIndex);
-
-      const updatedCustom = customFolders
-        .map((f) => ({
-          ...f,
-          orderIndex: orderMap.has(f.id) ? orderMap.get(f.id)! : f.orderIndex,
-        }))
-        .sort((a, b) => a.orderIndex - b.orderIndex);
-
       useChatFolderStore.setState({
-        chatFolders: updatedChatFolders,
-        customFolders: updatedCustom,
+        chatFolders: chatFolders
+          .map((f) => ({ ...f, orderIndex: orderMap.has(f.id) ? orderMap.get(f.id)! : f.orderIndex }))
+          .sort((a, b) => a.orderIndex - b.orderIndex),
+        customFolders: customFolders
+          .map((f) => ({ ...f, orderIndex: orderMap.has(f.id) ? orderMap.get(f.id)! : f.orderIndex }))
+          .sort((a, b) => a.orderIndex - b.orderIndex),
       });
     });
 
-    this.hubConnection.on(
-      'ChatFolderChatToggled',
-      (folderId: any, targetUserId: any, targetGroupId: any, isAdded: boolean) => {
-        const fId = Number(folderId);
-        const tUid = targetUserId ? Number(targetUserId) : null;
-        const tGid = targetGroupId ? Number(targetGroupId) : null;
-        const added = Boolean(isAdded);
-
-        const isGroup = Boolean(tGid && tGid > 0);
-        const chatId = isGroup ? tGid! : (tUid ?? 0);
-
-        useSidebarChatsStore.getState().updateChatFolderIds(chatId, isGroup, fId, added);
-      }
-    );
+    this.hubConnection.on('ChatFolderChatToggled', (folderId: any, targetUserId: any, targetGroupId: any, isAdded: boolean) => {
+      const fId = Number(folderId);
+      const tUid = targetUserId ? Number(targetUserId) : null;
+      const tGid = targetGroupId ? Number(targetGroupId) : null;
+      const isGroup = Boolean(tGid && tGid > 0);
+      const chatId = isGroup ? tGid! : (tUid ?? 0);
+      useSidebarChatsStore.getState().updateChatFolderIds(chatId, isGroup, fId, Boolean(isAdded));
+    });
   }
 
   private async safeInvoke<T = void>(methodName: string, ...args: any[]): Promise<T | null> {
@@ -688,18 +992,34 @@ export class SignalRService {
   }
 
   public async requestSecretChatAsync(targetUserId: number, secretChatId: string, publicKey: string): Promise<void> {
+    console.log(
+      `%c[SignalR 📤 RequestSecretChat] Вызов RPC: TargetUser=${targetUserId}, ChatId=${secretChatId}`,
+      'color: #00AFF4; font-weight: bold;'
+    );
     await this.safeInvoke('RequestSecretChat', targetUserId, secretChatId, publicKey);
   }
 
   public async acceptSecretChatAsync(targetUserId: number, secretChatId: string, publicKey: string): Promise<void> {
+    console.log(
+      `%c[SignalR 📤 AcceptSecretChat] Вызов RPC: TargetUser=${targetUserId}, ChatId=${secretChatId}`,
+      'color: #4ADE80; font-weight: bold;'
+    );
     await this.safeInvoke('AcceptSecretChat', targetUserId, secretChatId, publicKey);
   }
 
   public async discardSecretChatAsync(targetUserId: number, secretChatId: string): Promise<void> {
+    console.log(
+      `%c[SignalR 📤 DiscardSecretChat] Вызов RPC: TargetUser=${targetUserId}, ChatId=${secretChatId}`,
+      'color: #EF4444; font-weight: bold;'
+    );
     await this.safeInvoke('DiscardSecretChat', targetUserId, secretChatId);
   }
 
   public async markSecretChatAsReadAsync(targetUserId: number, secretChatId: string): Promise<void> {
+    console.log(
+      `%c[SignalR 📤 MarkSecretChatAsRead] Вызов RPC: TargetUser=${targetUserId}, ChatId=${secretChatId}`,
+      'color: #10B981;'
+    );
     await this.safeInvoke('MarkSecretChatAsRead', targetUserId, secretChatId);
   }
 
@@ -711,6 +1031,10 @@ export class SignalRService {
     tag: string,
     sequenceNumber: number
   ): Promise<void> {
+    console.log(
+      `%c[SignalR 📤 SendSecretMessage] Вызов RPC: TargetUser=${targetUserId}, ChatId=${secretChatId}, Seq=${sequenceNumber}, CipherLen=${ciphertext.length}`,
+      'color: #38BDF8; font-weight: bold;'
+    );
     await this.safeInvoke('SendSecretMessage', targetUserId, secretChatId, ciphertext, nonce, tag, sequenceNumber);
   }
 

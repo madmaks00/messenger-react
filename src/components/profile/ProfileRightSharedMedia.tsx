@@ -2,6 +2,7 @@ import React from 'react';
 import { AttachmentType } from '../../types/enums';
 import { IAttachment, IMessage, MessageHelper } from '../../types/models';
 import { formatDate, formatDateTime, isGifAttachment, normalizeImageSrc } from './profileView.utils';
+import { ProfileEmptyState } from './ProfileEmptyState';
 import { useProfileView } from './useProfileView';
 import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
@@ -88,7 +89,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
       </div>
 
       {/* Контент с группировкой по месяцам */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 25px 24px 25px' }}>
+      <div className="wpf-scroll-viewer" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 25px 24px 25px' }}>
         {/* Фото, Видео, GIF */}
         {['Photos', 'Videos', 'GIFs'].includes(selectedSharedMediaType) &&
           sharedAttachmentGroups.map((group) => (
@@ -98,7 +99,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
               </h4>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {group.items.map((att) => {
-                  const mediaSrc = normalizeImageSrc(att.thumbnailUrl || att.url || att.localThumbnailPath || att.localImagePath);
+                  const mediaSrc = normalizeImageSrc(att.thumbnailUrl || att.url || (att as any).localThumbnailPath || (att as any).localImagePath);
 
                   return (
                     <div
@@ -124,7 +125,6 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
 
-                      {/* Оверлей кнопки Play для видео */}
                       {att.type === AttachmentType.Video && !isGifAttachment(att) && (
                         <div
                           style={{
@@ -141,7 +141,6 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                         </div>
                       )}
 
-                      {/* Бейдж GIF */}
                       {isGifAttachment(att) && (
                         <span
                           style={{
@@ -160,7 +159,6 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                         </span>
                       )}
 
-                      {/* Оверлей подсветки выделения */}
                       {att.isSelected && (
                         <div
                           style={{
@@ -171,7 +169,6 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                         />
                       )}
 
-                      {/* Чекбокс мульти-выделения */}
                       {isSelectionMode && (
                         <div
                           style={{
@@ -310,7 +307,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
             </div>
           ))}
 
-        {/* Ссылки и Закрепленные сообщения */}
+        {/* 🟢 Ссылки и Закрепленные сообщения (1:1 XAML: у Pinned нет левой иконки, только текст и дата) */}
         {['Links', 'Pinned'].includes(selectedSharedMediaType) &&
           sharedPinnedGroups.map((group) => (
             <div key={group.title} style={{ marginBottom: 20 }}>
@@ -328,27 +325,27 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                     }}
                     style={mediaRowCardStyle}
                   >
-                    <div
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 8,
-                        backgroundColor: 'rgba(30, 155, 235, 0.15)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: Theme.AppAccent,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {selectedSharedMediaType === 'Links' ? (
+                    {/* 🟢 Иконка выводится ТОЛЬКО для ссылок (1:1 XAML DataTrigger Value="Links") */}
+                    {selectedSharedMediaType === 'Links' && (
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 8,
+                          backgroundColor: 'rgba(30, 155, 235, 0.15)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: Theme.AppAccent,
+                          flexShrink: 0,
+                        }}
+                      >
                         <Icons.LinkVariant size={20} color={Theme.AppAccent} />
-                      ) : (
-                        <Icons.PinOutline size={20} color={Theme.AppAccent} />
-                      )}
-                    </div>
+                      </div>
+                    )}
+
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                         <span style={{ color: Theme.AppAccent, fontWeight: 'bold', fontSize: 13 }}>
                           {msg.senderName || 'Sender'}
                         </span>
@@ -366,17 +363,13 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
             </div>
           ))}
 
-        {/* Заглушка при отсутствии элементов */}
+        {/* ЕДИНАЯ УНИФИЦИРОВАННАЯ ЗАГЛУШКА */}
         {totalItemsCount === 0 && !isSharedMediaLoading && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginTop: 60 }}>
-            <Icons.ImageMultipleOutline size={56} color={Theme.ProfileNoStoriesIcon} />
-            <div style={{ fontSize: 18, fontWeight: 'bold', color: Theme.MainWindowText, margin: '15px 0 6px 0' }}>
-              No items found
-            </div>
-            <div style={{ fontSize: 13, color: Theme.ProfileNoStoriesSubtitle }}>
-              Shared media in this chat will appear here
-            </div>
-          </div>
+          <ProfileEmptyState
+            icon={<Icons.ImageMultipleOutline size={56} color={Theme.ProfileNoStoriesIcon} />}
+            title="No items found"
+            subtitle="Shared media in this chat will appear here"
+          />
         )}
       </div>
     </div>

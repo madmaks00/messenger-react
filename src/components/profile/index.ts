@@ -1,6 +1,7 @@
 export * from './ProfileView';
 export * from './useProfileView';
 export * from './profileView.utils';
+export * from './ProfileEmptyState';
 export * from './profile.theme';
 export * from './ProfileIcons';
 export * from './ProfileLeftColumn';

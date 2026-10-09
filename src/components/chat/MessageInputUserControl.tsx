@@ -193,7 +193,7 @@ export const MessageInputUserControl: React.FC = () => {
             img.onload = () => {
               (file as any).width = img.naturalWidth;
               (file as any).height = img.naturalHeight;
-              
+
               mediaDimensionsCache.set(file.name, { width: img.naturalWidth, height: img.naturalHeight });
               mediaDimensionsCache.set(objectUrl, { width: img.naturalWidth, height: img.naturalHeight });
               resolve();
@@ -216,7 +216,6 @@ export const MessageInputUserControl: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
-      
       <style>{`
         .wpf-message-input::placeholder {
           color: rgba(255, 255, 255, 0.56) !important;
@@ -382,13 +381,15 @@ export const MessageInputUserControl: React.FC = () => {
 
       {/* 3. ОСНОВНАЯ ОБЛАСТЬ ВВОДА */}
       <div>
-        {isBlockedByMe && (
+        {/* 🟢 1. Пользователя заблокировали ВЫ: отображаем «This user is in your blacklist» */}
+        {isBlockedByMe && !isBlockedByThem && (
           <div style={warningBarStyle}>
             <MdiIcon path={mdiBlockHelper} size={20} color={COLORS.warningBorder} style={{ marginRight: 8 }} />
             <span style={{ color: COLORS.warningText, fontSize: 14, fontWeight: 600 }}>This user is in your blacklist</span>
           </div>
         )}
 
+        {/* 🟢 2. Вас заблокировал ОН: отображаем «You are in this user's blacklist» */}
         {isBlockedByThem && (
           <div style={warningBarStyle}>
             <MdiIcon path={mdiBlockHelper} size={20} color={COLORS.warningBorder} style={{ marginRight: 8 }} />

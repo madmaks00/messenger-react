@@ -31,6 +31,7 @@ import { useMessageInputStore } from '../../stores/messageInputStore';
 import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
 import { useNavigationStore } from '../../stores/navigationStore';
 import { useVideoViewerStore } from '../../stores/videoViewerStore';
+import { useCallsStore } from '../../stores/callsStore';
 import { MessageInputUserControl } from './MessageInputUserControl';
 import { MessageItem } from './MessageItem';
 import { PhotoViewerView } from '../media/PhotoViewerView';
@@ -40,7 +41,7 @@ import { getAvatarColor, normalizeAvatarUrl, formatChatSubtitle } from '../../ut
 import { userSession } from '../../services/userSession';
 import { chatService } from '../../services/chat.service';
 import { eventBus } from '../../services/eventBus';
-import { IAttachment, AttachmentHelper } from '../../types/models';
+import { IAttachment, AttachmentHelper, IChatListItem } from '../../types/models';
 import { AttachmentType } from '../../types/enums';
 
 const PALETTE = {
@@ -107,6 +108,7 @@ export const ChatWorkspaceView: React.FC = () => {
     selectedChatUser,
     currentChatMessages = [],
     isHistoryLoading,
+    isBlockedByMe,
     isBlockedByThem,
     isSelectionMode,
     selectedCount,
@@ -131,7 +133,15 @@ export const ChatWorkspaceView: React.FC = () => {
     markAsRead,
   } = useChatStore();
 
-  const { togglePinChat, toggleMuteChat, clearChatHistory, deleteChat, currentSidebarChat } = useSidebarChatsStore();
+  const {
+    allChats,
+    togglePinChat,
+    toggleMuteChat,
+    blockUser,
+    clearChatHistory,
+    deleteChat,
+  } = useSidebarChatsStore();
+
   const { openUserProfile, openGroupProfile } = useNavigationStore();
   const { setEditMessage, addReplyMessage } = useMessageInputStore();
 
@@ -139,6 +149,83 @@ export const ChatWorkspaceView: React.FC = () => {
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState<boolean>(false);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<number | null>(null);
+
+  const effectiveChat = useMemo((): IChatListItem => {
+    if (!selectedChatUser) {
+      return {
+        id: 0,
+        userId: null,
+        groupId: null,
+        isGroup: false,
+        isChannel: false,
+        isSecretChat: false,
+        nickName: 'User',
+        groupName: 'Group',
+        avatarPath: null,
+        isPinned: false,
+        isMuted: false,
+        isBlocked: false,
+        isOnline: false,
+        isTyping: false,
+        adminId: 0,
+        memberCount: 0,
+        onlineCount: 0,
+        lastSeen: new Date().toISOString(),
+        groupDescription: '',
+        isPublic: false,
+        groupLink: '',
+        folderIds: [],
+        isLastAttachmentGif: false,
+        isLastMessageDeletedForMe: false,
+      };
+    }
+
+    const isGroup = Boolean(selectedChatUser.isGroup);
+    const isSecret = Boolean(selectedChatUser.isSecretChat);
+    const targetId = Number(selectedChatUser.id);
+
+    const found = allChats.find((c) => {
+      if (isSecret) return Boolean(c.isSecretChat && (c.secretChatId === selectedChatUser.secretChatId || c.id === targetId));
+      if (isGroup) return Boolean(c.isGroup && Number(c.groupId ?? c.id) === targetId);
+      return Boolean(!c.isGroup && !c.isSecretChat && Number(c.userId ?? c.id) === targetId);
+    });
+
+    if (found) {
+      return {
+        ...found,
+        isBlocked: Boolean(found.isBlocked || isBlockedByMe),
+      };
+    }
+
+    return {
+      id: targetId,
+      userId: isGroup ? null : targetId,
+      groupId: isGroup ? targetId : null,
+      isGroup,
+      isChannel: Boolean(selectedChatUser.isChannel),
+      isSecretChat: isSecret,
+      secretChatId: selectedChatUser.secretChatId,
+      nickName: selectedChatUser.nickName || 'User',
+      groupName: (selectedChatUser as any).groupName || selectedChatUser.nickName || 'Group',
+      avatarPath: selectedChatUser.avatarPath || (selectedChatUser as any).avatar || null,
+      lastSeen: selectedChatUser.lastSeen || new Date().toISOString(),
+      unreadCount: 0,
+      isPinned: false,
+      isMuted: false,
+      isBlocked: isBlockedByMe,
+      isOnline: Boolean(selectedChatUser.isOnline),
+      isTyping: false,
+      adminId: selectedChatUser.adminId || 0,
+      memberCount: selectedChatUser.memberCount || 0,
+      onlineCount: selectedChatUser.onlineCount || 0,
+      groupDescription: '',
+      isPublic: false,
+      groupLink: '',
+      folderIds: [],
+      isLastAttachmentGif: false,
+      isLastMessageDeletedForMe: false,
+    };
+  }, [allChats, selectedChatUser, isBlockedByMe]);
 
   const [photoViewerState, setPhotoViewerState] = useState<{
     isOpen: boolean;
@@ -330,6 +417,22 @@ export const ChatWorkspaceView: React.FC = () => {
     }
   }, [selectedChatUser, openGroupProfile, openUserProfile]);
 
+  // 🟢 1:1 С C# WPF: Прямой запуск звонка через useCallsStore
+  const handleInitiateCall = useCallback(() => {
+    if (!selectedChatUser) return;
+    if (selectedChatUser.isChannel) {
+      console.warn('[ChatWorkspaceView] Звонки в каналах не поддерживаются.');
+      return;
+    }
+    if (isBlockedByMe || isBlockedByThem) {
+      console.warn('[ChatWorkspaceView] Невозможно позвонить: пользователь заблокирован.');
+      return;
+    }
+
+    // Запускаем звонок (для лички или группы) — окно откроется мгновенно!
+    useCallsStore.getState().startCall(selectedChatUser);
+  }, [selectedChatUser, isBlockedByMe, isBlockedByThem]);
+
   useEffect(() => {
     const handleOutside = () => {
       setIsPinnedPopupOpen(false);
@@ -363,7 +466,7 @@ export const ChatWorkspaceView: React.FC = () => {
       const items = Array.isArray(result) ? result : (result as any).items || (result as any).layoutItems || [];
       const lastItem = items.length > 0 ? items[items.length - 1] : null;
 
-      const exactTotalHeight = lastItem ? Math.ceil(lastItem.yOffset + lastItem.totalHeight + 82.0) : 0;
+      const exactTotalHeight = lastItem ? Math.ceil(lastItem.yOffset + lastItem.totalHeight + 120.0) : 0;
 
       return {
         layoutItems: Array.isArray(items) ? items : [],
@@ -381,6 +484,7 @@ export const ChatWorkspaceView: React.FC = () => {
   const visibleItems = useMemo(() => {
     const items = layoutItems || [];
     if (items.length === 0 || viewportHeight <= 0) return [];
+    if (items.length <= 50) return items;
 
     let low = 0;
     let high = items.length - 1;
@@ -389,7 +493,7 @@ export const ChatWorkspaceView: React.FC = () => {
       if (items[mid].yOffset + items[mid].totalHeight < scrollTop) low = mid + 1;
       else high = mid - 1;
     }
-    const firstIndex = Math.max(0, low - 3);
+    const firstIndex = Math.max(0, low - 5);
 
     low = 0;
     high = items.length - 1;
@@ -399,7 +503,7 @@ export const ChatWorkspaceView: React.FC = () => {
       if (items[mid].yOffset < targetBottom) low = mid + 1;
       else high = mid - 1;
     }
-    const lastIndex = Math.min(items.length - 1, high + 3);
+    const lastIndex = Math.min(items.length - 1, high + 5);
 
     return items.slice(firstIndex, lastIndex + 1);
   }, [layoutItems, scrollTop, viewportHeight]);
@@ -413,6 +517,7 @@ export const ChatWorkspaceView: React.FC = () => {
 
     if (distance < 3) {
       scrollRef.current.scrollTop = targetOffset;
+      setScrollTop(targetOffset);
       onCompleted?.();
       return;
     }
@@ -431,9 +536,11 @@ export const ChatWorkspaceView: React.FC = () => {
       const progress = Math.min(1.0, elapsed / durationMs);
       const easeOut = 1.0 - Math.pow(1.0 - progress, 3.0);
 
+      const current = startOffset + (targetOffset - startOffset) * easeOut;
       if (scrollRef.current) {
-        scrollRef.current.scrollTop = startOffset + (targetOffset - startOffset) * easeOut;
+        scrollRef.current.scrollTop = current;
       }
+      setScrollTop(current);
 
       if (progress < 1.0) {
         animFrameRef.current = requestAnimationFrame(frame);
@@ -441,6 +548,7 @@ export const ChatWorkspaceView: React.FC = () => {
         animFrameRef.current = null;
         isSmoothScrollingRef.current = false;
         if (scrollRef.current) scrollRef.current.scrollTop = targetOffset;
+        setScrollTop(targetOffset);
         onCompleted?.();
       }
     };
@@ -453,8 +561,9 @@ export const ChatWorkspaceView: React.FC = () => {
     scrollToOffsetAnimated(maxScroll, () => {
       isAtBottomRef.current = true;
       setShowScrollBottomBtn(false);
+      markAsRead();
     });
-  }, [scrollToOffsetAnimated]);
+  }, [scrollToOffsetAnimated, markAsRead]);
 
   useLayoutEffect(() => {
     if (!scrollRef.current || !selectedChatUser) return;
@@ -474,8 +583,9 @@ export const ChatWorkspaceView: React.FC = () => {
       prevMessagesLengthRef.current = currentChatMessages.length;
       prevTotalHeightRef.current = totalContentHeight;
       eventBus.emit('FocusMessageInputMessage' as any, undefined);
+      markAsRead();
     }
-  }, [selectedChatUser?.id, isHistoryLoading, totalContentHeight, currentChatMessages]);
+  }, [selectedChatUser?.id, isHistoryLoading, totalContentHeight, currentChatMessages, markAsRead]);
 
   useLayoutEffect(() => {
     if (pendingAnchorRef.current && scrollRef.current && layoutItems.length > 0) {
@@ -755,14 +865,14 @@ export const ChatWorkspaceView: React.FC = () => {
     (selectedChatUser as any)?.avatar ||
     (selectedChatUser as any)?.Avatar ||
     (selectedChatUser as any)?.AvatarPath ||
-    currentSidebarChat?.avatarPath ||
-    (currentSidebarChat as any)?.avatar;
+    effectiveChat?.avatarPath;
 
   const avatarSrc = normalizeAvatarUrl(avatarRaw) || (typeof avatarRaw === 'string' && avatarRaw ? avatarRaw : null);
-  const displayName = selectedChatUser?.nickName || currentSidebarChat?.nickName || (selectedChatUser as any)?.groupName || 'Chat';
+  const displayName = selectedChatUser?.nickName || effectiveChat?.nickName || (selectedChatUser as any)?.groupName || 'Chat';
   const firstLetter = (displayName || 'U').charAt(0).toUpperCase();
 
   const unreadCountInActiveChat = selectedChatUser.unreadCount || 0;
+  const canCallUser = !selectedChatUser.isChannel && !isBlockedByMe && !isBlockedByThem;
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', background: PALETTE.bgChat, position: 'relative', overflow: 'hidden' }}>
@@ -837,7 +947,7 @@ export const ChatWorkspaceView: React.FC = () => {
                     height: 40,
                     borderRadius: 20,
                     backgroundColor: getAvatarColor(
-                      selectedChatUser.id || (selectedChatUser as any).userId || currentSidebarChat?.userId || 0
+                      selectedChatUser.id || (selectedChatUser as any).userId || effectiveChat.userId || 0
                     ),
                     display: 'flex',
                     alignItems: 'center',
@@ -1036,10 +1146,11 @@ export const ChatWorkspaceView: React.FC = () => {
                 <MdiIcon path={mdiMagnify} size={22} />
               </HeaderIconButton>
 
-              {!selectedChatUser.isChannel && (
+              {/* 🟢 КНОПКА ЗВОНКА (ПОКАЗЫВАЕТСЯ И В ЛИЧКЕ, И В ГРУППАХ) */}
+              {canCallUser && (
                 <HeaderIconButton
-                  title="Call"
-                  onClick={() => eventBus.emit('StartCallMessage' as any, { user: selectedChatUser })}
+                  title={selectedChatUser.isGroup ? 'Group Call' : 'Call'}
+                  onClick={handleInitiateCall}
                 >
                   <MdiIcon path={mdiPhoneOutline} size={24} />
                 </HeaderIconButton>
@@ -1063,7 +1174,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       position: 'absolute',
                       right: 0,
                       top: 48,
-                      minWidth: 180,
+                      minWidth: 195,
                       backgroundColor: PALETTE.contextMenuBg,
                       border: `1.2px solid ${PALETTE.contextMenuBorder}`,
                       borderRadius: 10,
@@ -1081,33 +1192,34 @@ export const ChatWorkspaceView: React.FC = () => {
                       }}
                     />
 
-                    {!selectedChatUser.isChannel && (
+                    {/* 🟢 ПУНКТ ЗВОНКА В МЕНЮ ТРОЕТОЧИЯ */}
+                    {canCallUser && (
                       <HeaderMenuItem
                         icon={mdiPhoneOutline}
-                        text="Call"
+                        text={selectedChatUser.isGroup ? 'Group Call' : 'Call'}
                         onClick={() => {
                           setIsHeaderMenuOpen(false);
-                          eventBus.emit('StartCallMessage' as any, { user: selectedChatUser });
+                          handleInitiateCall();
                         }}
                       />
                     )}
 
                     <HeaderMenuItem
-                      icon={mdiPinOutline}
-                      rotate={45}
-                      text={currentSidebarChat?.isPinned ? 'Unpin Chat' : 'Pin Chat'}
+                      icon={effectiveChat.isPinned ? mdiPin : mdiPinOutline}
+                      rotate={effectiveChat.isPinned ? 0 : 45}
+                      text={effectiveChat.isPinned ? 'Unpin Chat' : 'Pin Chat'}
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        if (currentSidebarChat) togglePinChat(currentSidebarChat);
+                        togglePinChat(effectiveChat);
                       }}
                     />
 
                     <HeaderMenuItem
-                      icon={currentSidebarChat?.isMuted ? mdiBellOutline : mdiBellOffOutline}
-                      text={currentSidebarChat?.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
+                      icon={effectiveChat.isMuted ? mdiBellOutline : mdiBellOffOutline}
+                      text={effectiveChat.isMuted ? 'Unmute Notifications' : 'Mute Notifications'}
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        if (currentSidebarChat) toggleMuteChat(currentSidebarChat);
+                        toggleMuteChat(effectiveChat);
                       }}
                     />
 
@@ -1130,7 +1242,21 @@ export const ChatWorkspaceView: React.FC = () => {
                       text="Clear History"
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        if (currentSidebarChat) clearChatHistory(currentSidebarChat, false);
+                        const isGroup = Boolean(effectiveChat.isGroup);
+                        const chatName = (isGroup ? effectiveChat.groupName : effectiveChat.nickName) || 'Chat';
+
+                        eventBus.emit('OpenConfirmDialogMessage' as any, {
+                          title: chatName,
+                          avatar: effectiveChat.avatarPath,
+                          icon: mdiBroom,
+                          iconColor: 'var(--text-muted)',
+                          message: 'Are you sure you want to clear message history in this chat?',
+                          checkboxText: isGroup ? null : `Also clear for ${chatName}`,
+                          confirmButtonText: 'Clear',
+                          onConfirmAction: async (deleteForAll: boolean) => {
+                            await clearChatHistory(effectiveChat, deleteForAll);
+                          },
+                        });
                       }}
                     />
 
@@ -1140,18 +1266,35 @@ export const ChatWorkspaceView: React.FC = () => {
                       isDestructive
                       onClick={() => {
                         setIsHeaderMenuOpen(false);
-                        if (currentSidebarChat) deleteChat(currentSidebarChat);
+                        const isGroup = Boolean(effectiveChat.isGroup);
+                        const chatName = (isGroup ? effectiveChat.groupName : effectiveChat.nickName) || 'Chat';
+
+                        eventBus.emit('OpenConfirmDialogMessage' as any, {
+                          title: chatName,
+                          avatar: effectiveChat.avatarPath,
+                          icon: mdiDeleteOutline,
+                          iconColor: 'var(--destructive-action)',
+                          message: isGroup
+                            ? 'Are you sure you want to leave and delete this group?'
+                            : `Are you sure you want to delete the chat with ${chatName}?`,
+                          checkboxText: isGroup ? null : `Also delete for ${chatName}`,
+                          confirmButtonText: 'Delete',
+                          isDestructive: true,
+                          onConfirmAction: async (deleteForAll: boolean) => {
+                            await deleteChat(effectiveChat, undefined, deleteForAll);
+                          },
+                        });
                       }}
                     />
 
                     {!selectedChatUser.isGroup && !selectedChatUser.isChannel && (
                       <HeaderMenuItem
                         icon={mdiBlockHelper}
-                        text="Block User"
-                        isDestructive
+                        text={isBlockedByMe || effectiveChat.isBlocked ? 'Unblock User' : 'Block User'}
+                        isDestructive={!isBlockedByMe && !effectiveChat.isBlocked}
                         onClick={() => {
                           setIsHeaderMenuOpen(false);
-                          eventBus.emit('ToggleBlockUserMessage' as any, { userId: selectedChatUser.id });
+                          blockUser(effectiveChat);
                         }}
                       />
                     )}
@@ -1307,7 +1450,7 @@ export const ChatWorkspaceView: React.FC = () => {
           }}
         >
           <div style={{ height: `${totalContentHeight}px`, position: 'relative', width: '100%' }}>
-            {(visibleItems || []).map((item) => {
+            {(visibleItems || []).map((item, idx) => {
               const isMsgHighlighted = Boolean(
                 highlightedMessageId &&
                 (Number(item.id) === Number(highlightedMessageId) ||
@@ -1316,7 +1459,7 @@ export const ChatWorkspaceView: React.FC = () => {
 
               return (
                 <MessageItem
-                  key={item.id || item.serverId}
+                  key={`msg_${item.id || 0}_${item.serverId || 0}_${item.timestamp}_${idx}`}
                   model={item}
                   isHighlighted={isMsgHighlighted}
                   isSelectionMode={isSelectionMode}

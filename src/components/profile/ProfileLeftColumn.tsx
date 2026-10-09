@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { IUser } from '../../types/models';
 import {
   getAvatarColor,
@@ -43,6 +43,8 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
     copyToClipboard,
     expandRightPanel,
     activeRightContainer,
+    selectedSharedMediaType,
+    groupMembersPanelTitle,
     isObservedUserMuted,
     isBlockedByMe,
     isBlockedByThem,
@@ -56,8 +58,15 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
     setCurrentSettingsSubPanel,
   } = vm;
 
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [avatarLoadError, setAvatarLoadError] = useState(false);
   const [hoveredCopyKey, setHoveredCopyKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [displayedUser?.id]);
 
   const rawAvatar = isGroupProfile
     ? groupDetails?.avatar
@@ -65,15 +74,27 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
   const avatarSrc = normalizeImageSrc(rawAvatar);
   const hasAvatar = Boolean(!avatarLoadError && avatarSrc);
 
+  const isStoriesActive = activeRightContainer === 'stories';
+  const isSharedTabActive = (type: string) =>
+    activeRightContainer === 'sharedMedia' && selectedSharedMediaType === type;
+  const isMembersTabActive = (titleKeyword: string) =>
+    activeRightContainer === 'members' &&
+    groupMembersPanelTitle.toLowerCase().includes(titleKeyword.toLowerCase());
+  const isEditGroupActive = activeRightContainer === 'editGroup';
+
+  // 🟢 Рендер копируемого текста с симметричным балансиром для 100% центровки (1:1 TelegramCopyTextButtonStyle)
   const renderCopyButton = (
     text: string,
     key: string,
     label: string,
-    isAccent: boolean = false
+    isAccent: boolean = false,
+    isCentered: boolean = false
   ) => {
     const isCopied = copiedKey === key;
     const isHovered = hoveredCopyKey === key;
-    const textColor = isAccent ? Theme.AppAccent : Theme.MainWindowText;
+
+    // 🟢 Точный цвет юзернейма из C# DefaultDark.xaml (TgAccent / OtherProfileInfoIconAtBrush = #00AFF4)
+    const textColor = isAccent ? '#00AFF4' : Theme.MainWindowText;
 
     return (
       <div
@@ -84,20 +105,38 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 6,
+          justifyContent: isCentered ? 'center' : 'flex-start',
           cursor: 'pointer',
           color: textColor,
           fontSize: 14,
           fontWeight: 500,
           textDecoration: isHovered ? 'underline' : 'none',
+          userSelect: 'none',
         }}
       >
+        {/* 🟢 Левый балансир шириной 24px (1:1 LeftBalanceCol из WPF) для математической центровки текста */}
+        {isCentered && (
+          <div style={{ width: 24, height: 20, flexShrink: 0 }} aria-hidden="true" />
+        )}
+
         <span>{text}</span>
-        <div style={{ width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+
+        {/* Правый контейнер иконки (24px) */}
+        <div
+          style={{
+            width: 24,
+            height: 20,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            marginLeft: 4,
+          }}
+        >
           {isCopied ? (
-            <Icons.CheckBold size={14} color={Theme.AppAccent} />
+            <Icons.CheckBold size={14} color="#00AFF4" />
           ) : (
-            <div style={{ opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s' }}>
+            <div style={{ opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s ease' }}>
               <Icons.ContentCopy size={13} color={Theme.ProfileSectionLabel} />
             </div>
           )}
@@ -110,16 +149,19 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
     <div
       style={{
         width: 365,
-        height: '100%',
+        minWidth: 365,
+        maxWidth: 365,
+        height: 720,
+        maxHeight: 720,
         backgroundColor: Theme.ProfileLeftPanelBackground,
         borderRight: isExpanded ? `1px solid ${Theme.ProfileLeftPanelBorder}` : 'none',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
         boxSizing: 'border-box',
+        overflow: 'hidden',
       }}
     >
-      {/* Кнопка закрытия карточки */}
       {!isExpanded && (
         <button
           onClick={onClose}
@@ -144,7 +186,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
       )}
 
       {/* 1. СТАТИЧНЫЙ ВЕРХ */}
-      <div style={{ padding: '20px 20px 15px 20px', textAlign: 'center' }}>
+      <div style={{ padding: '20px 20px 15px 20px', textAlign: 'center', flexShrink: 0 }}>
         {/* Аватар 110x110 */}
         <div
           style={{
@@ -193,21 +235,24 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           {isGroupProfile ? (groupDetails?.name || displayedUser.nickName) : displayedUser.nickName}
         </h3>
 
-        {/* Юзернейм (@username) */}
+        {/* 🟢 Юзернейм (@username): строго по центру с левым балансиром и цветом #00AFF4 */}
         {!isGroupProfile && displayedUser.username && (
-          <div style={{ marginTop: 2, marginBottom: 16 }}>
-            {renderCopyButton(`@${displayedUser.username}`, 'username', 'username', true)}
+          <div style={{ marginTop: 2, marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+            {renderCopyButton(`@${displayedUser.username}`, 'username', 'username', true, true)}
           </div>
         )}
 
-        {/* ВЕРХНИЕ КНОПКИ ДЕЙСТВИЯ (ЧУЖОЙ ПРОФИЛЬ) */}
+        {/* ВЕРХНИЕ КНОПКИ ДЕЙСТВИЯ (ЧУЖОЙ ПРОФИЛЬ: CHAT, MUTE, CALL) */}
         {!isOwnProfile && !isGroupProfile && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 10 }}>
-            <button onClick={() => onStartChat(displayedUser.id)} style={actionSquareBtnStyle}>
+            {/* 1. Chat */}
+            <ActionSquareButton onClick={() => onStartChat(displayedUser.id)} title="Chat">
               <Icons.MessageTextOutline size={22} color={Theme.ProfileActionButtonText} style={{ marginBottom: 4 }} />
               <span style={{ fontSize: 11, fontWeight: 600, color: Theme.ProfileActionButtonText }}>Chat</span>
-            </button>
-            <button onClick={() => onToggleMute(displayedUser.id)} style={actionSquareBtnStyle}>
+            </ActionSquareButton>
+
+            {/* 2. Mute / Unmute */}
+            <ActionSquareButton onClick={() => onToggleMute(displayedUser.id)} title={isObservedUserMuted ? 'Unmute' : 'Mute'}>
               {isObservedUserMuted ? (
                 <Icons.BellOffOutline size={22} color={Theme.ProfileActionButtonText} style={{ marginBottom: 4 }} />
               ) : (
@@ -216,70 +261,68 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
               <span style={{ fontSize: 11, fontWeight: 600, color: Theme.ProfileActionButtonText }}>
                 {isObservedUserMuted ? 'Unmute' : 'Mute'}
               </span>
-            </button>
-            <button
-              onClick={() => onCallUser(displayedUser)}
-              disabled={isBlockedByMe || isBlockedByThem}
-              style={{
-                ...actionSquareBtnStyle,
-                opacity: isBlockedByMe || isBlockedByThem ? 0.5 : 1,
-                cursor: isBlockedByMe || isBlockedByThem ? 'not-allowed' : 'pointer',
+            </ActionSquareButton>
+
+            {/* 3. Call: 1:1 с WPF (всегда активно, проверяет блокировку при нажатии) */}
+            <ActionSquareButton
+              onClick={() => {
+                if (isBlockedByMe || isBlockedByThem) return;
+                onCallUser(displayedUser);
               }}
+              title={isBlockedByMe || isBlockedByThem ? 'User is blocked' : 'Call'}
             >
               <Icons.PhoneOutline size={22} color={Theme.ProfileActionButtonText} style={{ marginBottom: 4 }} />
               <span style={{ fontSize: 11, fontWeight: 600, color: Theme.ProfileActionButtonText }}>Call</span>
-            </button>
+            </ActionSquareButton>
           </div>
         )}
 
-        {/* ВЕРХНИЕ КНОПКИ ДЕЙСТВИЯ (СВОЙ ПРОФИЛЬ: 1:1 С WPF БЕЗ СИНЕЙ РАМКИ) */}
+        {/* ВЕРХНИЕ КНОПКИ ДЕЙСТВИЯ (СВОЙ ПРОФИЛЬ) */}
         {isOwnProfile && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 10 }}>
-            <button
+            <ActionSquareButton
               onClick={() => expandRightPanel('stories')}
-              style={{
-                ...actionSquareBtnStyle,
-                backgroundColor: activeRightContainer === 'stories' ? Theme.ProfileActionButtonBorder : Theme.ProfileActionButtonBg,
-                borderColor: Theme.ProfileActionButtonBorder,
-              }}
+              isActive={activeRightContainer === 'stories'}
             >
               <Icons.PlayCircleOutline size={22} color={Theme.ProfileActionButtonText} style={{ marginBottom: 4 }} />
               <span style={{ fontSize: 11, fontWeight: 600, color: Theme.ProfileActionButtonText }}>Stories</span>
-            </button>
-            <button
+            </ActionSquareButton>
+            <ActionSquareButton
               onClick={() => expandRightPanel('editProfile')}
-              style={{
-                ...actionSquareBtnStyle,
-                backgroundColor: activeRightContainer === 'editProfile' ? Theme.ProfileActionButtonBorder : Theme.ProfileActionButtonBg,
-                borderColor: Theme.ProfileActionButtonBorder,
-              }}
+              isActive={activeRightContainer === 'editProfile'}
             >
               <Icons.PencilOutline size={22} color={Theme.ProfileActionButtonText} style={{ marginBottom: 4 }} />
               <span style={{ fontSize: 11, fontWeight: 600, color: Theme.ProfileActionButtonText }}>Edit Info</span>
-            </button>
-            <button
+            </ActionSquareButton>
+            <ActionSquareButton
               onClick={() => {
                 setCurrentSettingsSubPanel('main');
                 expandRightPanel('settings');
               }}
-              style={{
-                ...actionSquareBtnStyle,
-                backgroundColor: activeRightContainer === 'settings' ? Theme.ProfileActionButtonBorder : Theme.ProfileActionButtonBg,
-                borderColor: Theme.ProfileActionButtonBorder,
-              }}
+              isActive={activeRightContainer === 'settings'}
             >
               <Icons.CogOutline size={22} color={Theme.ProfileActionButtonText} style={{ marginBottom: 4 }} />
               <span style={{ fontSize: 11, fontWeight: 600, color: Theme.ProfileActionButtonText }}>Settings</span>
-            </button>
+            </ActionSquareButton>
           </div>
         )}
       </div>
 
-      <div style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '0 20px' }} />
+      <div style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '0 20px', flexShrink: 0 }} />
 
-      {/* 2. СКРОЛЛИРУЕМАЯ ИНФОРМАЦИЯ (1:1 XAML) */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '15px 25px' }}>
-        {/* 1. Full name (Иконка строго по центру строки, 1:1 с WPF VerticalAlignment="Center") */}
+      {/* 2. СКРОЛЛИРУЕМАЯ ИНФОРМАЦИЯ */}
+      <div
+        ref={scrollRef}
+        className="wpf-scroll-viewer"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '15px 20px 15px 25px',
+        }}
+      >
+        {/* Full name */}
         {!isGroupProfile && (isOwnProfile || displayedUser.firstName || displayedUser.lastName) && (
           <div style={infoRowGridStyle}>
             <div style={infoIconWrapperStyle}>
@@ -298,7 +341,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           </div>
         )}
 
-        {/* 2. About me / Description (Иконка выровнена по верху с отступом 6px, 1:1 с WPF VerticalAlignment="Top" Margin="0,6,15,0") */}
+        {/* About me / Description */}
         <div style={infoRowGridStyle}>
           <div style={{ ...infoIconWrapperStyle, alignSelf: 'start', marginTop: 4 }}>
             <Icons.InformationOutline size={22} color={Theme.ProfileInfoIconAbout} />
@@ -315,7 +358,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           </div>
         </div>
 
-        {/* 3. Group Link & Type */}
+        {/* Group Link & Type */}
         {isGroupProfile && (
           <div style={infoRowGridStyle}>
             <div style={infoIconWrapperStyle}>
@@ -325,14 +368,14 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
               {groupDetails?.isPublic ? (
                 <>
                   <div style={labelStyle}>Link</div>
-                  {renderCopyButton(groupDetails.groupLink || `@${groupDetails.username || 'group'}`, 'groupLink', 'link', true)}
+                  {renderCopyButton(groupDetails.groupLink || `@${groupDetails.username || 'group'}`, 'groupLink', 'link', true, false)}
                 </>
               ) : groupDetails?.isAdmin || groupDetails?.isOwner ? (
                 <>
                   <div style={labelStyle}>Invite Link (Private)</div>
                   {groupDetails?.groupLink ? (
                     <div>
-                      {renderCopyButton(groupDetails.groupLink, 'inviteLink', 'invite link', true)}
+                      {renderCopyButton(groupDetails.groupLink, 'inviteLink', 'invite link', true, false)}
                       <div style={{ fontSize: 12, color: Theme.ProfileSectionLabel, marginTop: 2 }}>
                         {groupDetails.inviteLinkExpirationDisplay || 'Active invite link'}
                       </div>
@@ -365,7 +408,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           </div>
         )}
 
-        {/* 4. Phone Number (Иконка строго по центру строки, текст белый) */}
+        {/* Phone Number */}
         {!isGroupProfile && (isOwnProfile || displayedUser.phone) && (
           <div style={infoRowGridStyle}>
             <div style={infoIconWrapperStyle}>
@@ -374,7 +417,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
             <div>
               <div style={labelStyle}>Phone Number</div>
               {displayedUser.phone && displayedUser.phone !== 'Not set' ? (
-                renderCopyButton(formatPhoneNumber(displayedUser.phone), 'phone', 'Phone', false)
+                renderCopyButton(formatPhoneNumber(displayedUser.phone), 'phone', 'Phone', false, false)
               ) : (
                 <span style={notSetStyle}>Not set</span>
               )}
@@ -382,7 +425,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           </div>
         )}
 
-        {/* 5. Email Address (Иконка строго по центру строки, текст белый) */}
+        {/* Email Address */}
         {!isGroupProfile && (isOwnProfile || displayedUser.email) && (
           <div style={infoRowGridStyle}>
             <div style={infoIconWrapperStyle}>
@@ -391,7 +434,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
             <div>
               <div style={labelStyle}>Email Address</div>
               {displayedUser.email && displayedUser.email !== 'Not set' ? (
-                renderCopyButton(displayedUser.email, 'email', 'Email', false)
+                renderCopyButton(displayedUser.email, 'email', 'Email', false, false)
               ) : (
                 <span style={notSetStyle}>Not set</span>
               )}
@@ -399,7 +442,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           </div>
         )}
 
-        {/* 6. Gender (Иконка строго по центру строки, честный знак ♂/♀) */}
+        {/* Gender */}
         {!isGroupProfile && (isOwnProfile || (displayedUser.gender !== null && displayedUser.gender !== undefined)) && (
           <div style={infoRowGridStyle}>
             <div style={infoIconWrapperStyle}>
@@ -408,17 +451,17 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
             <div>
               <div style={labelStyle}>Gender</div>
               <div style={valueStyle}>
-                {displayedUser.gender === 0 || displayedUser.gender === 'Male' as any
+                {displayedUser.gender === 0 || (displayedUser.gender as any) === 'Male'
                   ? 'Male'
-                  : displayedUser.gender === 1 || displayedUser.gender === 'Female' as any
-                  ? 'Female'
-                  : <span style={notSetStyle}>Not set</span>}
+                  : displayedUser.gender === 1 || (displayedUser.gender as any) === 'Female'
+                    ? 'Female'
+                    : <span style={notSetStyle}>Not set</span>}
               </div>
             </div>
           </div>
         )}
 
-        {/* 7. Date of Birth (Иконка строго по центру строки, честный торт CakeVariant) */}
+        {/* Date of Birth */}
         {!isGroupProfile && (isOwnProfile || displayedUser.birthday) && (
           <div style={infoRowGridStyle}>
             <div style={infoIconWrapperStyle}>
@@ -431,7 +474,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           </div>
         )}
 
-        {/* 8. Member since (Для своего профиля: отступ снизу 20px) */}
+        {/* Member since */}
         {isOwnProfile && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, margin: '0 0 20px 0', fontSize: 12, color: Theme.ProfileMetadataLabel }}>
             <Icons.CalendarBlankOutline size={14} color={Theme.ProfileMetadataLabel} />
@@ -444,77 +487,186 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
         {!isOwnProfile && !isGroupProfile && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '10px 0' }} />
-            <button onClick={handleOpenStoriesMenu} style={menuListBtnStyle}>
+
+            <MenuTabButton
+              onClick={handleOpenStoriesMenu}
+              isActive={isStoriesActive}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.PlayCircleOutline size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Stories</span>
+                <Icons.PlayCircleOutline
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Stories
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => loadSharedMedia('Pinned')} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton
+              onClick={() => loadSharedMedia('Pinned')}
+              isActive={isSharedTabActive('Pinned')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.PinOutline size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Pinned Messages</span>
+                <Icons.PinOutline
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Pinned Messages
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => loadSharedMedia('Photos')} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton
+              onClick={() => loadSharedMedia('Photos')}
+              isActive={isSharedTabActive('Photos')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.ImageOutline size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Photos</span>
+                <Icons.ImageOutline
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Photos
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => loadSharedMedia('Videos')} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton
+              onClick={() => loadSharedMedia('Videos')}
+              isActive={isSharedTabActive('Videos')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.VideoOutline size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Videos</span>
+                <Icons.VideoOutline
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Videos
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => loadSharedMedia('GIFs')} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton
+              onClick={() => loadSharedMedia('GIFs')}
+              isActive={isSharedTabActive('GIFs')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.FileGifBox size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>GIFs</span>
+                <Icons.FileGifBox
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  GIFs
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => loadSharedMedia('Audios')} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton
+              onClick={() => loadSharedMedia('Audios')}
+              isActive={isSharedTabActive('Audios')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.MusicNoteOutline size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Audio files</span>
+                <Icons.MusicNoteOutline
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Audio files
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => loadSharedMedia('Voice')} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton
+              onClick={() => loadSharedMedia('Voice')}
+              isActive={isSharedTabActive('Voice')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.MicrophoneOutline size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Voice messages</span>
+                <Icons.MicrophoneOutline
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Voice messages
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => loadSharedMedia('Documents')} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton
+              onClick={() => loadSharedMedia('Documents')}
+              isActive={isSharedTabActive('Documents')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.FileDocumentOutline size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Documents</span>
+                <Icons.FileDocumentOutline
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Documents
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => loadSharedMedia('Links')} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton
+              onClick={() => loadSharedMedia('Links')}
+              isActive={isSharedTabActive('Links')}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <Icons.LinkVariant size={20} color={Theme.OtherProfileSharedMediaIcon} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Shared Links</span>
+                <Icons.LinkVariant
+                  size={20}
+                  color={Theme.OtherProfileSharedMediaIcon}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Shared Links
+                </span>
               </div>
-              <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => onToggleBlockUser(displayedUser.id)} style={menuListBtnStyle}>
+              <Icons.ChevronRight
+                size={18}
+                color={Theme.ProfileSectionLabel}
+              />
+            </MenuTabButton>
+
+            <MenuTabButton onClick={() => onToggleBlockUser(displayedUser.id)} hoverBg="rgba(255, 59, 48, 0.12)">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <Icons.BlockHelper size={20} color={Theme.ProfileDestructiveAction} />
                 <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.ProfileDestructiveAction }}>
                   {isBlockedByMe ? 'Unblock User' : 'Block User'}
                 </span>
               </div>
-            </button>
+            </MenuTabButton>
           </div>
         )}
 
@@ -522,28 +674,45 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
         {isGroupProfile && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '10px 0' }} />
-            <button onClick={() => handleShowMembers('members')} style={menuListBtnStyle}>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Members ({membersCount})</span>
+            <MenuTabButton
+              onClick={() => handleShowMembers('members')}
+              isActive={isMembersTabActive('members')}
+            >
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                Members ({membersCount})
+              </span>
               <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
-            <button onClick={() => handleShowMembers('admins')} style={menuListBtnStyle}>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Administrators ({adminsCount})</span>
+            </MenuTabButton>
+            <MenuTabButton
+              onClick={() => handleShowMembers('admins')}
+              isActive={isMembersTabActive('admins')}
+            >
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                Administrators ({adminsCount})
+              </span>
               <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-            </button>
+            </MenuTabButton>
             {(groupDetails?.isAdmin || groupDetails?.isOwner) && (
-              <button onClick={() => handleShowMembers('blacklist')} style={menuListBtnStyle}>
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>Blacklist ({blackListCount})</span>
+              <MenuTabButton
+                onClick={() => handleShowMembers('blacklist')}
+                isActive={isMembersTabActive('blacklist')}
+              >
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
+                  Blacklist ({blackListCount})
+                </span>
                 <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
-              </button>
+              </MenuTabButton>
             )}
             {(groupDetails?.isAdmin || groupDetails?.isOwner) && (
-              <button
+              <MenuTabButton
                 onClick={() => expandRightPanel('editGroup')}
-                style={{ ...menuListBtnStyle, color: Theme.AppAccent }}
+                isActive={isEditGroupActive}
+                style={{ color: Theme.AppAccent }}
+                hoverBg="rgba(30, 155, 235, 0.12)"
               >
                 <span style={{ fontSize: 13.5, fontWeight: 'bold' }}>Manage Group</span>
                 <Icons.ChevronRight size={18} color={Theme.AppAccent} />
-              </button>
+              </MenuTabButton>
             )}
           </div>
         )}
@@ -552,16 +721,113 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
   );
 };
 
-// =========================================================================
-// 1:1 СТИЛИ WPF
-// =========================================================================
+interface MenuTabButtonProps {
+  onClick: () => void;
+  children: React.ReactNode;
+  isActive?: boolean;
+  style?: React.CSSProperties;
+  hoverBg?: string;
+}
+
+const MenuTabButton: React.FC<MenuTabButtonProps> = ({
+  onClick,
+  children,
+  isActive = false,
+  style,
+  hoverBg = 'rgba(255, 255, 255, 0.08)',
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  const currentBg = isActive
+    ? isHovered
+      ? 'rgba(255, 255, 255, 0.18)'
+      : 'rgba(255, 255, 255, 0.14)'
+    : isHovered
+    ? hoverBg
+    : 'transparent';
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        width: '100%',
+        padding: '8px 10px',
+        backgroundColor: currentBg,
+        border: 'none',
+        borderRadius: 8,
+        color: Theme.MainWindowText,
+        cursor: 'pointer',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        boxSizing: 'border-box',
+        transition: 'background-color 0.2s ease',
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+};
+
+interface ActionSquareButtonProps {
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+  isActive?: boolean;
+  title?: string;
+}
+
+const ActionSquareButton: React.FC<ActionSquareButtonProps> = ({
+  onClick,
+  children,
+  disabled = false,
+  isActive = false,
+  title,
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  const bgColor = isActive
+    ? Theme.ProfileActionButtonBorder
+    : isHovered && !disabled
+      ? Theme.ProfileActionButtonBorder
+      : Theme.ProfileActionButtonBg;
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        height: 60,
+        borderRadius: 8,
+        border: `1px solid ${Theme.ProfileActionButtonBorder}`,
+        backgroundColor: bgColor,
+        color: Theme.ProfileActionButtonText,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'background-color 0.2s ease, border-color 0.2s ease',
+      }}
+    >
+      {children}
+    </button>
+  );
+};
 
 const infoRowGridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: '22px 1fr',
   gap: 15,
   marginBottom: 20,
-  alignItems: 'center', // 1:1 с WPF VerticalAlignment="Center" (иконка центрируется ровно между лейблом и значением)
+  alignItems: 'center',
 };
 
 const infoIconWrapperStyle: React.CSSProperties = {
@@ -587,33 +853,4 @@ const valueStyle: React.CSSProperties = {
 
 const notSetStyle: React.CSSProperties = {
   color: Theme.ProfileSectionLabel,
-};
-
-const actionSquareBtnStyle: React.CSSProperties = {
-  height: 60,
-  borderRadius: 8,
-  border: `1px solid ${Theme.ProfileActionButtonBorder}`,
-  backgroundColor: Theme.ProfileActionButtonBg,
-  color: Theme.ProfileActionButtonText,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
-  transition: 'all 0.15s ease-out',
-};
-
-const menuListBtnStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 10px',
-  background: 'transparent',
-  border: 'none',
-  borderRadius: 8,
-  color: Theme.MainWindowText,
-  cursor: 'pointer',
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  boxSizing: 'border-box',
-  transition: 'background-color 0.15s',
 };

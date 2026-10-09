@@ -65,7 +65,6 @@ export class UserService implements IUserService {
     return null;
   }
 
-  // Поддержка обоих маршрутов бэкенда: api/Users/{id} и api/User/{id}
   public async getUserProfileAsync(userId: number): Promise<IUser | null> {
     const targetId = Number(userId || 0);
     if (targetId <= 0) return null;
@@ -213,8 +212,14 @@ export class UserService implements IUserService {
 
   public async toggleBlockUserAsync(targetUserId: number): Promise<boolean | null> {
     try {
-      const response = await apiClient.post(`api/User/toggle-block/${targetUserId}`);
-      if (response.status >= 200 && response.status < 300) {
+      let response;
+      try {
+        response = await apiClient.post(`api/User/toggle-block/${targetUserId}`);
+      } catch {
+        response = await apiClient.post(`api/Users/toggle-block/${targetUserId}`);
+      }
+
+      if (response && response.status >= 200 && response.status < 300) {
         if (typeof response.data === 'boolean') return response.data;
         if (typeof response.data === 'object' && response.data !== null) {
           for (const key of Object.keys(response.data)) {
@@ -233,9 +238,16 @@ export class UserService implements IUserService {
     targetUserId: number
   ): Promise<{ blockedByMe: boolean; blockedByThem: boolean } | null> {
     try {
-      const response = await apiClient.get<{ blockedByMe: boolean; blockedByThem: boolean }>(
-        `api/User/block-status/${targetUserId}`
-      );
+      let response;
+      try {
+        response = await apiClient.get<{ blockedByMe: boolean; blockedByThem: boolean }>(
+          `api/User/block-status/${targetUserId}`
+        );
+      } catch {
+        response = await apiClient.get<{ blockedByMe: boolean; blockedByThem: boolean }>(
+          `api/Users/block-status/${targetUserId}`
+        );
+      }
       return response.data;
     } catch (ex) {
       console.error(`[UserService ERROR] Сбой запроса статуса блокировки ID ${targetUserId}:`, ex);

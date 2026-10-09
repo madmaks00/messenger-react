@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { IAttachment, IMessage } from '../../types/models';
+import { IAttachment, IMessage, IUser } from '../../types/models';
+import { MainTab } from '../../types/enums';
 import { useProfileView, ProfileServices, RightContainerType } from './useProfileView';
 import { ProfileLeftColumn } from './ProfileLeftColumn';
 import { ProfileRightStories } from './ProfileRightStories';
@@ -12,6 +13,11 @@ import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
 import { useStoriesStore } from '../../stores/storiesStore';
 import { useNavigationStore } from '../../stores/navigationStore';
+import { useChatStore } from '../../stores/chatStore';
+import { useCallsStore } from '../../stores/callsStore';
+import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
+import { chatService } from '../../services/chat.service';
+import { eventBus } from '../../services/eventBus';
 
 export interface ProfileViewProps {
   isOpen: boolean;
@@ -38,17 +44,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onCallUser,
   services = {},
 }) => {
-  // 🟢 Синхронизация с navigationStore: устраняет рассинхрон между пропсами и глобальным стором
   const navStore = useNavigationStore();
 
   const effectiveIsOpen = navStore.isProfileOpen ?? isOpen;
   const effectiveIsGroupProfile = navStore.isProfileOpen ? navStore.isGroupProfile : isGroupProfile;
   const rawIsOwn = navStore.isProfileOpen ? navStore.isOwnProfile : isOwnProfile;
 
-  // Кандидат на отображение
   const candidateUser = (!rawIsOwn && navStore.profileUser) ? navStore.profileUser : (user || navStore.profileUser);
 
-  // Профиль является своим ТОЛЬКО если совпадает ID
   const effectiveIsOwnProfile = Boolean(
     rawIsOwn &&
     candidateUser?.id &&
@@ -144,10 +147,84 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   if (!effectiveIsOpen) return null;
 
-  const handleStartChatSafe = onStartChat || services.onStartChat || (() => {});
-  const handleCallUserSafe = onCallUser || services.onCallUser || (() => {});
-  const handleToggleMuteSafe = services.onToggleMute || (() => {});
-  const handleToggleBlockSafe = services.toggleBlockUser || (async () => null);
+  // 1. «Chat» (Написать)
+  const handleStartChatSafe = (userId: number) => {
+    handleAnimateClose();
+    useNavigationStore.getState().switchTab(MainTab.Chats);
+
+    const targetSearchResult = {
+      id: userId,
+      nickName: effectiveUser.nickName || effectiveUser.username || 'User',
+      username: effectiveUser.username,
+      avatar: effectiveUser.avatar,
+      avatarPath: effectiveUser.avatarPath,
+      isGroup: false,
+      isOnline: Boolean(effectiveUser.isOnline),
+      lastSeen: effectiveUser.lastSeen,
+    };
+
+    useChatStore.getState().selectChatUser(targetSearchResult);
+    onStartChat?.(userId);
+    services.onStartChat?.(userId);
+  };
+
+  // 2. «Call» (Звонок)
+  const handleCallUserSafe = (targetUser: IUser) => {
+    if (vm.isBlockedByMe || vm.isBlockedByThem) return;
+    handleAnimateClose();
+
+    useCallsStore.getState().startCall({
+      id: targetUser.id,
+      nickName: targetUser.nickName || targetUser.username || 'User',
+      username: targetUser.username,
+      avatar: targetUser.avatar,
+      avatarPath: targetUser.avatarPath,
+      isGroup: false,
+      isOnline: Boolean(targetUser.isOnline),
+      lastSeen: targetUser.lastSeen,
+    });
+
+    onCallUser?.(targetUser);
+    services.onCallUser?.(targetUser);
+  };
+
+  // 3. «Notification» (Mute/Unmute)
+  const handleToggleMuteSafe = async (userId: number) => {
+    const nextMuted = !vm.isObservedUserMuted;
+    vm.setIsObservedUserMuted(nextMuted);
+
+    useSidebarChatsStore.setState((state) => ({
+      allChats: state.allChats.map((c) => {
+        const cId = Number(c.userId || c.id || 0);
+        if (!c.isGroup && cId === Number(userId)) {
+          return { ...c, isMuted: nextMuted };
+        }
+        return c;
+      }),
+    }));
+
+    eventBus.emit('UserMuteStatusChangedMessage' as any, { userId, isMuted: nextMuted });
+
+    try {
+      await chatService.toggleMuteChatAsync(userId, null);
+    } catch (err) {
+      console.error('[ProfileView ERROR] Сбой смены статуса Mute на сервере:', err);
+      vm.setIsObservedUserMuted(!nextMuted);
+      useSidebarChatsStore.setState((state) => ({
+        allChats: state.allChats.map((c) => {
+          const cId = Number(c.userId || c.id || 0);
+          if (!c.isGroup && cId === Number(userId)) {
+            return { ...c, isMuted: !nextMuted };
+          }
+          return c;
+        }),
+      }));
+      eventBus.emit('UserMuteStatusChangedMessage' as any, { userId, isMuted: !nextMuted });
+    }
+
+    services.onToggleMute?.(userId);
+  };
+
   const handleRevokeInviteSafe = services.revokeInviteLink || (async () => false);
   const handleGenerateInviteSafe = services.generateInviteLink || (async () => null);
 
@@ -175,11 +252,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           overflow-y: auto !important;
           overflow-x: hidden !important;
           scrollbar-width: thin;
-          scrollbar-color: transparent transparent;
+          scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
           transition: scrollbar-color 0.3s ease;
         }
         .wpf-scroll-viewer:hover {
-          scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+          scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
         }
         .wpf-scroll-viewer::-webkit-scrollbar {
           width: 4px !important;
@@ -189,18 +266,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           background: transparent !important;
         }
         .wpf-scroll-viewer::-webkit-scrollbar-thumb {
-          background: transparent !important;
+          background: rgba(255, 255, 255, 0.25) !important;
           border-radius: 3px !important;
-          transition: background 0.25s ease !important;
+          transition: background 0.2s ease !important;
         }
         .wpf-scroll-viewer:hover::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.3) !important;
+          background: rgba(255, 255, 255, 0.45) !important;
         }
         .wpf-scroll-viewer::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.4) !important;
-        }
-        .wpf-scroll-viewer::-webkit-scrollbar-thumb:active {
-          background: rgba(255, 255, 255, 0.6) !important;
+          background: rgba(255, 255, 255, 0.7) !important;
         }
         .wpf-scroll-viewer::-webkit-scrollbar-button {
           display: none !important;
@@ -209,6 +283,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         }
       `}</style>
 
+      {/* 🟢 КАРТОЧКА ПРОФИЛЯ: ПЛАВНАЯ АНИМАЦИЯ 1 В 1 С WPF (SetCardWidth 250ms QuarticEase) */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -217,101 +292,110 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           backgroundColor: Theme.ProfileCardBackground,
           borderRadius: 16,
           boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6)',
-          display: 'grid',
-          gridTemplateColumns: isExpanded ? '365px 1fr' : '365px',
+          display: 'flex',
           overflow: 'hidden',
           opacity: isVisible ? 1 : 0,
           transform: isVisible ? 'scale(1)' : 'scale(0.96)',
+          boxSizing: 'border-box',
           transition:
             'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
         }}
       >
-        {/* 🟢 ЛЕВАЯ КОЛОНКА: передаём вычисленный effectiveIsOwnProfile, 
-            чтобы кнопки Edit Info и Settings сменились на Message, Call, Mute */}
-        <ProfileLeftColumn
-          vm={vm}
-          isOwnProfile={effectiveIsOwnProfile}
-          isGroupProfile={effectiveIsGroupProfile}
-          onClose={handleAnimateClose}
-          onStartChat={handleStartChatSafe}
-          onCallUser={handleCallUserSafe}
-          onToggleMute={handleToggleMuteSafe}
-          onToggleBlockUser={handleToggleBlockSafe}
-          onRevokeInviteLink={handleRevokeInviteSafe}
-          onCreateInviteLink={handleGenerateInviteSafe}
-        />
+        {/* ЛЕВАЯ КОЛОНКА (365px, ЖЕСТКИЙ ФИКСИРОВАННЫЙ РАЗМЕР БЕЗ СЖАТИЯ) */}
+        <div style={{ width: 365, minWidth: 365, maxWidth: 365, height: '100%', flexShrink: 0 }}>
+          <ProfileLeftColumn
+            vm={vm}
+            isOwnProfile={effectiveIsOwnProfile}
+            isGroupProfile={effectiveIsGroupProfile}
+            onClose={handleAnimateClose}
+            onStartChat={handleStartChatSafe}
+            onCallUser={handleCallUserSafe}
+            onToggleMute={handleToggleMuteSafe}
+            onToggleBlockUser={vm.handleToggleBlockUser}
+            onRevokeInviteLink={handleRevokeInviteSafe}
+            onCreateInviteLink={handleGenerateInviteSafe}
+          />
+        </div>
 
-        {isExpanded && (
-          <div
-            style={{
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              backgroundColor: Theme.ProfileCardBackground,
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            {activeRightContainer === 'stories' && (
-              <ProfileRightStories
-                vm={vm}
-                isOwnProfile={effectiveIsOwnProfile}
-                onClose={handleAnimateClose}
-                onCreateNewStory={services.createNewStory || ((file) => { void useStoriesStore.getState().createNewStory(file); })}
-                onOpenStoryViewer={services.openStoryViewer || ((story) => { void useStoriesStore.getState().openStoryViewer(story); })}
-                onEditStory={services.editStory || ((storyId) => {
-                  const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
-                  if (story) void useStoriesStore.getState().editStory(story);
-                })}
-                onDeleteStory={services.deleteStory || (async (storyId) => {
-                  const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
-                  if (story) {
-                    await useStoriesStore.getState().deleteStory(story);
-                    return true;
-                  }
-                  return false;
-                })}
-              />
-            )}
+        {/* ПРАВАЯ КОЛОНКА (523px, ПЛАВНО ВЫЕЗЖАЕТ ИЗ-ПОД МАСКИ С ОФСЕТОМ 20px И ОПАСИТИ) */}
+        <div
+          style={{
+            width: 523,
+            minWidth: 523,
+            maxWidth: 523,
+            height: '100%',
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: Theme.ProfileCardBackground,
+            position: 'relative',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+            opacity: isExpanded ? 1 : 0,
+            transform: isExpanded ? 'translateX(0)' : 'translateX(25px)',
+            transition: 'opacity 0.2s ease 0.04s, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            pointerEvents: isExpanded ? 'auto' : 'none',
+          }}
+        >
+          {activeRightContainer === 'stories' && (
+            <ProfileRightStories
+              vm={vm}
+              isOwnProfile={effectiveIsOwnProfile}
+              onClose={handleAnimateClose}
+              onCreateNewStory={services.createNewStory || ((file) => { void useStoriesStore.getState().createNewStory(file); })}
+              onOpenStoryViewer={services.openStoryViewer || ((story) => { void useStoriesStore.getState().openStoryViewer(story); })}
+              onEditStory={services.editStory || ((storyId) => {
+                const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
+                if (story) void useStoriesStore.getState().editStory(story);
+              })}
+              onDeleteStory={services.deleteStory || (async (storyId) => {
+                const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
+                if (story) {
+                  await useStoriesStore.getState().deleteStory(story);
+                  return true;
+                }
+                return false;
+              })}
+            />
+          )}
 
-            {activeRightContainer === 'sharedMedia' && (
-              <ProfileRightSharedMedia
-                vm={vm}
-                onClose={handleAnimateClose}
-                onForwardMessages={services.onForwardMessages || (() => {})}
-                onDeleteMessage={services.onDeleteMessage || (() => {})}
-                onOpenFile={services.onOpenFile || (() => {})}
-              />
-            )}
+          {activeRightContainer === 'sharedMedia' && (
+            <ProfileRightSharedMedia
+              vm={vm}
+              onClose={handleAnimateClose}
+              onForwardMessages={services.onForwardMessages || ((msgs) => vm.services.onForwardMessages(msgs))}
+              onDeleteMessage={services.onDeleteMessage || ((msg) => vm.services.onDeleteMessage(msg))}
+              onOpenFile={services.onOpenFile || ((att) => vm.services.onOpenFile(att))}
+            />
+          )}
 
-            {activeRightContainer === 'editProfile' && (
-              <ProfileRightEditProfile
-                vm={vm}
-                onClose={handleAnimateClose}
-              />
-            )}
+          {activeRightContainer === 'editProfile' && (
+            <ProfileRightEditProfile
+              vm={vm}
+              onClose={handleAnimateClose}
+            />
+          )}
 
-            {activeRightContainer === 'settings' && (
-              <ProfileRightSettings
-                vm={vm}
-                onClose={handleAnimateClose}
-                onTerminateSession={services.terminateDeviceSession || (async () => false)}
-                onTerminateOtherSessions={services.terminateOtherSessions || (async () => false)}
-                onUnblockUser={services.toggleBlockUser || (async () => null)}
-              />
-            )}
+          {activeRightContainer === 'settings' && (
+            <ProfileRightSettings
+              vm={vm}
+              onClose={handleAnimateClose}
+              onTerminateSession={services.terminateDeviceSession || (async () => false)}
+              onTerminateOtherSessions={services.terminateOtherSessions || (async () => false)}
+              onUnblockUser={vm.handleToggleBlockUser}
+            />
+          )}
 
-            {(activeRightContainer === 'members' || activeRightContainer === 'editGroup') && (
-              <ProfileRightGroup
-                vm={vm}
-                onClose={handleAnimateClose}
-                onLeaveGroup={() => services.leaveGroup?.(effectiveUser.id)}
-                onKickMember={(memberId) => services.kickMember?.(effectiveUser.id, memberId)}
-                onUnbanMember={(memberId) => services.unbanMember?.(effectiveUser.id, memberId)}
-              />
-            )}
-          </div>
-        )}
+          {(activeRightContainer === 'members' || activeRightContainer === 'editGroup') && (
+            <ProfileRightGroup
+              vm={vm}
+              onClose={handleAnimateClose}
+              onLeaveGroup={() => services.leaveGroup?.(effectiveUser.id)}
+              onKickMember={(memberId) => services.kickMember?.(effectiveUser.id, memberId)}
+              onUnbanMember={(memberId) => services.unbanMember?.(effectiveUser.id, memberId)}
+            />
+          )}
+        </div>
       </div>
 
       {isMemberPermissionsOpen && editingMember && (
@@ -421,6 +505,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       )}
 
+      {/* КОНТЕКСТНОЕ МЕНЮ ПКМ */}
       {activeContextMenu && (
         <div
           onClick={(e) => e.stopPropagation()}
@@ -435,10 +520,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div
             onClick={() => {
               if (activeContextMenu.item) {
-                const id = 'message' in activeContextMenu.item
-                  ? ((activeContextMenu.item as any).message?.id ?? (activeContextMenu.item as IAttachment).messageId)
-                  : (activeContextMenu.item as IMessage).id;
-                if (id) services.onJumpToMessage?.(id, effectiveUser.id);
+                const item = activeContextMenu.item;
+                const isAtt = 'type' in item;
+                const msg = isAtt ? (item as any).message : (item as IMessage);
+                const targetMsgId = isAtt ? (msg?.serverId || msg?.id || (item as IAttachment).messageId) : (item.serverId || item.id);
+                if (targetMsgId) {
+                  vm.services.onJumpToMessage(targetMsgId, effectiveUser.id, msg);
+                }
               }
               setActiveContextMenu(null);
             }}
@@ -446,13 +534,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           >
             Перейти к сообщению
           </div>
+
           <div
             onClick={() => {
               if (activeContextMenu.item) {
-                const msg = 'message' in activeContextMenu.item
-                  ? (activeContextMenu.item as any).message
-                  : (activeContextMenu.item as IMessage);
-                if (msg) services.onForwardMessages?.([msg]);
+                const item = activeContextMenu.item;
+                const isAtt = 'type' in item;
+                const msg = isAtt ? (item as any).message : (item as IMessage);
+                if (msg) {
+                  vm.services.onForwardMessages([msg]);
+                }
               }
               setActiveContextMenu(null);
             }}
@@ -460,6 +551,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           >
             Переслать
           </div>
+
           <div
             onClick={() => {
               setIsSelectionMode(true);
@@ -470,13 +562,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           >
             Выделить
           </div>
+
           <div
             onClick={() => {
               if (activeContextMenu.item) {
-                const msg = 'message' in activeContextMenu.item
-                  ? (activeContextMenu.item as any).message
-                  : (activeContextMenu.item as IMessage);
-                if (msg) services.onDeleteMessage?.(msg);
+                const item = activeContextMenu.item;
+                const isAtt = 'type' in item;
+                const msg = isAtt ? (item as any).message : (item as IMessage);
+                if (msg) {
+                  vm.services.onDeleteMessage(msg);
+                }
               }
               setActiveContextMenu(null);
             }}

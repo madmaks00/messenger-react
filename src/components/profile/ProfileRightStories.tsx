@@ -4,6 +4,7 @@ import { useProfileView } from './useProfileView';
 import { Icons } from './ProfileIcons';
 import { Theme } from './profile.theme';
 import { normalizeImageSrc } from './profileView.utils';
+import { ProfileEmptyState } from './ProfileEmptyState';
 import { CloseButton } from './ProfileRightSettings';
 import { useStoriesStore } from '../../stores/storiesStore';
 
@@ -34,7 +35,6 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
     collapseRightPanel,
   } = vm;
 
-  // 🟢 Состояние контекстного меню ПКМ (1:1 StoryCardBorder.ContextMenu из XAML)
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -131,7 +131,6 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
               <div
                 key={story.id}
                 onClick={() => onOpenStoryViewer(story, activeStories)}
-                // 🟢 ПКМ: Открытие контекстного меню "Edit Story" и "Delete Story" (1:1 XAML)
                 onContextMenu={(e) => {
                   if (isOwnProfile) {
                     e.preventDefault();
@@ -161,7 +160,6 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
                   e.currentTarget.style.borderColor = 'transparent';
                 }}
               >
-                {/* 1:1 XAML ImageBrush Stretch="UniformToFill" */}
                 <img
                   src={normalizeImageSrc(story.imagePath)}
                   alt=""
@@ -173,7 +171,6 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
                   }}
                 />
 
-                {/* Нижняя градиентная подложка со счетчиком просмотров */}
                 <div
                   style={{
                     position: 'absolute',
@@ -191,7 +188,7 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
                   }}
                 >
                   <svg width={12} height={12} viewBox="0 0 24 24" fill="#FFFFFF">
-                    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
                   </svg>
                   <span>{story.viewsCount}</span>
                 </div>
@@ -200,48 +197,16 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
           </div>
         ) : (
           !isStoriesLoading && (
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingTop: 60,
-                boxSizing: 'border-box',
-              }}
-            >
-              <Icons.ImageMultipleOutline size={56} color={Theme.ProfileNoStoriesIcon} />
-
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 'bold',
-                  color: Theme.MainWindowText,
-                  margin: '15px 0 6px 0',
-                  textAlign: 'center',
-                }}
-              >
-                No stories yet
-              </div>
-
-              <div
-                style={{
-                  fontSize: 13,
-                  color: Theme.ProfileNoStoriesSubtitle,
-                  textAlign: 'center',
-                  maxWidth: 280,
-                  lineHeight: 1.4,
-                }}
-              >
-                Photos published by user will appear here
-              </div>
-            </div>
+            <ProfileEmptyState
+              icon={<Icons.ImageMultipleOutline size={56} color={Theme.ProfileNoStoriesIcon} />}
+              title="No stories yet"
+              subtitle="Photos published by user will appear here"
+            />
           )
         )}
       </div>
 
-      {/* 🟢 КОНТЕКСТНОЕ МЕНЮ КАРТОЧКИ (1:1 XAML ContextMenu: Edit Story & Delete Story) */}
+      {/* КОНТЕКСТНОЕ МЕНЮ КАРТОЧКИ */}
       {contextMenu && (
         <div
           onClick={(e) => e.stopPropagation()}

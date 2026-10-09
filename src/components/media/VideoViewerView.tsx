@@ -34,7 +34,6 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
 
   const isOpen = propIsOpen !== undefined ? propIsOpen : store.isOpen;
   const videoUrl = propVideoUrl !== undefined ? propVideoUrl : store.videoUrl;
-  const close = propOnClose || store.close;
 
   const {
     isPlaying,
@@ -82,6 +81,26 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
 
   const [isScrubberHover, setIsScrubberHover] = useState<boolean>(false);
   const isDraggingScrubberRef = useRef<boolean>(false);
+
+  // 🟢 ГАРАНТИРОВАННОЕ ЗАКРЫТИЕ: останавливает видео, изолирует событие и сбрасывает оба стейта
+  const handleClose = useCallback(
+    (e?: React.MouseEvent | KeyboardEvent) => {
+      if (e) {
+        if ('stopPropagation' in e) e.stopPropagation();
+        if ('stopImmediatePropagation' in e) e.stopImmediatePropagation();
+      }
+
+      if (videoRef.current) {
+        videoRef.current.pause();
+      }
+
+      if (propOnClose) {
+        propOnClose();
+      }
+      store.close();
+    },
+    [propOnClose, store]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +211,7 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
     };
   }, [isPlaying, durationSeconds, updateScrubberVisuals]);
 
+  // 🟢 ПЕРЕХВАТ НА ФАЗЕ CAPTURE: изолирует Escape от ProfileView
   useEffect(() => {
     if (!isOpen) return;
 
@@ -199,15 +219,18 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
       switch (e.key) {
         case ' ':
           e.preventDefault();
+          e.stopPropagation();
           togglePlay();
           triggerCenterIndicator(!isPlaying);
           break;
         case 'Escape':
           e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation(); // Исключает вызов закрытия в фоне у ProfileView
           if (isFullscreen) {
             toggleFullscreen();
           } else {
-            close();
+            handleClose(e);
           }
           break;
         case 'r':
@@ -215,10 +238,12 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
         case 'к':
         case 'К':
           e.preventDefault();
+          e.stopPropagation();
           rotate();
           break;
         case 'ArrowLeft':
           e.preventDefault();
+          e.stopPropagation();
           stepBackward();
           if (videoRef.current) {
             const next = Math.max(0, videoRef.current.currentTime - 5);
@@ -228,6 +253,7 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
           break;
         case 'ArrowRight':
           e.preventDefault();
+          e.stopPropagation();
           stepForward();
           if (videoRef.current) {
             const next = Math.min(videoRef.current.duration || durationSeconds, videoRef.current.currentTime + 5);
@@ -241,14 +267,15 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
         case 'А':
         case 'F11':
           e.preventDefault();
+          e.stopPropagation();
           toggleFullscreen();
           break;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isPlaying, isFullscreen, togglePlay, toggleFullscreen, close, rotate, stepForward, stepBackward, triggerCenterIndicator, durationSeconds, updateScrubberVisuals]);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen, isPlaying, isFullscreen, togglePlay, toggleFullscreen, handleClose, rotate, stepForward, stepBackward, triggerCenterIndicator, durationSeconds, updateScrubberVisuals]);
 
   const calculateScrubberSeconds = useCallback(
     (clientX: number) => {
@@ -299,11 +326,15 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
     <div
       ref={rootRef}
       onMouseMove={onUserInteraction}
-      onClick={close}
+      onClick={(e) => {
+        // 🟢 Изолируем клик по подложке: закрывает ТОЛЬКО видеоплеер, не пробивая ProfileView
+        e.stopPropagation();
+        handleClose(e);
+      }}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 99999,
+        zIndex: 100000, // Наивысший Z-Index (гарантированно выше ProfileView 5000)
         backgroundColor: isFullscreen ? '#000000' : 'rgba(0, 0, 0, 0.65)',
         display: 'flex',
         alignItems: 'center',
@@ -322,7 +353,9 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
         }
       `}</style>
 
+      {/* ЗОНА ВИДЕО */}
       <div
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative',
           display: 'flex',
@@ -444,6 +477,7 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
         </div>
       )}
 
+      {/* ОВЕРЛЕЙ ЭЛЕМЕНТОВ УПРАВЛЕНИЯ */}
       <div
         style={{
           position: 'absolute',
@@ -469,10 +503,14 @@ export const VideoViewerView: React.FC<VideoViewerViewProps> = ({
             width={36}
             height={36}
             title="Close (Esc)"
-            onClick={close}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClose(e);
+            }}
           />
         </div>
 
+        {/* НИЖНЯЯ ПАНЕЛЬ ПЛЕЕРА */}
         <div
           onClick={(e) => e.stopPropagation()}
           style={{
@@ -747,7 +785,7 @@ const IconButton: React.FC<{
   height?: number;
   marginLeft?: number;
   title?: string;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
 }> = ({ icon, size = 18, width = 30, height = 30, marginLeft = 0, title, onClick }) => {
   const [hover, setHover] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -757,7 +795,7 @@ const IconButton: React.FC<{
       title={title}
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        onClick(e);
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => {

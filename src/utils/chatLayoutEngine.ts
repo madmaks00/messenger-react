@@ -288,7 +288,7 @@ export class AsyncChatLayoutEngine {
       let bubbleHeight = 0;
 
       if (msg.isCallMessage) {
-        bubbleHeight = snap(61.0);
+        bubbleHeight = snap(59.0);
         if (msg.isForwarded && !msg.isDeletedForMe) bubbleHeight += snap(45.0);
       } else if (msg.isDeletedForMe) {
         bubbleHeight = snap(38.0);

@@ -261,7 +261,7 @@ export const SidebarChatsView: React.FC = () => {
           const prevWidth = prevEl.offsetWidth + 4;
           if (-deltaX >= prevWidth * 0.6) {
             reorderFoldersLive(currentIndex, currentIndex - 1);
-            dragStartPosRef.current.x -= prevWidth;
+            dragStartPosRef.current.x += prevWidth;
             dragOffsetRef.current += prevWidth;
             setDragOffset(dragOffsetRef.current);
           }
@@ -374,7 +374,6 @@ export const SidebarChatsView: React.FC = () => {
     window.addEventListener('mouseup', onMouseUp);
   };
 
-  // 🟢 Иконки типа последнего сообщения: mdiFileGifBox вместо mdiAnimation
   const getLastMessageIcon = (type: LastMessageType | undefined) => {
     switch (type) {
       case LastMessageType.Photo: return mdiCamera;
@@ -665,28 +664,26 @@ export const SidebarChatsView: React.FC = () => {
                 );
                 const isHovered = hoveredChatKey === key;
 
-                // Внутри рендера элемента чата (строки 470–515 в SidebarChatsView.tsx):
-const rawLastMsg = String(chat.lastMessage || '');
-const isCallLast = Boolean(
-  chat.lastMessageType === LastMessageType.Call ||
-  rawLastMsg.includes('_CALL:') ||
-  rawLastMsg.includes('CALL:')
-);
+                const rawLastMsg = String(chat.lastMessage || '');
+                const isCallLast = Boolean(
+                  chat.lastMessageType === LastMessageType.Call ||
+                  rawLastMsg.includes('_CALL:') ||
+                  rawLastMsg.includes('CALL:')
+                );
 
-let displayLastMessage = rawLastMsg;
-let msgIcon = getLastMessageIcon(chat.lastMessageType);
+                let displayLastMessage = rawLastMsg;
+                let msgIcon = getLastMessageIcon(chat.lastMessageType);
 
-// 🟢 Автоматический UI-санитайзер: если пришло 'Вложение', но это GIF -> показать 'GIF' и mdiFileGifBox
-if (
-  chat.lastMessageType === LastMessageType.Gif ||
-  chat.isLastAttachmentGif ||
-  displayLastMessage === 'Вложение'
-) {
-  if (chat.lastMessageType === LastMessageType.Gif || chat.isLastAttachmentGif) {
-    displayLastMessage = 'GIF';
-    msgIcon = mdiFileGifBox;
-  }
-}
+                if (
+                  chat.lastMessageType === LastMessageType.Gif ||
+                  chat.isLastAttachmentGif ||
+                  displayLastMessage === 'Вложение'
+                ) {
+                  if (chat.lastMessageType === LastMessageType.Gif || chat.isLastAttachmentGif) {
+                    displayLastMessage = 'GIF';
+                    msgIcon = mdiFileGifBox;
+                  }
+                }
 
                 if (isCallLast) {
                   msgIcon = mdiPhone;
@@ -695,7 +692,7 @@ if (
                   const parts = clean.split(':');
                   const status = (parts[1] || '').toUpperCase();
                   const isMissed = status === 'CANCELED' || status === 'MISSED' || status === 'DECLINED';
-                  
+
                   const currentUid = Number(userSession.userId);
                   const isMy = Boolean(
                     (chat as any).isMyLastMessage ||
@@ -721,6 +718,15 @@ if (
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
+                      console.log('[SidebarChatsView 🖱️ ПКМ] Открытие контекстного меню для чата:', {
+                        id: chat.id,
+                        userId: chat.userId,
+                        nickName: chat.nickName,
+                        groupName: chat.groupName,
+                        isGroup: chat.isGroup,
+                        isBlocked: chat.isBlocked,
+                        rawChat: chat,
+                      });
                       setFolderContextMenu(null);
                       setIsFolderSubmenuOpen(false);
                       setChatContextMenu({ x: e.clientX, y: e.clientY, chat });
@@ -1033,32 +1039,68 @@ if (
                     <div style={{ color: 'var(--text-muted)', fontSize: 14.5, fontWeight: 600, margin: '5px 0 12px 5px' }}>
                       Messages
                     </div>
-                    {foundMessages.map((msg: any) => (
-                      <div
-                        key={msg.id || msg.serverId}
-                        onClick={() => {
-                          jumpToMessage?.(msg);
-                          handleCloseSearch();
-                        }}
-                        style={{
-                          padding: '10px 12px',
-                          marginBottom: 8,
-                          backgroundColor: 'var(--sidebar-search-bg)',
-                          borderRadius: 12,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                          <span style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: 600 }}>{msg.senderName || 'Chat'}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                            {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                          </span>
+                    {foundMessages.map((msg: any) => {
+                      const currentUid = Number(userSession.userId || 0);
+                      const isMy = Number(msg.senderId) === currentUid;
+                      const otherPartyId = isMy ? Number(msg.receiverId) : Number(msg.senderId);
+                      const isGroupMsg = Boolean(msg.groupId && Number(msg.groupId) > 0);
+                      const targetChatId = isGroupMsg ? Number(msg.groupId) : otherPartyId;
+
+                      const existingChat = allChats.find((c) =>
+                        isGroupMsg
+                          ? Boolean(c.isGroup && Number(c.groupId ?? c.id) === targetChatId)
+                          : Boolean(!c.isGroup && Number(c.userId ?? c.id) === targetChatId)
+                      );
+
+                      const titleName = existingChat
+                        ? (isGroupMsg ? existingChat.groupName : existingChat.nickName)
+                        : (msg.senderName || (isMy ? 'Saved Messages' : 'User'));
+
+                      return (
+                        <div
+                          key={msg.id || msg.serverId}
+                          onClick={async () => {
+                            console.log('[SidebarChatsView 🔍] Клик по найденному сообщению:', msg);
+                            handleCloseSearch();
+
+                            if (existingChat) {
+                              openChat(existingChat);
+                            } else if (targetChatId > 0) {
+                              await useChatStore.getState().selectChatUser({
+                                id: targetChatId,
+                                nickName: titleName || 'User',
+                                isGroup: isGroupMsg,
+                                avatar: null,
+                                avatarPath: null,
+                                isOnline: false,
+                                lastSeen: new Date().toISOString(),
+                              });
+                            }
+
+                            setTimeout(() => {
+                              useChatStore.getState().jumpToSearchedMessage(msg);
+                            }, 100);
+                          }}
+                          style={{
+                            padding: '10px 12px',
+                            marginBottom: 8,
+                            backgroundColor: 'var(--sidebar-search-bg)',
+                            borderRadius: 12,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <span style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: 600 }}>{titleName}</span>
+                            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                              {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                            </span>
+                          </div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: 13.5, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                            {msg.text}
+                          </div>
                         </div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: 13.5, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                          {msg.text}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </>
@@ -1285,6 +1327,7 @@ if (
                 icon={mdiBlockHelper}
                 text={chatContextMenu.chat.isBlocked ? 'Unblock User' : 'Block User'}
                 onClick={() => {
+                  console.log('[SidebarChatsView 🚫 Block User] Клик по строке контекстного меню для чата:', chatContextMenu.chat);
                   blockUser(chatContextMenu.chat);
                   setChatContextMenu(null);
                 }}
@@ -1293,22 +1336,63 @@ if (
 
             <div style={{ height: 1, backgroundColor: 'var(--context-menu-border)', margin: '4px 0' }} />
 
+            {/* Очистить историю */}
             <ContextRow
               icon={mdiBroom}
               text="Clear History"
               onClick={() => {
-                clearChatHistory(chatContextMenu.chat, false);
+                const targetChat = chatContextMenu.chat;
+                const isGroup = Boolean(targetChat.isGroup);
+                const chatName = (isGroup ? targetChat.groupName : targetChat.nickName) || 'Chat';
+                const avatarSrc = normalizeAvatarUrl(targetChat.avatarPath || (targetChat as any).avatar);
                 setChatContextMenu(null);
+
+                eventBus.emit('OpenConfirmDialogMessage' as any, {
+                  title: chatName,
+                  avatar: avatarSrc,
+                  targetAvatar: avatarSrc,
+                  icon: mdiBroom,
+                  targetIcon: mdiBroom,
+                  iconColor: 'var(--text-muted)',
+                  message: 'Are you sure you want to clear message history in this chat?',
+                  checkboxText: isGroup ? null : `Also clear for ${chatName}`,
+                  confirmButtonText: 'Clear',
+                  onConfirmAction: async (deleteForAll: boolean) => {
+                    await clearChatHistory(targetChat, deleteForAll);
+                  },
+                });
               }}
             />
 
+            {/* Удалить чат */}
             <ContextRow
               icon={mdiDeleteOutline}
               text="Delete Chat"
               isDestructive
               onClick={() => {
-                deleteChat(chatContextMenu.chat);
+                const targetChat = chatContextMenu.chat;
+                const isGroup = Boolean(targetChat.isGroup);
+                const chatName = (isGroup ? targetChat.groupName : targetChat.nickName) || 'Chat';
+                const avatarSrc = normalizeAvatarUrl(targetChat.avatarPath || (targetChat as any).avatar);
                 setChatContextMenu(null);
+
+                eventBus.emit('OpenConfirmDialogMessage' as any, {
+                  title: chatName,
+                  avatar: avatarSrc,
+                  targetAvatar: avatarSrc,
+                  icon: mdiDeleteOutline,
+                  targetIcon: mdiDeleteOutline,
+                  iconColor: 'var(--destructive-action)',
+                  message: isGroup
+                    ? 'Are you sure you want to leave and delete this group?'
+                    : `Are you sure you want to delete the chat with ${chatName}?`,
+                  checkboxText: isGroup ? null : `Also delete for ${chatName}`,
+                  confirmButtonText: 'Delete',
+                  isDestructive: true,
+                  onConfirmAction: async (deleteForAll: boolean) => {
+                    await deleteChat(targetChat, undefined, deleteForAll);
+                  },
+                });
               }}
             />
           </div>
@@ -1437,16 +1521,14 @@ const ContextRow: React.FC<{
 }> = ({ icon, text, rotate, iconColor, isDestructive, hasChevron, checkMark, onClick }) => {
   const [isHovered, setIsHovered] = useState(false);
 
-  const handleTrigger = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onClick?.();
-  };
-
   return (
     <div
-      onMouseDown={handleTrigger}
-      onClick={handleTrigger}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log(`[ContextRow 🔘] Нажат пункт меню: "${text}"`);
+        onClick?.();
+      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{

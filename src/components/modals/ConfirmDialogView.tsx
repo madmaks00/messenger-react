@@ -1,12 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
+import { normalizeAvatarUrl } from '../../utils/helpers';
 
 export interface ConfirmDialogProps {
   isOpen: boolean;
   targetTitle?: string;
   targetAvatar?: string | null;
+  avatar?: string | null;
   targetIcon?: string;
+  icon?: string;
   targetIconColor?: string;
+  iconColor?: string;
   dialogMessage: string;
+  message?: string;
   checkboxText?: string | null;
   confirmButtonText?: string;
   onCancel: () => void;
@@ -16,9 +22,14 @@ export interface ConfirmDialogProps {
 export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
   isOpen,
   targetTitle,
+  targetAvatar,
+  avatar,
   targetIcon,
-  targetIconColor = '#1E9BEB',
+  icon,
+  targetIconColor,
+  iconColor,
   dialogMessage,
+  message,
   checkboxText,
   confirmButtonText = 'Delete',
   onCancel,
@@ -26,22 +37,64 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
 }) => {
   const [isChecked, setIsChecked] = useState(false);
   const [isRendered, setIsRendered] = useState(isOpen);
-  const [isFadingOut, setIsFadingOut] = useState(false);
+  const [isActive, setIsActive] = useState(false); // 🟢 Управляет фазой анимации (появление / исчезновение)
+  const [avatarLoaded, setAvatarLoaded] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+
+  const rawAvatar = targetAvatar || avatar || null;
+  const resolvedAvatar = normalizeAvatarUrl(rawAvatar);
+  const resolvedIcon = targetIcon || icon || null;
+  const resolvedIconColor = targetIconColor || iconColor || '#1E9BEB';
+  const resolvedMessage = dialogMessage || message || '';
+
+  // 🟢 Замораживаем данные, чтобы при исчезновении модалка не дергалась
+  const cachedData = useRef({
+    title: targetTitle,
+    avatar: resolvedAvatar,
+    icon: resolvedIcon,
+    iconColor: resolvedIconColor,
+    message: resolvedMessage,
+    checkbox: checkboxText,
+    buttonText: confirmButtonText,
+  });
+
+  if (isOpen) {
+    cachedData.current = {
+      title: targetTitle,
+      avatar: resolvedAvatar,
+      icon: resolvedIcon,
+      iconColor: resolvedIconColor,
+      message: resolvedMessage,
+      checkbox: checkboxText,
+      buttonText: confirmButtonText,
+    };
+  }
 
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+
     if (isOpen) {
       setIsChecked(false);
       setIsRendered(true);
-      setIsFadingOut(false);
+      setAvatarLoaded(false);
+      setAvatarError(false);
+
+      // Запуск плавной анимации появления в следующем кадре отрисовки
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsActive(true);
+        });
+      });
     } else if (isRendered) {
-      setIsFadingOut(true);
-      const timer = setTimeout(() => {
+      // Плавное исчезновение
+      setIsActive(false);
+      timer = setTimeout(() => {
         setIsRendered(false);
-        setIsFadingOut(false);
-      }, 120);
-      return () => clearTimeout(timer);
+      }, 160);
     }
-  }, [isOpen]);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, isRendered]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -57,32 +110,39 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
 
   if (!isRendered) return null;
 
-  const isDestructive = confirmButtonText?.toLowerCase().includes('delete') ||
-                        confirmButtonText?.toLowerCase().includes('leave') ||
-                        confirmButtonText?.toLowerCase().includes('clear') ||
-                        confirmButtonText?.toLowerCase().includes('block');
+  const currentData = cachedData.current;
+  const isDestructive =
+    currentData.buttonText?.toLowerCase().includes('delete') ||
+    currentData.buttonText?.toLowerCase().includes('leave') ||
+    currentData.buttonText?.toLowerCase().includes('clear') ||
+    currentData.buttonText?.toLowerCase().includes('block');
 
-  return (
+  const hasValidAvatar = Boolean(currentData.avatar && !avatarError);
+
+  const content = (
     <div
       onClick={onCancel}
       style={{
         position: 'fixed',
         inset: 0,
+        width: '100vw',
+        height: '100vh',
         backgroundColor: 'rgba(0, 0, 0, 0.65)',
         backdropFilter: 'blur(4px)',
-        zIndex: 10000,
+        WebkitBackdropFilter: 'blur(4px)',
+        zIndex: 999999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         userSelect: 'none',
         boxSizing: 'border-box',
         padding: 16,
-        opacity: isFadingOut ? 0 : 1,
-        transition: 'opacity 0.12s ease-out',
+        opacity: isActive ? 1 : 0,
+        transition: 'opacity 0.18s ease-out',
       }}
     >
       <style>{`
-        .btn-close {
+        .btn-close-modal {
           width: 28px !important;
           height: 28px !important;
           padding: 0 !important;
@@ -97,15 +157,12 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           outline: none !important;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-close:hover {
+        .btn-close-modal:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-close:active {
-          background-color: rgba(255, 255, 255, 0.16) !important;
-        }
 
-        .btn-cancel {
+        .btn-cancel-modal {
           height: 36px;
           padding: 0 16px;
           background-color: transparent !important;
@@ -118,15 +175,12 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           outline: none;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-cancel:hover {
+        .btn-cancel-modal:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-cancel:active {
-          background-color: rgba(255, 255, 255, 0.14) !important;
-        }
 
-        .btn-primary {
+        .btn-primary-modal {
           height: 36px;
           padding: 0 22px;
           background-color: #1E9BEB !important;
@@ -139,14 +193,11 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           outline: none;
           transition: opacity 0.15s ease !important;
         }
-        .btn-primary:hover {
+        .btn-primary-modal:hover {
           opacity: 0.9 !important;
         }
-        .btn-primary:active {
-          opacity: 0.8 !important;
-        }
 
-        .btn-danger {
+        .btn-danger-modal {
           height: 36px;
           padding: 0 22px;
           background-color: #E74C3C !important;
@@ -159,18 +210,17 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           outline: none;
           transition: opacity 0.15s ease !important;
         }
-        .btn-danger:hover {
+        .btn-danger-modal:hover {
           opacity: 0.9 !important;
-        }
-        .btn-danger:active {
-          opacity: 0.8 !important;
         }
       `}</style>
 
+      {/* 🟢 КАРТОЧКА С АНИМАЦИЕЙ ZOOM + FADE */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 380,
+          maxWidth: 'calc(100vw - 32px)',
           backgroundColor: '#161A23',
           borderRadius: 14,
           padding: '20px 22px 18px 22px',
@@ -180,8 +230,12 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
+          transform: isActive ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(8px)',
+          opacity: isActive ? 1 : 0,
+          transition: 'transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease-out',
         }}
       >
+        {/* HEADER */}
         <div
           style={{
             display: 'flex',
@@ -192,11 +246,40 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            {targetIcon && (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill={targetIconColor} style={{ flexShrink: 0 }}>
-                <path d="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" />
+            {/* Аватарка */}
+            {hasValidAvatar && (
+              <img
+                src={currentData.avatar!}
+                alt=""
+                onLoad={() => setAvatarLoaded(true)}
+                onError={() => {
+                  setAvatarError(true);
+                  setAvatarLoaded(false);
+                }}
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 13,
+                  objectFit: 'cover',
+                  flexShrink: 0,
+                  display: avatarLoaded ? 'block' : 'none',
+                }}
+              />
+            )}
+
+            {/* Иконка действия (веник / урна) */}
+            {(!hasValidAvatar || !avatarLoaded) && currentData.icon && (
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill={currentData.iconColor || '#1E9BEB'}
+                style={{ flexShrink: 0 }}
+              >
+                <path d={currentData.icon} />
               </svg>
             )}
+
             <span
               style={{
                 fontSize: 18,
@@ -207,14 +290,14 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
                 whiteSpace: 'nowrap',
               }}
             >
-              {targetTitle || 'Confirmation'}
+              {currentData.title || 'Confirmation'}
             </span>
           </div>
 
           <button
             type="button"
             onClick={onCancel}
-            className="btn-close"
+            className="btn-close-modal"
             title="Close"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -223,11 +306,13 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           </button>
         </div>
 
+        {/* MESSAGE */}
         <div style={{ fontSize: 15, color: '#FFFFFF', lineHeight: '22px', marginBottom: 20, wordBreak: 'break-word' }}>
-          {dialogMessage}
+          {currentData.message}
         </div>
 
-        {checkboxText && (
+        {/* CHECKBOX */}
+        {currentData.checkbox && (
           <label
             style={{
               display: 'flex',
@@ -246,15 +331,16 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
               onChange={(e) => setIsChecked(e.target.checked)}
               style={{ width: 18, height: 18, accentColor: isDestructive ? '#E74C3C' : '#1E9BEB', cursor: 'pointer' }}
             />
-            <span style={{ color: '#E2E8F0' }}>{checkboxText}</span>
+            <span style={{ color: '#E2E8F0' }}>{currentData.checkbox}</span>
           </label>
         )}
 
+        {/* BUTTONS */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
           <button
             type="button"
             onClick={onCancel}
-            className="btn-cancel"
+            className="btn-cancel-modal"
           >
             Cancel
           </button>
@@ -262,14 +348,16 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           <button
             type="button"
             onClick={() => onConfirm(isChecked)}
-            className={isDestructive ? 'btn-danger' : 'btn-primary'}
+            className={isDestructive ? 'btn-danger-modal' : 'btn-primary-modal'}
           >
-            {confirmButtonText}
+            {currentData.buttonText}
           </button>
         </div>
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? ReactDOM.createPortal(content, document.body) : content;
 };
 
 export default ConfirmDialogView;

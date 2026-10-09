@@ -437,7 +437,7 @@ export const App: React.FC = () => {
         checkboxText={confirmDialog.checkboxText}
         confirmButtonText={confirmDialog.confirmButtonText}
         onCancel={() => setConfirmDialog({ isOpen: false })}
-        onConfirm={confirmDialog.onConfirm || (() => {})}
+        onConfirm={confirmDialog.onConfirm || (() => { })}
       />
       <CreateFolderDialog
         isOpen={isCreateFolderOpen}

@@ -5,12 +5,14 @@ import {
   IAttachment,
   ISelectableChat,
   ISavedGif,
+  IChatListItem,
   MessageHelper,
 } from '../types/models';
 import { LastMessageType, AttachmentType } from '../types/enums';
 import { apiClient, BASE_SERVER_URL } from '../services/apiClient';
 import { UrlHelper } from '../utils/helpers';
 import { chatService } from '../services/chat.service';
+import { userService } from '../services/user.service';
 import { gifService } from '../services/gif.service';
 import { signalRService } from '../services/signalr.service';
 import { secretChatCrypto } from '../services/secretChatCrypto.service';
@@ -26,6 +28,7 @@ import { getLocalDatabase } from '../db/localDb';
 import { IAudioTrackModel, AudioMetadataHelper } from '../types/audio.types';
 import { AudioConverterHelper } from '../utils/audioConverters';
 import { audioPlayerService } from '../services/audioPlayer.service';
+import { MessagePreviewHelper } from '../utils/messagePreviewHelper';
 
 export function getMessageReplyText(msg: IMessage | any): string {
   if (!msg) return '';
@@ -157,6 +160,7 @@ interface ChatState {
   selectChatUser: (target: IUserSearchResult | null) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   ensureMessageLoadedAsync: (messageId: number) => Promise<IMessage | null>;
+  startSecretChat: () => Promise<void>;
   sendMessage: (
     text: string,
     attachments: IAttachment[],
@@ -267,7 +271,6 @@ function enrichMessage(
     ? targetChat?.nickName || (targetChat as any)?.groupName || (targetChat as any)?.username || 'User'
     : msg.senderName || 'User';
 
-  // 🟢 Автоматическое восстановление зависших blob-ссылок после перезагрузки
   let fixedAttachments = msg.attachments;
   if (fixedAttachments && fixedAttachments.length > 0) {
     fixedAttachments = fixedAttachments.map((att) => {
@@ -290,7 +293,7 @@ function enrichMessage(
     viewsCount: msg.viewsCount > 0 ? msg.viewsCount : 1,
     senderName: isMy
       ? (currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me')
-      : (msg.senderName && msg.senderName !== 'User' ? msg.senderName : opponentName),
+      : (msg.senderName && msg.senderName !== 'User' ? msg.senderName : (targetChat?.isGroup ? `User ${msg.senderId}` : opponentName)),
     senderAvatar: isMy
       ? currentUserAvatar
       : (msg.senderAvatar || opponentAvatar),
@@ -967,6 +970,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           );
 
           if (getChatKey(get().selectedChatUser) === getChatKey(selectedChatUser)) {
+            // 🟢 Обогащаем имена авторов при Delta-синхронизации
+            if (selectedChatUser.isGroup && updated.length > 0) {
+              await userService.enrichMessagesWithSendersAsync(updated, currentUserId);
+            }
+            await userService.enrichForwardedMessagesAsync(updated, currentUserId);
+
             const enriched = updated.map((m) =>
               enrichMessage(m, currentUserId, currentUserName, currentUserAvatar, selectedChatUser)
             );
@@ -977,6 +986,95 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (e) {
       console.warn('[ChatStore] Ошибка фонового Delta Sync:', e);
     }
+  },
+
+  startSecretChat: async () => {
+    const { selectedChatUser } = get();
+    if (!selectedChatUser || selectedChatUser.isGroup) return;
+
+    const targetUserId = Number(selectedChatUser.id);
+    const targetName = selectedChatUser.nickName;
+    const targetAvatar = selectedChatUser.avatarPath || (selectedChatUser as any).avatar || null;
+
+    console.info(`🔐 [SECRET] Создание нового секретного чата с UserId=${targetUserId}`);
+
+    await chatService.removeCachedSecretChatByTargetUserAsync(targetUserId);
+
+    const { secretChatId, publicKeyBase64, privateKeyBase64 } =
+      await secretChatCrypto.createOutgoingHandshake(targetUserId);
+
+    const cachedChat = {
+      secretChatId,
+      targetUserId,
+      targetName,
+      targetAvatar,
+      localPrivateKeyBase64: privateKeyBase64,
+      isEstablished: false,
+      lastMessage: '🔒 Ожидание подключения собеседника...',
+      lastMessageTime: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+
+    await chatService.saveCachedSecretChatAsync(cachedChat as any);
+    await signalRService.requestSecretChatAsync(targetUserId, secretChatId, publicKeyBase64);
+
+    const secretChatListItem: IChatListItem = {
+      id: targetUserId,
+      userId: targetUserId,
+      groupId: null,
+      nickName: targetName,
+      groupName: '',
+      avatarPath: targetAvatar,
+      isGroup: false,
+      isChannel: false,
+      isSecretChat: true,
+      secretChatId,
+      keyFingerprint: '',
+      lastMessage: '🔒 Ожидание подключения собеседника...',
+      lastMessageType: LastMessageType.None,
+      lastMessageTime: new Date().toISOString(),
+      unreadCount: 0,
+      isPinned: false,
+      isMuted: false,
+      isBlocked: false,
+      isOnline: false,
+      isTyping: false,
+      adminId: 0,
+      memberCount: 0,
+      onlineCount: 0,
+      lastSeen: new Date().toISOString(),
+      groupDescription: '',
+      isPublic: false,
+      groupLink: '',
+      folderIds: [],
+      isLastAttachmentGif: false,
+      isLastMessageDeletedForMe: false,
+    };
+
+    eventBus.emit('SecretChatCreatedMessage' as any, { secretChat: secretChatListItem });
+
+    const newTarget: IUserSearchResult = {
+      id: targetUserId,
+      nickName: targetName,
+      avatarPath: targetAvatar,
+      isSecretChat: true,
+      secretChatId,
+      keyFingerprint: undefined,
+      isGroup: false,
+      isOnline: Boolean(selectedChatUser.isOnline),
+      lastSeen: selectedChatUser.lastSeen,
+    };
+
+    set({
+      selectedChatUser: newTarget,
+      currentChatMessages: [],
+      pinnedMessages: [],
+    });
+
+    useSidebarChatsStore.setState({
+      selectedChatUser: newTarget,
+      currentSidebarChat: secretChatListItem,
+    });
   },
 
   selectChatUser: async (target) => {
@@ -1081,8 +1179,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       if (secretChatId) {
         const cachedSecret = await chatService.getCachedSecretChatAsync(secretChatId);
-        if (cachedSecret?.sharedKey) {
-          secretChatCrypto.restoreSessionFromProtectedState(secretChatId, cachedSecret.sharedKey);
+        if (cachedSecret && cachedSecret.isEstablished) {
+          if (cachedSecret.keyFingerprint) {
+            normalizedTarget.keyFingerprint = cachedSecret.keyFingerprint;
+          }
+          if (cachedSecret.sharedKey) {
+            secretChatCrypto.restoreSessionFromProtectedState(
+              secretChatId,
+              typeof cachedSecret.sharedKey === 'string' ? cachedSecret.sharedKey : ''
+            );
+          }
         }
       }
 
@@ -1093,6 +1199,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (abortController.signal.aborted || thisLoadSequence !== currentChatLoadSequence) return;
       if (getChatKey(get().selectedChatUser) !== newChatKey) return;
+
+      // 🟢 1. Гарантированно подписываем активный чат-группу в SignalR
+      if (normalizedTarget.isGroup && targetId > 0) {
+        void signalRService.subscribeToGroupAsync(targetId);
+      }
+
+      // 🟢 2. Обогащаем сообщения групп реальными авторами (как в C# UserService)
+      if (normalizedTarget.isGroup) {
+        if (cached && cached.length > 0) {
+          await userService.enrichMessagesWithSendersAsync(cached, currentUserId);
+        }
+        if (pinned && pinned.length > 0) {
+          await userService.enrichMessagesWithSendersAsync(pinned, currentUserId);
+        }
+      }
+      if (cached && cached.length > 0) {
+        await userService.enrichForwardedMessagesAsync(cached, currentUserId);
+      }
 
       const { currentUserName, currentUserAvatar } = get();
       const resolvedName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me';
@@ -1106,6 +1230,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
 
       set({
+        selectedChatUser: normalizedTarget,
         currentChatMessages: enrichedCached,
         pinnedMessages: enrichedPinned,
         isHistoryLoading: false,
@@ -1121,6 +1246,61 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }, 3500);
 
       if (!normalizedTarget.isGroup && targetUserId && !normalizedTarget.isSecretChat) {
+        chatService.getCachedBlockStatusAsync(targetUserId).then((cachedBlock) => {
+          if (cachedBlock && Number(get().selectedChatUser?.id) === targetUserId) {
+            const byMe = Boolean(cachedBlock.blockedByMe);
+            const byThem = Boolean(cachedBlock.blockedByThem);
+
+            set({
+              isBlockedByMe: byMe,
+              isBlockedByThem: byThem,
+              canWriteMessages: computeCanWriteMessages(
+                get().selectedChatUser,
+                byMe,
+                byThem,
+                get().isCurrentChatJoined,
+                get().canSendText,
+                currentUserId
+              ),
+            });
+            get().syncPermissionsWithInput();
+          }
+        }).catch(() => {});
+
+        (async () => {
+          try {
+            let blockStatus: any = null;
+            if ((userService as any)?.getBlockStatusAsync) {
+              blockStatus = await (userService as any).getBlockStatusAsync(targetUserId);
+            } else {
+              const res = await apiClient.get<any>(`api/Users/block-status/${targetUserId}`);
+              blockStatus = res.data;
+            }
+
+            if (blockStatus && Number(get().selectedChatUser?.id) === targetUserId) {
+              const byMe = Boolean(blockStatus.blockedByMe ?? blockStatus.BlockedByMe);
+              const byThem = Boolean(blockStatus.blockedByThem ?? blockStatus.BlockedByThem);
+
+              set({
+                isBlockedByMe: byMe,
+                isBlockedByThem: byThem,
+                canWriteMessages: computeCanWriteMessages(
+                  get().selectedChatUser,
+                  byMe,
+                  byThem,
+                  get().isCurrentChatJoined,
+                  get().canSendText,
+                  currentUserId
+                ),
+              });
+              get().syncPermissionsWithInput();
+              await chatService.saveCachedBlockStatusAsync(targetUserId, byMe, byThem);
+            }
+          } catch (e) {
+            console.warn('[ChatStore] Ошибка верификации статуса блокировки:', e);
+          }
+        })();
+
         apiClient
           .get<any>(`api/Users/${targetUserId}`)
           .catch(() => apiClient.get<any>(`api/User/${targetUserId}`))
@@ -1160,8 +1340,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (sent > 0 && !abortController.signal.aborted && thisLoadSequence === currentChatLoadSequence) {
           chatService
             .getLocalMessagesAsync(currentUserId, targetUserId, groupId, secretChatId, 30)
-            .then((updated) => {
+            .then(async (updated) => {
               if (!abortController.signal.aborted && thisLoadSequence === currentChatLoadSequence) {
+                if (normalizedTarget.isGroup && updated) {
+                  await userService.enrichMessagesWithSendersAsync(updated, currentUserId);
+                }
                 const refreshed = (updated || []).map((m) =>
                   enrichMessage(m, currentUserId, resolvedName, resolvedAvatar, normalizedTarget)
                 );
@@ -1225,6 +1408,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
 
       if (older && older.length > 0 && getChatKey(get().selectedChatUser) === activeKeyBefore) {
+        if (selectedChatUser.isGroup) {
+          await userService.enrichMessagesWithSendersAsync(older, currentUserId);
+        }
+        await userService.enrichForwardedMessagesAsync(older, currentUserId);
+
         const resolvedName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me';
         const resolvedAvatar = currentUserAvatar || resolveSessionUser().avatar;
         const enriched = older.map((m) =>
@@ -1269,6 +1457,125 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (typingDebounceTimer) {
       clearTimeout(typingDebounceTimer);
       typingDebounceTimer = null;
+    }
+
+    if (selectedChatUser.isSecretChat && selectedChatUser.secretChatId) {
+      try {
+        const secretChatId = selectedChatUser.secretChatId;
+        let session = secretChatCrypto.getSession(secretChatId);
+
+        if (!session || !session.isEstablished) {
+          const cachedChat = await chatService.getCachedSecretChatAsync(secretChatId);
+          if (cachedChat?.sharedKey) {
+            secretChatCrypto.restoreSessionFromProtectedState(
+              secretChatId,
+              typeof cachedChat.sharedKey === 'string' ? cachedChat.sharedKey : ''
+            );
+            session = secretChatCrypto.getSession(secretChatId);
+          }
+        }
+
+        let replyTextForPayload: string | null = null;
+        let replySenderForPayload: string | null = null;
+
+        if (replies.length > 0) {
+          const firstReply = replies[0];
+          replyTextForPayload = firstReply.text;
+          replySenderForPayload = firstReply.senderName || 'User';
+        }
+
+        const secretMessage: IMessage = {
+          id: localTempId,
+          serverId: 0,
+          senderId: currentUserId,
+          receiverId: Number(selectedChatUser.id),
+          secretChatId,
+          senderName: currentUserName,
+          senderAvatar: currentUserAvatar,
+          text: text || '',
+          timestamp: new Date().toISOString(),
+          isMyMessage: true,
+          isSentToServer: true,
+          isRead: false,
+          isDeleted: false,
+          isDeletedForMe: false,
+          isPinned: false,
+          viewsCount: 1,
+          attachments: attachments || [],
+          replyToMessageIds: replyTextForPayload ? `sec::${replySenderForPayload}::${replyTextForPayload}` : null,
+          repliedMessages: replies.map((r) => ({ ...r, text: getMessageReplyText(r) })),
+        };
+
+        set((state) => ({ currentChatMessages: [...state.currentChatMessages, secretMessage] }));
+        await chatService.saveMessageLocallyAsync(secretMessage);
+
+        const secretAttachmentDtos = (attachments || []).map((a) => ({
+          type: a.type,
+          fileName: a.fileName,
+          fileSizeStr: a.fileSizeStr,
+          url: a.url,
+          thumbnailUrl: a.thumbnailUrl || a.url,
+          fileHash: a.fileHash,
+          hasAudio: Boolean(a.hasAudio),
+          width: a.width || 0,
+          height: a.height || 0,
+          durationSeconds: a.durationSeconds || 0,
+        }));
+
+        const payloadDto = {
+          text: text || '',
+          replyText: replyTextForPayload,
+          replySender: replySenderForPayload,
+          attachments: secretAttachmentDtos.length > 0 ? secretAttachmentDtos : null,
+        };
+
+        const payloadJson = JSON.stringify(payloadDto);
+
+        const { ciphertextBase64, nonceBase64, tagBase64, sequenceNumber, updatedProtectedState } =
+          await secretChatCrypto.encryptText(secretChatId, payloadJson);
+
+        const cached = await chatService.getCachedSecretChatAsync(secretChatId);
+        const [secretPreviewText, secretMessageType] = MessagePreviewHelper.formatPreviewFromMessage(
+          secretMessage,
+          currentUserId,
+          false,
+          false
+        );
+
+        if (cached) {
+          cached.sharedKey = updatedProtectedState;
+          cached.lastMessage = secretPreviewText;
+          cached.lastMessageTime = new Date().toISOString();
+          await chatService.saveCachedSecretChatAsync(cached);
+        }
+
+        useSidebarChatsStore.getState().updateSidebar(
+          Number(selectedChatUser.id),
+          null,
+          secretPreviewText,
+          false,
+          secretMessageType,
+          secretChatId
+        );
+
+        (async () => {
+          try {
+            await signalRService.sendSecretMessageAsync(
+              Number(selectedChatUser.id),
+              secretChatId,
+              ciphertextBase64,
+              nonceBase64,
+              tagBase64,
+              sequenceNumber
+            );
+          } catch (ex) {
+            console.error('❌ [SECRET ERROR] Ошибка отправки секретного сообщения:', ex);
+          }
+        })();
+      } catch (ex) {
+        console.error('❌ [SECRET ERROR] Критический сбой при отправке сообщения в секретный чат:', ex);
+      }
+      return;
     }
 
     (attachments || []).forEach((att) => {
@@ -1326,7 +1633,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set((state) => ({ currentChatMessages: [...state.currentChatMessages, newMsg] }));
 
-    // 🟢 Если в отправленном сообщении есть аудио — сразу добавляем трек в открытый плейлист плеера
     (newMsg.attachments || []).forEach((att) => {
       const ext = (att.fileName || '').slice((att.fileName || '').lastIndexOf('.')).toLowerCase();
       const isVoice = att.type === AttachmentType.Voice || Boolean(att.waveform) || (att.fileName && att.fileName.toLowerCase().startsWith('voice_'));
@@ -1430,7 +1736,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             });
 
-            // 🟢 СРАЗУ обновляем вложения в стейте React (заменяем временные blob-ссылки на реальный URL)
             set((state) => ({
               currentChatMessages: state.currentChatMessages.map((m) =>
                 m.id === localTempId
@@ -1439,7 +1744,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ),
             }));
 
-            // 🟢 И сохраняем реальные ссылки в локальную базу данных IndexedDB
             try {
               const db = getLocalDatabase(userSession.userId);
               db.messages
@@ -1454,7 +1758,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        // 🟢 Передаем waveform на сервер
         const uploadedDtos = finalAttachments.map((a) => ({
           type: a.type,
           fileName: a.fileName,
@@ -1482,7 +1785,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         );
 
         if (realId && realId > 0) {
-          // 🟢 Обновляем сообщение, фиксируя постоянный serverId и финальные ссылки вложений
           set((state) => ({
             currentChatMessages: state.currentChatMessages.map((m) =>
               m.id === localTempId
@@ -1724,13 +2026,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const currentUserId = Number(
       userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
     );
-    const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
-    const targetGroupId = selectedChatUser.isGroup ? selectedChatUser.id : null;
+    const targetUserId = selectedChatUser.isGroup ? null : Number(selectedChatUser.id);
+    const targetGroupId = selectedChatUser.isGroup ? Number(selectedChatUser.id) : null;
     const secretChatId = selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null;
 
     eventBus.emit('ActiveChatUnreadResetMessage' as any, {
       userId: targetUserId,
+      targetUserId,
       groupId: targetGroupId,
+      targetGroupId,
       secretChatId,
     });
 
@@ -1837,14 +2141,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toggleAudio: (clickedAtt: IAttachment) => {
     if (!clickedAtt) return;
 
-    // 🟢 1. Точная детекция: это голос ТОЛЬКО если тип Voice, либо есть waveform, либо системный voice_
     const isVoice =
       clickedAtt.type === AttachmentType.Voice ||
       (Boolean(clickedAtt.waveform) && String(clickedAtt.waveform).trim().length > 0) ||
       (Boolean(clickedAtt.fileName) && clickedAtt.fileName.toLowerCase().startsWith('voice_'));
 
     if (isVoice) {
-      // 🟢 АВТОВОССТАНОВЛЕНИЕ: Если в объекте застрял старый мертвый blob: — восстанавливаем реальный серверный URL
       if (clickedAtt.url && clickedAtt.url.startsWith('blob:') && clickedAtt.fileName) {
         const cleanName = clickedAtt.fileName.replace(/^.*[\\/]/, '');
         clickedAtt.url = UrlHelper.normalize(`uploads/attachments/${cleanName}`, BASE_SERVER_URL);
@@ -1854,7 +2156,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // 🟢 2. Это музыкальный трек или аудиозапись
     const { currentChatMessages, selectedChatUser } = get();
     const audioTracks: IAudioTrackModel[] = [];
     let targetTrack: IAudioTrackModel | null = null;
@@ -1898,7 +2199,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
             audioTracks.push(track);
 
-            // 🟢 Точное совпадение именно с выбранным треком (без коллизии id === 1)
             const isTarget =
               att === clickedAtt ||
               AudioConverterHelper.isSameAttachment(att, clickedAtt) ||
@@ -1938,6 +2238,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 }));
 
 // ================= ВСЕ СЛУШАТЕЛИ EVENTBUS =================
+
+eventBus.on('StartSecretChatRequest' as any, () => {
+  void useChatStore.getState().startSecretChat();
+});
 
 eventBus.on('TriggerSelectMessageMessage' as any, ({ message }: { message: IMessage }) => {
   useChatStore.getState().toggleSelectMessage(message);
@@ -1983,8 +2287,8 @@ eventBus.on('GifPickedMessage' as any, async ({ gif }: { gif: ISavedGif }) => {
 });
 
 eventBus.on('SelectChatUserMessage' as any, async (data: any) => {
-  const target = data?.target || data;
-  await useChatStore.getState().selectChatUser(target);
+  const target = data && typeof data === 'object' && 'target' in data ? data.target : data;
+  await useChatStore.getState().selectChatUser(target ?? null);
 });
 
 eventBus.on('ChatSearchQueryChangedMessage', ({ query }) => {
@@ -2051,7 +2355,7 @@ eventBus.on('MessageInputTextChangedMessage' as any, ({ text }: { text: string }
   useChatStore.getState().sendTyping(text);
 });
 
-eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
+eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
   const currentUserId = Number(
     userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
   );
@@ -2066,6 +2370,9 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
     if (!incoming.groupId && selectedChatUser && !selectedChatUser.isGroup) {
       incoming.senderName = selectedChatUser.nickName || (selectedChatUser as any).groupName || 'User';
       incoming.senderAvatar = selectedChatUser.avatarPath || (selectedChatUser as any).avatar;
+    } else if (incoming.groupId && !incoming.senderName) {
+      // 🟢 Обогащаем сообщение автора в группе реальными данными
+      await userService.enrichMessagesWithSendersAsync([incoming], currentUserId);
     }
   }
 
@@ -2102,7 +2409,6 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
           (m.serverId === 0 && m.isMyMessage && (m.text === incoming.text || m.id === incoming.id))
         ) {
           matched = true;
-          // 🟢 Сохраняем локальные вложения и волны, но заменяем временные blob на постоянный серверный URL
           const mergedAttachments = (m.attachments || []).map((att, idx) => {
             const inc = incoming.attachments?.[idx];
             const rawIncUrl = inc?.url || (inc as any)?.Url || '';
@@ -2166,7 +2472,6 @@ eventBus.on('ReceiveMessage' as any, (incoming: IMessage) => {
     }
   }
 
-  // 🟢 Если пришло сообщение с аудиофайлом — сразу добавляем его в открытый плейлист плеера
   (incoming.attachments || []).forEach((att) => {
     const ext = (att.fileName || '').slice((att.fileName || '').lastIndexOf('.')).toLowerCase();
     const isVoice = att.type === AttachmentType.Voice || Boolean(att.waveform) || (att.fileName && att.fileName.toLowerCase().startsWith('voice_'));
@@ -2357,14 +2662,51 @@ eventBus.on('MessageViewsUpdatedMessage' as any, ({ serverMessageId, viewsCount 
   }));
 });
 
-eventBus.on('BlockStatusChangedMessage' as any, ({ blockerId, isBlocked }: { blockerId: number; isBlocked: boolean }) => {
+eventBus.on('BlockStatusChangedMessage' as any, async (data: any) => {
   const { selectedChatUser } = useChatStore.getState();
-  if (selectedChatUser && !selectedChatUser.isGroup && Number(selectedChatUser.id) === Number(blockerId)) {
+  const targetId = Number(data.targetUserId || data.blockerId || 0);
+
+  if (!selectedChatUser || selectedChatUser.isGroup || Number(selectedChatUser.id) !== targetId) {
+    return;
+  }
+
+  if (data.isBlockedByMe !== undefined) {
+    const byMe = Boolean(data.isBlockedByMe);
+    const byThem = Boolean(data.isBlockedByThem ?? useChatStore.getState().isBlockedByThem);
+
     useChatStore.setState({
-      isBlockedByThem: isBlocked,
-      canWriteMessages: !isBlocked,
+      isBlockedByMe: byMe,
+      isBlockedByThem: byThem,
+      canWriteMessages: !byMe && !byThem,
     });
     useChatStore.getState().syncPermissionsWithInput();
+    await chatService.saveCachedBlockStatusAsync(targetId, byMe, byThem);
+    return;
+  }
+
+  try {
+    let status: any = null;
+    if ((userService as any)?.getBlockStatusAsync) {
+      status = await (userService as any).getBlockStatusAsync(targetId);
+    } else {
+      const res = await apiClient.get<any>(`api/Users/block-status/${targetId}`).catch(() => null);
+      status = res?.data;
+    }
+
+    if (status) {
+      const byMe = Boolean(status.blockedByMe ?? status.BlockedByMe);
+      const byThem = Boolean(status.blockedByThem ?? status.BlockedByThem);
+
+      useChatStore.setState({
+        isBlockedByMe: byMe,
+        isBlockedByThem: byThem,
+        canWriteMessages: !byMe && !byThem,
+      });
+      useChatStore.getState().syncPermissionsWithInput();
+      await chatService.saveCachedBlockStatusAsync(targetId, byMe, byThem);
+    }
+  } catch (err) {
+    console.error('[ChatStore] Ошибка обработки статуса блокировки:', err);
   }
 });
 
@@ -2397,6 +2739,18 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
     ]);
 
     if (getChatKey(useChatStore.getState().selectedChatUser) === getChatKey(selectedChatUser)) {
+      if (selectedChatUser.isGroup) {
+        if (messages && messages.length > 0) {
+          await userService.enrichMessagesWithSendersAsync(messages, currentUserId);
+        }
+        if (pinned && pinned.length > 0) {
+          await userService.enrichMessagesWithSendersAsync(pinned, currentUserId);
+        }
+      }
+      if (messages && messages.length > 0) {
+        await userService.enrichForwardedMessagesAsync(messages, currentUserId);
+      }
+
       const resolvedName = currentUserName && currentUserName !== 'Me' ? currentUserName : resolveSessionUser().name || 'Me';
       const resolvedAvatar = currentUserAvatar || resolveSessionUser().avatar;
 
@@ -2414,4 +2768,86 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
 
 eventBus.on('SyncTimerMessage' as any, () => {
   void useChatStore.getState().triggerDeltaSync();
+});
+
+// Слушатели E2EE секретных чатов
+eventBus.on('SecretMessageReceivedMessage' as any, (data: any) => {
+  const { selectedChatUser } = useChatStore.getState();
+  if (
+    selectedChatUser &&
+    selectedChatUser.isSecretChat &&
+    selectedChatUser.secretChatId === data.secretChatId
+  ) {
+    const incoming: IMessage = data.message || {
+      id: Date.now(),
+      serverId: 0,
+      senderId: data.senderId,
+      receiverId: Number(userSession.userId),
+      secretChatId: data.secretChatId,
+      text: data.ciphertext,
+      timestamp: data.timestamp || new Date().toISOString(),
+      isMyMessage: false,
+      isSentToServer: true,
+      isRead: false,
+      isDeleted: false,
+      isDeletedForMe: false,
+      isPinned: false,
+      viewsCount: 1,
+      attachments: data.incomingAttachments || [],
+      repliedMessages: data.replyText
+        ? [{ senderName: data.replySender || 'User', text: data.replyText } as any]
+        : [],
+    };
+
+    useChatStore.setState((state) => ({
+      currentChatMessages: [...state.currentChatMessages, incoming],
+    }));
+
+    if (useChatStore.getState().isScrolledToBottom) {
+      useChatStore.getState().markAsRead();
+    }
+  }
+});
+
+eventBus.on('SecretChatEstablishedMessage' as any, ({ secretChatId, keyFingerprint }: any) => {
+  const { selectedChatUser } = useChatStore.getState();
+  if (
+    selectedChatUser &&
+    selectedChatUser.isSecretChat &&
+    selectedChatUser.secretChatId === secretChatId
+  ) {
+    useChatStore.setState({
+      selectedChatUser: {
+        ...selectedChatUser,
+        keyFingerprint,
+      },
+    });
+  }
+});
+
+eventBus.on('SecretChatWereReadMessage' as any, ({ secretChatId }: any) => {
+  const { selectedChatUser } = useChatStore.getState();
+  if (
+    selectedChatUser &&
+    selectedChatUser.isSecretChat &&
+    selectedChatUser.secretChatId === secretChatId
+  ) {
+    useChatStore.setState((state) => ({
+      currentChatMessages: state.currentChatMessages.map((m) =>
+        m.isMyMessage && !m.isRead ? { ...m, isRead: true } : m
+      ),
+    }));
+  }
+});
+
+eventBus.on('SecretChatDiscardedMessage' as any, ({ secretChatId }: any) => {
+  const { selectedChatUser } = useChatStore.getState();
+  if (selectedChatUser && selectedChatUser.secretChatId === secretChatId) {
+    useChatStore.setState({
+      selectedChatUser: null,
+      currentChatMessages: [],
+      pinnedMessages: [],
+    });
+    eventBus.emit('SelectChatUserMessage', { target: null });
+  }
 });

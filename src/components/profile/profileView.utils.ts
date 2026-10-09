@@ -17,7 +17,6 @@ export function normalizeImageSrc(src?: string | null): string {
   let trimmed = src.trim();
   if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return '';
 
-  // Заменяем Windows-слэши на стандартные URL-слэши
   trimmed = trimmed.replace(/\\/g, '/');
 
   if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
@@ -28,7 +27,6 @@ export function normalizeImageSrc(src?: string | null): string {
     return trimmed;
   }
 
-  // Определение чистых base64 строк
   if (
     trimmed.startsWith('iVBORw0KGgo') ||
     trimmed.startsWith('/9j/') ||
@@ -43,7 +41,6 @@ export function normalizeImageSrc(src?: string | null): string {
     return `data:${mime};base64,${trimmed}`;
   }
 
-  // Относительный путь сервера (например "uploads/stories/xyz.jpg" или "/uploads/stories/xyz.jpg")
   const baseServer = (BASE_SERVER_URL || 'https://localhost:7214').replace(/\/+$/, '');
   const cleanPath = trimmed.replace(/^\/+/, '');
   return `${baseServer}/${cleanPath}`;
@@ -80,7 +77,7 @@ export function getFirstLetter(value: string | undefined | null): string {
 }
 
 // =========================================================================
-// 3. ФОРМАТИРОВАНИЕ ДАТ И ТЕЛЕФОНА (PhoneNumberFormatConverter & Helpers)
+// 3. ФОРМАТИРОВАНИЕ ДАТ И ТЕЛЕФОНА (1:1 PhoneNumberFormatConverter.cs)
 // =========================================================================
 
 export function formatPhoneNumber(phone: string | undefined | null): string {
@@ -147,31 +144,107 @@ export function getGroupTitle(date: Date): string {
 }
 
 // =========================================================================
-// 4. ФИЛЬТРАЦИЯ И ГРУППИРОВКА ОБЩИХ МЕДИА (OtherProfileViewModel.cs)
+// 4. СТРОГИЙ РЕЗОЛВЕР ТИПОВ ВЛОЖЕНИЙ (1:1 C# WPF PrepareMessageMedia & MatchesCategory)
+// В C# WPF: Photo = 0, Video = 1, Audio = 2, Document = 3, Voice = 4
 // =========================================================================
+
+export function resolveAttachmentType(a: IAttachment): AttachmentType {
+  const typeVal = a.type as any;
+  const fileName = (a.fileName || a.url || '').toLowerCase();
+  const ext = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : '';
+
+  // 1. Голосовое сообщение: строгая детекция (Voice = 4)
+  if (
+    typeVal === AttachmentType.Voice ||
+    typeVal === 4 ||
+    typeVal === 'Voice' ||
+    fileName.startsWith('voice_') ||
+    (Boolean(a.waveform) && String(a.waveform).trim().length > 0)
+  ) {
+    return AttachmentType.Voice;
+  }
+
+  // 2. Видеоролик по расширению (ВИДЕО НИ ПРИ КАКИХ УСЛОВИЯХ НЕ МОЖЕТ БЫТЬ PHOTO)
+  if (['.mp4', '.mov', '.avi', '.mkv', '.wmv'].includes(ext)) {
+    return AttachmentType.Video;
+  }
+
+  // 3. Фото по расширению
+  if (['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'].includes(ext)) {
+    return AttachmentType.Photo;
+  }
+
+  // 4. Музыка по расширению
+  if (['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma', '.opus'].includes(ext)) {
+    return AttachmentType.Audio;
+  }
+
+  // 5. По числовому или строковому enum
+  if (typeVal === AttachmentType.Photo || typeVal === 0 || typeVal === 'Photo') {
+    return AttachmentType.Photo;
+  }
+  if (typeVal === AttachmentType.Video || typeVal === 1 || typeVal === 'Video') {
+    return AttachmentType.Video;
+  }
+  if (typeVal === AttachmentType.Audio || typeVal === 2 || typeVal === 'Audio') {
+    return AttachmentType.Audio;
+  }
+  if (typeVal === AttachmentType.Document || typeVal === 3 || typeVal === 'Document') {
+    return AttachmentType.Document;
+  }
+
+  return AttachmentType.Document;
+}
 
 export function isGifAttachment(a: IAttachment): boolean {
   if (!a) return false;
   if (a.fileSizeStr === 'GIF') return true;
-  if (a.fileName && a.fileName.toLowerCase().endsWith('.gif')) return true;
-  if (a.type === AttachmentType.Video && !a.hasAudio) return true;
+
+  const fileName = (a.fileName || '').toLowerCase();
+  const url = (a.url || '').toLowerCase();
+  if (fileName.endsWith('.gif') || url.endsWith('.gif')) return true;
+
+  if (Boolean((a as any).isSilentVideo)) return true;
+
+  const resolved = resolveAttachmentType(a);
+  if (resolved === AttachmentType.Video && a.hasAudio === false) {
+    return true;
+  }
+
   return false;
 }
 
 export function matchesSharedCategory(a: IAttachment, category: string): boolean {
+  if (!a) return false;
+  const resolved = resolveAttachmentType(a);
+  const isGif = isGifAttachment(a);
+
   switch (category) {
     case 'Photos':
-      return a.type === AttachmentType.Photo && !isGifAttachment(a);
+      // 1:1 C#: a.Type == AttachmentType.Photo && !IsGif(a)
+      return resolved === AttachmentType.Photo && !isGif;
+
     case 'Videos':
-      return a.type === AttachmentType.Video && !isGifAttachment(a);
+      // 1:1 C#: a.Type == AttachmentType.Video && !IsGif(a) (Обычные видео со звуком)
+      return resolved === AttachmentType.Video && !isGif;
+
     case 'GIFs':
-      return isGifAttachment(a);
+      // 1:1 C#: IsGif(a) (Все GIF и беззвучные ролики)
+      return isGif;
+
     case 'Audios':
-      return a.type === AttachmentType.Audio;
+      // 1:1 C#: a.Type == AttachmentType.Audio (Голосовые исключены на уровне resolveAttachmentType)
+      return resolved === AttachmentType.Audio;
+
     case 'Voice':
-      return a.type === AttachmentType.Voice;
+      // 1:1 C#: a.Type == AttachmentType.Voice
+      return resolved === AttachmentType.Voice;
+
+    case 'Documents':
+      return resolved === AttachmentType.Document;
+
     default:
-      return a.type === AttachmentType.Document;
+      return false;
   }
 }
 
@@ -181,10 +254,17 @@ export function groupAttachmentsByMonth(
   myName: string,
   targetName: string
 ): ISharedMediaGroup[] {
+  // Сортировка от новых к старым (1:1 C# OrderByDescending(m => m.Timestamp))
+  const sortedAttachments = [...attachments].sort((a, b) => {
+    const timeA = new Date((a as any).message?.timestamp || (a as any).timestamp || 0).getTime();
+    const timeB = new Date((b as any).message?.timestamp || (b as any).timestamp || 0).getTime();
+    return timeB - timeA;
+  });
+
   const groupsMap = new Map<string, { date: Date; items: IAttachment[] }>();
 
-  for (const att of attachments) {
-    const rawTime = (att as any).message?.timestamp || att.url || Date.now();
+  for (const att of sortedAttachments) {
+    const rawTime = (att as any).message?.timestamp || (att as any).timestamp || Date.now();
     const date = new Date(rawTime);
     const validDate = isNaN(date.getTime()) ? new Date() : date;
     const groupKey = `${validDate.getFullYear()}-${validDate.getMonth()}`;
@@ -194,7 +274,7 @@ export function groupAttachmentsByMonth(
     }
 
     if ((att as any).message) {
-      (att as any).message.isMyMessage = (att as any).message.senderId === currentUserId;
+      (att as any).message.isMyMessage = Number((att as any).message.senderId) === Number(currentUserId);
       (att as any).message.senderName = (att as any).message.isMyMessage ? myName : targetName;
     }
 
@@ -226,10 +306,17 @@ export function groupMessagesByMonth(
   myName: string,
   targetName: string
 ): ISharedMessageGroup[] {
+  // Сортировка от новых к старым (1:1 C# OrderByDescending(m => m.Timestamp))
+  const sortedMessages = [...messages].sort((a, b) => {
+    const timeA = new Date(a.timestamp || 0).getTime();
+    const timeB = new Date(b.timestamp || 0).getTime();
+    return timeB - timeA;
+  });
+
   const groupsMap = new Map<string, { date: Date; items: IMessage[] }>();
 
-  for (const rawMsg of messages) {
-    const isMyMessage = rawMsg.senderId === currentUserId;
+  for (const rawMsg of sortedMessages) {
+    const isMyMessage = Number(rawMsg.senderId) === Number(currentUserId);
     const msg: IMessage = {
       ...rawMsg,
       isMyMessage,
@@ -265,7 +352,7 @@ export function groupMessagesByMonth(
 }
 
 // =========================================================================
-// 5. ВАЛИДАЦИЯ ПРОФИЛЯ (1:1 User.cs -> ValidateForEditProfile())
+// 5. ВАЛИДАЦИЯ ПРОФИЛЯ (1:1 C# User.cs -> ValidateForEditProfile())
 // =========================================================================
 
 export class UserValidator {
@@ -326,7 +413,7 @@ export class UserValidator {
 }
 
 // =========================================================================
-// 6. НАДЁЖНЫЙ ПАРСИНГ ПРИВАТНОСТИ
+// 6. ПАРСИНГ ПРИВАТНОСТИ
 // =========================================================================
 
 export function parsePrivacyVisibility(val: any): PrivacyVisibility {

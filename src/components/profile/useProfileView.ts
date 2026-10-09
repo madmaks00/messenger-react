@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { AttachmentType, PrivacyVisibility } from '../../types/enums';
+import { AttachmentType, PrivacyVisibility, MainTab } from '../../types/enums';
+import { apiClient } from '../../services/apiClient';
 import {
   DeviceSessionDto,
   PrivacySettingsDto,
@@ -20,6 +21,7 @@ import {
   groupMessagesByMonth,
   matchesSharedCategory,
   isGifAttachment,
+  resolveAttachmentType,
   UserValidator,
   parsePrivacyVisibility,
   getHardwareDevices,
@@ -28,10 +30,13 @@ import { userService } from '../../services/user.service';
 import { groupService } from '../../services/group.service';
 import { storiesService } from '../../services/stories.service';
 import { userSession } from '../../services/userSession';
+import { chatService } from '../../services/chat.service';
 import { SecurityService } from '../../services/security.service';
 import { eventBus } from '../../services/eventBus';
 import { useStoriesStore } from '../../stores/storiesStore';
 import { useNavigationStore } from '../../stores/navigationStore';
+import { useChatStore } from '../../stores/chatStore';
+import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
 
 export interface ProfileServices {
   getUserProfile: (userId: number) => Promise<IUser | null>;
@@ -63,12 +68,13 @@ export interface ProfileServices {
   onStartChat: (userId: number) => void;
   onCallUser: (user: IUser) => void;
   onToggleMute: (userId: number) => void;
-  onJumpToMessage: (messageId: number, targetUserId: number) => void;
+  onJumpToMessage: (messageId: number, targetUserId: number, rawMsg?: IMessage) => void;
   onForwardMessages: (messages: IMessage[]) => void;
   onDeleteMessage: (message: IMessage) => void;
   onOpenFile: (attachment: IAttachment) => void;
   onPlayAudio: (attachment: IAttachment) => void;
   onOpenPhotoGallery: (attachments: IAttachment[], index: number) => void;
+  onOpenVideoViewer: (attachment: IAttachment) => void;
   getGroupDetails: (groupId: number) => Promise<any>;
   getGroupMembers: (groupId: number) => Promise<IGroupMember[] | null>;
   getGroupAdministrators: (groupId: number) => Promise<IGroupMember[] | null>;
@@ -99,7 +105,6 @@ export function useProfileView(
   onCallUserProp?: (user: any) => void,
   initialTabProp: RightContainerType = 'stories'
 ) {
-  // 🟢 Синхронизация с navigationStore: защита от некорректных пропсов
   const navProfileUser = useNavigationStore((s) => s.profileUser);
   const navIsOwnProfile = useNavigationStore((s) => s.isOwnProfile);
   const navIsGroupProfile = useNavigationStore((s) => s.isGroupProfile);
@@ -109,18 +114,15 @@ export function useProfileView(
 
   const effectiveUserId =
     currentUserIdProp ||
-    Number((userSession as any)?.UserId || (userSession as any)?.userId || 0);
+    Number((userSession as any)?.UserId || (userSession as any)?.userId || 0) ||
+    Number(JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0);
 
   const isOpen = navIsOpen ?? isOpenProp;
   const isGroupProfile = navIsGroupProfile ?? isGroupProfileProp;
-
-  // Если в store сказано isOwnProfile: false — верим стору!
   const rawIsOwnProfile = navIsOwnProfile !== undefined ? navIsOwnProfile : isOwnProfileProp;
 
-  // Разрешаем целевого юзера
   const candidateUser = (!rawIsOwnProfile && navProfileUser) ? navProfileUser : (userProp || navProfileUser);
 
-  // Профиль является своим ТОЛЬКО если совпадает ID
   const isOwnProfile = Boolean(
     rawIsOwnProfile &&
     candidateUser?.id &&
@@ -130,15 +132,35 @@ export function useProfileView(
 
   const user = candidateUser;
   const initialTab = navInitialTab || initialTabProp;
+
   const onClose = () => {
     navCloseProfile();
     onCloseProp?.();
   };
 
+  const [displayedUser, setDisplayedUser] = useState<IUser>(user);
+  const [isObservedUserBlocked, setIsObservedUserBlocked] = useState<boolean>(false);
+  const [isBlockedByMe, setIsBlockedByMe] = useState<boolean>(false);
+  const [isBlockedByThem, setIsBlockedByThem] = useState<boolean>(false);
+  const [isObservedUserMuted, setIsObservedUserMuted] = useState<boolean>(false);
+
   const services: ProfileServices = {
     getUserProfile: customServices.getUserProfile || ((id) => (userService as any)?.getUserProfileAsync?.(id) || Promise.resolve(null)),
     getBlockStatus: customServices.getBlockStatus || ((id) => (userService as any)?.GetBlockStatusAsync?.(id) || (userService as any)?.getBlockStatusAsync?.(id) || Promise.resolve(null)),
-    toggleBlockUser: customServices.toggleBlockUser || ((id) => (userService as any)?.toggleBlockUserAsync?.(id) || Promise.resolve(null)),
+    toggleBlockUser: customServices.toggleBlockUser || (async (id: number) => {
+      try {
+        if ((userService as any)?.toggleBlockUserAsync) {
+          const r = await (userService as any).toggleBlockUserAsync(id);
+          if (r !== null && r !== undefined) return r;
+        }
+        // 🟢 Прямой запрос на сервер
+        const res = await apiClient.post<any>(`api/Users/block/${id}`);
+        return Boolean(res.data?.isBlocked ?? res.data?.IsBlocked ?? res.data);
+      } catch (err) {
+        console.error('[ProfileServices ERROR] toggleBlockUser error:', err);
+        return null;
+      }
+    }),
     updateProfile: customServices.updateProfile || ((u) => (userService as any)?.updateProfileAsync?.(u) || Promise.resolve(null)),
     verifyPassword: customServices.verifyPassword || ((p) => (userService as any)?.verifyPasswordAsync?.(p) || Promise.resolve(false)),
     changePassword: customServices.changePassword || ((p) => (userService as any)?.changePasswordAsync?.(p) || Promise.resolve(false)),
@@ -179,18 +201,132 @@ export function useProfileView(
     openStoryViewer: customServices.openStoryViewer || ((story: IStory) => {
       void useStoriesStore.getState().openStoryViewer(story);
     }),
-    getSharedMediaMessages: customServices.getSharedMediaMessages || (() => Promise.resolve([])),
-    getSharedPinnedMessages: customServices.getSharedPinnedMessages || (() => Promise.resolve([])),
-    getSharedLinkMessages: customServices.getSharedLinkMessages || (() => Promise.resolve([])),
+
+    getSharedMediaMessages: customServices.getSharedMediaMessages || (async (u1: number, u2: number) => {
+      const dbMsgs = await chatService.getSharedMediaMessagesAsync(u1, u2);
+      const activeMsgs = useChatStore.getState().currentChatMessages.filter((m) => {
+        const s = Number(m.senderId);
+        const r = Number(m.receiverId);
+        return !m.groupId && !m.isDeleted && !m.isDeletedForMe &&
+          ((s === u1 && r === u2) || (s === u2 && r === u1)) &&
+          Boolean(m.attachments && m.attachments.length > 0);
+      });
+      const map = new Map<string | number, IMessage>();
+      dbMsgs.forEach((m) => map.set(m.serverId > 0 ? `s_${m.serverId}` : `l_${m.id}`, m));
+      activeMsgs.forEach((m) => map.set(m.serverId > 0 ? `s_${m.serverId}` : `l_${m.id}`, m));
+      return Array.from(map.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }),
+
+    getSharedPinnedMessages: customServices.getSharedPinnedMessages || (async (u1: number, u2: number) => {
+      const dbMsgs = await chatService.getSharedPinnedMessagesAsync(u1, u2);
+      const activePins = useChatStore.getState().pinnedMessages.filter((m) => {
+        const s = Number(m.senderId);
+        const r = Number(m.receiverId);
+        return !m.groupId && !m.isDeleted && !m.isDeletedForMe &&
+          ((s === u1 && r === u2) || (s === u2 && r === u1));
+      });
+      const map = new Map<string | number, IMessage>();
+      dbMsgs.forEach((m) => map.set(m.serverId > 0 ? `s_${m.serverId}` : `l_${m.id}`, m));
+      activePins.forEach((m) => map.set(m.serverId > 0 ? `s_${m.serverId}` : `l_${m.id}`, m));
+      return Array.from(map.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }),
+
+    getSharedLinkMessages: customServices.getSharedLinkMessages || (async (u1: number, u2: number) => {
+      const dbMsgs = await chatService.getSharedLinkMessagesAsync(u1, u2);
+      const LINK_REGEX = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)|(\/[a-zA-Z0-9_\-]{3,})/i;
+      const activeMsgs = useChatStore.getState().currentChatMessages.filter((m) => {
+        const s = Number(m.senderId);
+        const r = Number(m.receiverId);
+        return !m.groupId && !m.isDeleted && !m.isDeletedForMe &&
+          ((s === u1 && r === u2) || (s === u2 && r === u1)) &&
+          Boolean(m.text && LINK_REGEX.test(m.text));
+      });
+      const map = new Map<string | number, IMessage>();
+      dbMsgs.forEach((m) => map.set(m.serverId > 0 ? `s_${m.serverId}` : `l_${m.id}`, m));
+      activeMsgs.forEach((m) => map.set(m.serverId > 0 ? `s_${m.serverId}` : `l_${m.id}`, m));
+      return Array.from(map.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }),
+
     onStartChat: onStartChatProp || customServices.onStartChat || (() => {}),
     onCallUser: onCallUserProp || customServices.onCallUser || (() => {}),
     onToggleMute: customServices.onToggleMute || (() => {}),
-    onJumpToMessage: customServices.onJumpToMessage || (() => {}),
-    onForwardMessages: customServices.onForwardMessages || (() => {}),
-    onDeleteMessage: customServices.onDeleteMessage || (() => {}),
-    onOpenFile: customServices.onOpenFile || (() => {}),
-    onPlayAudio: customServices.onPlayAudio || (() => {}),
-    onOpenPhotoGallery: customServices.onOpenPhotoGallery || (() => {}),
+
+    onJumpToMessage: customServices.onJumpToMessage || (async (messageId: number, targetUserId: number, rawMsg?: IMessage) => {
+      onClose();
+      useNavigationStore.getState().switchTab(MainTab.Chats);
+
+      const chatStore = useChatStore.getState();
+      const currentSelected = chatStore.selectedChatUser;
+      const isSameChat = currentSelected && !currentSelected.isGroup && Number(currentSelected.id) === Number(targetUserId);
+
+      if (!isSameChat) {
+        await chatStore.selectChatUser({
+          id: targetUserId,
+          nickName: displayedUser.nickName || 'User',
+          username: displayedUser.username,
+          avatar: displayedUser.avatar,
+          avatarPath: displayedUser.avatarPath,
+          isGroup: false,
+          isOnline: Boolean(displayedUser.isOnline),
+          lastSeen: displayedUser.lastSeen,
+        });
+      }
+
+      if (rawMsg) {
+        await chatStore.jumpToSearchedMessage(rawMsg);
+      } else {
+        const found = await chatStore.ensureMessageLoadedAsync(messageId);
+        if (found) {
+          await chatStore.jumpToSearchedMessage(found);
+        } else {
+          eventBus.emit('ScrollToMessageRequestMessage' as any, {
+            messageId,
+            serverId: messageId,
+          });
+        }
+      }
+    }),
+
+    onForwardMessages: customServices.onForwardMessages || ((messages: IMessage[]) => {
+      if (!messages || messages.length === 0) return;
+      useChatStore.getState().openForwardDialog(messages);
+    }),
+
+    onDeleteMessage: customServices.onDeleteMessage || ((message: IMessage) => {
+      if (!message) return;
+      useChatStore.getState().openDeleteDialog(message);
+    }),
+
+    onOpenFile: customServices.onOpenFile || ((att: IAttachment) => {
+      if (!att.url) return;
+      const link = document.createElement('a');
+      link.href = att.url;
+      link.download = att.fileName || 'downloaded_file';
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }),
+
+    onPlayAudio: customServices.onPlayAudio || ((clickedAtt: IAttachment) => {
+      useChatStore.getState().toggleAudio(clickedAtt);
+    }),
+
+    onOpenPhotoGallery: customServices.onOpenPhotoGallery || ((attachments: IAttachment[], index: number) => {
+      eventBus.emit('OpenPhotoGalleryMessage' as any, {
+        mediaList: attachments,
+        startIndex: index,
+      });
+    }),
+
+    onOpenVideoViewer: customServices.onOpenVideoViewer || ((att: IAttachment) => {
+      eventBus.emit('OpenVideoViewerRequestMessage' as any, {
+        videoUrl: att.url,
+        fileName: att.fileName,
+        senderName: displayedUser.nickName || 'User',
+      });
+    }),
+
     getGroupDetails: customServices.getGroupDetails || ((id) => (groupService as any)?.getGroupDetailsAsync?.(id) || Promise.resolve(null)),
     getGroupMembers: customServices.getGroupMembers || ((id) => (groupService as any)?.getGroupMembersAsync?.(id) || Promise.resolve([])),
     getGroupAdministrators: customServices.getGroupAdministrators || ((id) => (groupService as any)?.getGroupAdministratorsAsync?.(id) || Promise.resolve([])),
@@ -210,12 +346,6 @@ export function useProfileView(
   const [activeRightContainer, setActiveRightContainer] = useState<RightContainerType>(
     isOwnProfile ? (initialTab || 'stories') : null
   );
-
-  const [displayedUser, setDisplayedUser] = useState<IUser>(user);
-  const [isObservedUserBlocked, setIsObservedUserBlocked] = useState<boolean>(false);
-  const [isBlockedByMe, setIsBlockedByMe] = useState<boolean>(false);
-  const [isBlockedByThem, setIsBlockedByThem] = useState<boolean>(false);
-  const [isObservedUserMuted, setIsObservedUserMuted] = useState<boolean>(false);
 
   const [activeStories, setActiveStories] = useState<IStory[]>([]);
   const [isStoriesLoading, setIsStoriesLoading] = useState<boolean>(false);
@@ -342,16 +472,67 @@ export function useProfileView(
     try {
       const prof = await services.getUserProfile(userId);
       if (prof) setDisplayedUser(prof);
+
       const blocks = await services.getBlockStatus(userId);
       if (blocks) {
-        setIsBlockedByMe(blocks.blockedByMe);
-        setIsBlockedByThem(blocks.blockedByThem);
-        setIsObservedUserBlocked(blocks.blockedByMe);
+        const byMe = Boolean((blocks as any).blockedByMe ?? (blocks as any).BlockedByMe);
+        const byThem = Boolean((blocks as any).blockedByThem ?? (blocks as any).BlockedByThem);
+        setIsBlockedByMe(byMe);
+        setIsBlockedByThem(byThem);
+        setIsObservedUserBlocked(byMe);
+      }
+
+      const existingChat = useSidebarChatsStore
+        .getState()
+        .allChats.find((c) => !c.isGroup && Number(c.userId || c.id) === Number(userId));
+      if (existingChat) {
+        setIsObservedUserMuted(Boolean(existingChat.isMuted));
       }
     } catch (e) {
       console.error('[useProfileView] Load profile error:', e);
     }
   }, []);
+
+  const handleToggleBlockUser = useCallback(async (userId: number) => {
+    if (!userId) return;
+    const nextBlocked = !isBlockedByMe;
+
+    // 🟢 Мгновенное оптимистичное переключение кнопки в UI (Block User <-> Unblock User)
+    setIsBlockedByMe(nextBlocked);
+    setIsObservedUserBlocked(nextBlocked);
+
+    try {
+      const res = await services.toggleBlockUser(userId);
+      const finalBlocked = (res !== null && res !== undefined) ? Boolean(res) : nextBlocked;
+
+      setIsBlockedByMe(finalBlocked);
+      setIsObservedUserBlocked(finalBlocked);
+
+      await chatService.saveCachedBlockStatusAsync(userId, finalBlocked, isBlockedByThem);
+
+      // Оповещаем чат-стор: это Я заблокировал пользователя (isBlockedByMe: finalBlocked)
+      eventBus.emit('BlockStatusChangedMessage' as any, {
+        targetUserId: userId,
+        blockerId: userSession.userId,
+        isBlockedByMe: finalBlocked,
+        isBlockedByThem,
+        isBlocked: finalBlocked,
+      });
+
+      // Обновляем статус в сайдбаре
+      useSidebarChatsStore.setState((state) => ({
+        allChats: state.allChats.map((c) =>
+          !c.isGroup && Number(c.userId || c.id) === Number(userId)
+            ? { ...c, isBlocked: finalBlocked }
+            : c
+        ),
+      }));
+    } catch (err) {
+      console.error('[useProfileView] Toggle block error:', err);
+      setIsBlockedByMe(isBlockedByMe);
+      setIsObservedUserBlocked(isBlockedByMe);
+    }
+  }, [isBlockedByMe, isBlockedByThem, services]);
 
   const loadGroupDetails = useCallback(async (groupId: number) => {
     if (!groupId) return;
@@ -410,16 +591,6 @@ export function useProfileView(
     const isJustOpened = !prevIsOpenRef.current;
     const isDifferentUser = prevUserIdRef.current !== user?.id;
 
-    console.log('%c[PROFILE_DEBUG] useProfileView эффект сработал:', 'color: #d946ef; font-weight: bold;', {
-      isOpen,
-      isOwnProfile,
-      isGroupProfile,
-      userId: user?.id,
-      userNick: user?.nickName,
-      isJustOpened,
-      isDifferentUser,
-    });
-
     prevIsOpenRef.current = true;
     prevUserIdRef.current = user?.id ?? null;
 
@@ -430,7 +601,6 @@ export function useProfileView(
       setIsExpanded(isOwnProfile);
 
       if (isOwnProfile) {
-        console.warn('[PROFILE_DEBUG] useProfileView -> Ветка СВОЕГО профиля (Stories / Edit / Settings)');
         const targetTab = initialTab || 'stories';
         setActiveRightContainer(targetTab);
         if (targetTab === 'stories') {
@@ -439,11 +609,9 @@ export function useProfileView(
           setCurrentSettingsSubPanel('main');
         }
       } else if (isGroupProfile) {
-        console.log('[PROFILE_DEBUG] useProfileView -> Ветка ГРУППЫ');
         setActiveRightContainer(null);
         if (user?.id) void loadGroupDetails(user.id);
       } else {
-        console.log('[PROFILE_DEBUG] useProfileView -> Ветка ЧУЖОГО профиля (loadOtherUserProfile)');
         setActiveRightContainer(null);
         if (user?.id) void loadOtherUserProfile(user.id);
       }
@@ -475,9 +643,16 @@ export function useProfileView(
       }
     });
 
+    const unbindMute = eventBus.on('UserMuteStatusChangedMessage' as any, ({ userId, isMuted }: any) => {
+      if (displayedUser && displayedUser.id === Number(userId)) {
+        setIsObservedUserMuted(Boolean(isMuted));
+      }
+    });
+
     return () => {
       unbindUser();
       unbindPrivacy();
+      unbindMute();
     };
   }, [displayedUser, isOwnProfile]);
 
@@ -541,7 +716,7 @@ export function useProfileView(
     expandRightPanel('sharedMedia');
 
     try {
-      const myName = user.nickName || user.username || 'Me';
+      const myName = user?.nickName || user?.username || 'Me';
       const targetName = displayedUser.nickName || displayedUser.username || 'User';
 
       if (mediaType === 'Pinned') {
@@ -603,17 +778,33 @@ export function useProfileView(
 
     if ('url' in item) {
       const att = item as IAttachment;
-      if (att.type === AttachmentType.Photo || att.type === AttachmentType.Video || isGifAttachment(att)) {
+      const resolved = resolveAttachmentType(att);
+      const isGif = isGifAttachment(att);
+
+      // Видео или GIF -> VideoViewerView
+      if (resolved === AttachmentType.Video || isGif) {
+        services.onOpenVideoViewer(att);
+        return;
+      }
+
+      // Чистые фото -> PhotoViewerView
+      if (resolved === AttachmentType.Photo) {
         const allPhotos = sharedAttachmentGroups
           .flatMap((g) => g.items)
-          .filter((a) => a.type === AttachmentType.Photo || isGifAttachment(a));
+          .filter((a) => resolveAttachmentType(a) === AttachmentType.Photo && !isGifAttachment(a));
         const idx = Math.max(0, allPhotos.indexOf(att));
         services.onOpenPhotoGallery(allPhotos, idx);
-      } else if (att.type === AttachmentType.Audio || att.type === AttachmentType.Voice) {
-        services.onPlayAudio(att);
-      } else {
-        services.onOpenFile(att);
+        return;
       }
+
+      // Музыка или Голосовые -> MusicPlayerView / audioPlayerService
+      if (resolved === AttachmentType.Audio || resolved === AttachmentType.Voice) {
+        services.onPlayAudio(att);
+        return;
+      }
+
+      // Документ -> Скачивание
+      services.onOpenFile(att);
     } else {
       const msg = item as IMessage;
       if (selectedSharedMediaType === 'Links') {
@@ -624,7 +815,8 @@ export function useProfileView(
           window.open(url, '_blank');
         }
       } else {
-        services.onJumpToMessage(msg.id, displayedUser.id);
+        const targetId = msg.serverId > 0 ? msg.serverId : msg.id;
+        services.onJumpToMessage(targetId, displayedUser.id, msg);
       }
     }
   };
@@ -926,6 +1118,10 @@ export function useProfileView(
     isObservedUserBlocked,
     isBlockedByMe,
     isBlockedByThem,
+    setIsBlockedByMe,
+    setIsBlockedByThem,
+    setIsObservedUserBlocked,
+    handleToggleBlockUser, // 🟢 Экспортирован метод 1:1 с WPF
     isObservedUserMuted,
     setIsObservedUserMuted,
     activeStories,

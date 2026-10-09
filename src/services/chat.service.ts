@@ -403,7 +403,16 @@ export class ChatService implements IChatService {
         TargetUserId: targetUserId,
         TargetGroupId: targetGroupId,
       });
-      return typeof res.data === 'boolean' ? res.data : true;
+
+      const d = res.data;
+      if (typeof d === 'boolean') return d;
+      // 🟢 1:1 С C# ReadToggleResultAsync: парсим булево значение из свойств JSON-объекта
+      if (d && typeof d === 'object') {
+        for (const val of Object.values(d)) {
+          if (typeof val === 'boolean') return val;
+        }
+      }
+      return null;
     } catch (ex) {
       console.error('[ChatService ERROR] Ошибка toggleMuteChatAsync:', ex);
       return null;
@@ -416,7 +425,16 @@ export class ChatService implements IChatService {
         TargetUserId: targetUserId,
         TargetGroupId: targetGroupId,
       });
-      return typeof res.data === 'boolean' ? res.data : true;
+
+      const d = res.data;
+      if (typeof d === 'boolean') return d;
+      // 🟢 1:1 С C# ReadToggleResultAsync: парсим булево значение из свойств JSON-объекта
+      if (d && typeof d === 'object') {
+        for (const val of Object.values(d)) {
+          if (typeof val === 'boolean') return val;
+        }
+      }
+      return null;
     } catch (ex) {
       console.error('[ChatService ERROR] Ошибка togglePinChatAsync:', ex);
       return null;
@@ -498,54 +516,56 @@ export class ChatService implements IChatService {
   }
 
   public async searchMessagesAsync(query: string, groupId?: number | null, otherUserId?: number | null): Promise<IMessage[]> {
-    if (!query || query.trim().length === 0) return [];
+  if (!query || query.trim().length === 0) return [];
 
-    try {
-      let url = `api/Messages/search-messages?query=${encodeURIComponent(query)}`;
-      if (groupId) url += `&groupId=${groupId}`;
-      if (otherUserId) url += `&otherUserId=${otherUserId}`;
+  try {
+    let url = `api/Messages/search-messages?query=${encodeURIComponent(query)}`;
+    if (groupId) url += `&groupId=${groupId}`;
+    if (otherUserId) url += `&otherUserId=${otherUserId}`;
 
-      const res = await apiClient.get<any[]>(url);
-      if (!res.data) return [];
+    const res = await apiClient.get<any[]>(url);
+    if (!res.data) return [];
 
-      return res.data
-        .map((msg) => ({
-          id: 0,
-          serverId: msg.id,
-          senderId: msg.senderId,
-          receiverId: msg.receiverId,
-          groupId: msg.groupId,
-          isMyMessage: msg.senderId === userSession.userId,
-          isSentToServer: true,
-          text: msg.text,
-          isRead: msg.isRead,
-          timestamp: new Date(msg.timestamp).toISOString(),
-          isDeleted: false,
-          isDeletedForMe: false,
-          isPinned: msg.isPinned,
-          viewsCount: msg.viewsCount || 1,
-          attachments: (msg.attachments || []).map((a: any, idx: number) => ({
-            id: idx + 1,
-            messageId: 0,
-            type: a.type,
-            fileName: a.fileName,
-            fileSizeStr: a.fileSizeStr,
-            fileSizeBytes: 0,
-            url: UrlHelper.normalize(a.url, BASE_SERVER_URL),
-            thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, BASE_SERVER_URL),
-            fileHash: a.fileHash,
-            hasAudio: a.hasAudio,
-            width: a.width,
-            height: a.height,
-            durationSeconds: a.durationSeconds,
-          })),
-        }))
-        .filter((m) => !MessageHelper.isCallMessage(m));
-    } catch (ex) {
-      console.error('[ChatService ERROR] Ошибка FTS поиска:', ex);
-      return [];
-    }
+    return res.data
+      .map((msg) => ({
+        id: 0,
+        serverId: msg.id,
+        senderId: msg.senderId,
+        receiverId: msg.receiverId,
+        groupId: msg.groupId,
+        senderName: msg.senderName || msg.SenderName || null,       // 🟢 Мапим имя
+        senderAvatar: msg.senderAvatar || msg.SenderAvatar || null, // 🟢 Мапим аватар
+        isMyMessage: msg.senderId === userSession.userId,
+        isSentToServer: true,
+        text: msg.text,
+        isRead: msg.isRead,
+        timestamp: new Date(msg.timestamp).toISOString(),
+        isDeleted: false,
+        isDeletedForMe: false,
+        isPinned: msg.isPinned,
+        viewsCount: msg.viewsCount || 1,
+        attachments: (msg.attachments || []).map((a: any, idx: number) => ({
+          id: idx + 1,
+          messageId: 0,
+          type: a.type,
+          fileName: a.fileName,
+          fileSizeStr: a.fileSizeStr,
+          fileSizeBytes: 0,
+          url: UrlHelper.normalize(a.url, BASE_SERVER_URL),
+          thumbnailUrl: UrlHelper.normalize(a.thumbnailUrl, BASE_SERVER_URL),
+          fileHash: a.fileHash,
+          hasAudio: a.hasAudio,
+          width: a.width,
+          height: a.height,
+          durationSeconds: a.durationSeconds,
+        })),
+      }))
+      .filter((m) => !MessageHelper.isCallMessage(m));
+  } catch (ex) {
+    console.error('[ChatService ERROR] Ошибка FTS поиска:', ex);
+    return [];
   }
+}
 
   public async downloadFileBytesAsync(fileUrl: string): Promise<ArrayBuffer | null> {
     try {
