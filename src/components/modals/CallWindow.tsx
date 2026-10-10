@@ -14,6 +14,8 @@ import {
   mdiMonitorOff,
   mdiPin,
   mdiPinOff,
+  mdiFullscreen,
+  mdiFullscreenExit,
 } from '@mdi/js';
 
 import { useCallsStore } from '../../stores/callsStore';
@@ -77,15 +79,26 @@ const VideoPlayerTile: React.FC<{
       video.srcObject = stream;
     }
 
-    const handleCanPlay = () => {
-      video.play().catch(() => {});
+    let isSubscribed = true;
+
+    const playVideo = () => {
+      if (video && video.paused && isSubscribed) {
+        video.play().catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.warn('[VideoPlayerTile] Ошибка play():', err);
+          }
+        });
+      }
     };
 
-    video.addEventListener('canplay', handleCanPlay);
-    video.play().catch(() => {});
+    video.addEventListener('loadedmetadata', playVideo);
+    video.addEventListener('canplay', playVideo);
+    playVideo();
 
     return () => {
-      video.removeEventListener('canplay', handleCanPlay);
+      isSubscribed = false;
+      video.removeEventListener('loadedmetadata', playVideo);
+      video.removeEventListener('canplay', playVideo);
     };
   }, [stream]);
 
@@ -122,9 +135,10 @@ export const CallWindow: React.FC = () => {
     activeParticipants,
     isGroupCall,
     localCameraStream,
-    localScreenStream,
     remoteCameraStreams,
-    remoteScreenStreams,
+    availableScreenSources,
+    selectedScreenSourceId,
+    selectScreenSource,
     spotlightUserId,
     isMuted,
     isVideoOn,
@@ -142,21 +156,21 @@ export const CallWindow: React.FC = () => {
 
   const { currentUserName: chatUserName, currentUserAvatar: chatUserAvatar } = useChatStore();
 
+  // 1. Подписка на медиа-статусы участников
   useEffect(() => {
     const unsub = eventBus.on('UserMediaStateChangedMessage' as any, (data: any) => {
       useCallsStore.setState((state) => ({
         activeParticipants: state.activeParticipants.map((p) =>
-          p.userId === data.userId
+          Number(p.userId) === Number(data.userId)
             ? { ...p, isMuted: data.isMuted, isVideoOn: data.isVideoOn, isScreenSharing: data.isScreenSharing }
             : p
         ),
       }));
     });
-    return () => {
-      unsub();
-    };
+    return () => { unsub(); };
   }, []);
 
+  // 2. Отображение профиля пользователя
   const myDisplayName = useMemo(() => {
     try {
       const sess = JSON.parse(localStorage.getItem('user_session_data') || '{}');
@@ -183,17 +197,29 @@ export const CallWindow: React.FC = () => {
     return chatUserAvatar || localUserAvatar || null;
   }, [chatUserAvatar, localUserAvatar]);
 
-  const currentWindowWidth = isGroupCall || isScreenSharing || isVideoOn ? 1060 : 440;
-  const currentWindowHeight = isGroupCall || isScreenSharing || isVideoOn ? 690 : 580;
+  // 3. Выбор активного экрана (строго до ранних return!)
+  const currentSelectedSource = useMemo(() => {
+    return (
+      availableScreenSources.find((s) => String(s.id) === String(selectedScreenSourceId)) ||
+      availableScreenSources[0]
+    );
+  }, [availableScreenSources, selectedScreenSourceId]);
 
+  // 4. Локальные состояния компонента
   const [position, setPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isHeroFullScreen, setIsHeroFullScreen] = useState(false);
+  const [isHeroHovered, setIsHeroHovered] = useState(false);
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number }>({
     mouseX: 0,
     mouseY: 0,
     startX: 0,
     startY: 0,
   });
+
+  const isPresenterMode = availableScreenSources.length > 0 || spotlightUserId !== null;
+  const currentWindowWidth = isGroupCall || isPresenterMode || isVideoOn ? 1060 : 440;
+  const currentWindowHeight = isGroupCall || isPresenterMode || isVideoOn ? 690 : 580;
 
   useEffect(() => {
     if (isWindowOpen && windowState === 'normal') {
@@ -234,6 +260,7 @@ export const CallWindow: React.FC = () => {
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
+  // ================= УСЛОВНЫЕ ВЫХОДЫ (СТРОГО ПОСЛЕ ВСЕХ ХУКОВ) =================
   if (!isWindowOpen) return null;
 
   if (windowState === 'minimized') {
@@ -260,10 +287,7 @@ export const CallWindow: React.FC = () => {
         <span style={{ color: PALETTE.textWhite, fontSize: 13, fontWeight: 600 }}>{currentCallUserName}</span>
         <span style={{ color: PALETTE.textControls, fontSize: 12 }}>{callDurationText}</span>
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            void endCall();
-          }}
+          onClick={(e) => { e.stopPropagation(); void endCall(); }}
           style={{
             background: PALETTE.actionBtnRedBg,
             border: 'none',
@@ -311,17 +335,17 @@ export const CallWindow: React.FC = () => {
         overflow: 'hidden',
       };
 
-  const remoteScreenPresenter = activeParticipants.find((p) => p.isScreenSharing);
-  const isPresenterMode = spotlightUserId !== null || isScreenSharing || Boolean(remoteScreenPresenter);
-
-  // 🟢 Hero-сцена принимает СТРОГО стрим экрана из отдельного P2P-канала
   const heroStream = spotlightUserId
-    ? (remoteScreenStreams.get(spotlightUserId) || remoteCameraStreams.get(spotlightUserId) || null)
-    : isScreenSharing
-    ? localScreenStream
-    : remoteScreenPresenter
-    ? (remoteScreenStreams.get(remoteScreenPresenter.userId) || null)
+    ? (remoteCameraStreams.get(spotlightUserId) || null)
+    : currentSelectedSource
+    ? currentSelectedSource.stream
     : null;
+
+  const heroBadgeTitle = currentSelectedSource
+    ? (currentSelectedSource.isLocal ? 'Вы ведете презентацию (Ваш экран)' : currentSelectedSource.title)
+    : spotlightUserId
+    ? `${currentCallUserName} (Закреплено)`
+    : 'Презентация';
 
   return (
     <div style={containerStyle}>
@@ -384,9 +408,13 @@ export const CallWindow: React.FC = () => {
       {/* ================= ОСНОВНОЙ ЭКРАН ================= */}
       <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden', padding: 12 }}>
         {isPresenterMode ? (
-          /* РЕЖИМ 1: ПРЕЗЕНТАЦИЯ ЭКРАНА (HERO STAGE + FILMSTRIP СПРАВА) */
+          /* РЕЖИМ 1: ПРЕЗЕНТАЦИЯ / МУЛЬТИ-СКРИН */
           <div style={{ flex: 1, display: 'flex', gap: 12, width: '100%', height: '100%' }}>
+            
+            {/* 🟢 БОЛЬШОЙ ЭКРАН ПРЕЗЕНТАЦИИ (С КНОПКОЙ ФУЛЛСКРИНА ПРИ HOVER) */}
             <div
+              onMouseEnter={() => setIsHeroHovered(true)}
+              onMouseLeave={() => setIsHeroHovered(false)}
               style={{
                 flex: 1,
                 backgroundColor: '#000000',
@@ -397,11 +425,59 @@ export const CallWindow: React.FC = () => {
               }}
             >
               <VideoPlayerTile
+                key={currentSelectedSource ? String(currentSelectedSource.id) : 'empty_hero'}
                 stream={heroStream}
                 objectFit="contain"
                 isMirror={false}
               />
 
+              {/* МУЛЬТИ-СКРИН ТАБЫ */}
+              {availableScreenSources.length > 1 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 14,
+                    left: 14,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    zIndex: 20,
+                  }}
+                >
+                  {availableScreenSources.map((source) => {
+                    const isSelected = String(source.id) === String(currentSelectedSource?.id);
+                    return (
+                      <button
+                        key={String(source.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          selectScreenSource(source.id);
+                        }}
+                        style={{
+                          backgroundColor: isSelected ? PALETTE.accentBlue : 'rgba(26, 30, 39, 0.85)',
+                          border: isSelected ? '1px solid #38BDF8' : '1px solid rgba(255, 255, 255, 0.2)',
+                          color: '#FFFFFF',
+                          padding: '6px 12px',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          backdropFilter: 'blur(8px)',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <MdiIcon path={mdiMonitorShare} size={14} color="#FFFFFF" />
+                        <span>{source.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Бейдж выбранного экрана слева снизу */}
               <div
                 style={{
                   position: 'absolute',
@@ -416,62 +492,102 @@ export const CallWindow: React.FC = () => {
                   fontWeight: 600,
                 }}
               >
-                {isScreenSharing ? 'Вы ведете презентацию (Ваш экран)' : remoteScreenPresenter ? `${remoteScreenPresenter.username} ведет презентацию` : 'Презентация'}
+                {heroBadgeTitle}
               </div>
 
+              {/* 🟢 ВСПЛЫВАЮЩАЯ КНОПКА РАЗВОРАЧИВАНИЯ НА ВЕСЬ ЭКРАН (СПРАВА СНИЗУ) */}
               <button
-                onClick={() => setSpotlightUserId(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsHeroFullScreen(!isHeroFullScreen);
+                }}
+                title={isHeroFullScreen ? 'Свернуть' : 'Развернуть на весь экран'}
                 style={{
                   position: 'absolute',
-                  top: 14,
+                  bottom: 14,
                   right: 14,
-                  background: 'rgba(0,0,0,0.65)',
-                  border: 'none',
+                  width: 36,
+                  height: 36,
                   borderRadius: 8,
-                  padding: '6px 12px',
+                  backgroundColor: 'rgba(26, 30, 39, 0.85)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
                   color: '#FFFFFF',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 6,
-                  fontSize: 12,
+                  justifyContent: 'center',
+                  opacity: isHeroHovered || isHeroFullScreen ? 1 : 0,
+                  transition: 'opacity 0.2s ease, background-color 0.2s ease',
+                  backdropFilter: 'blur(8px)',
+                  zIndex: 20,
                 }}
               >
-                <MdiIcon path={mdiPinOff} size={16} />
-                <span>Вернуться к сетке</span>
+                <MdiIcon
+                  path={isHeroFullScreen ? mdiFullscreenExit : mdiFullscreen}
+                  size={20}
+                  color="#FFFFFF"
+                />
               </button>
+
+              {spotlightUserId && (
+                <button
+                  onClick={() => setSpotlightUserId(null)}
+                  style={{
+                    position: 'absolute',
+                    top: 14,
+                    right: 14,
+                    background: 'rgba(0,0,0,0.65)',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '6px 12px',
+                    color: '#FFFFFF',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12,
+                  }}
+                >
+                  <MdiIcon path={mdiPinOff} size={16} />
+                  <span>Вернуться к сетке</span>
+                </button>
+              )}
             </div>
 
-            {/* Боковая лента: квадратики участников со своими ЖИВЫМИ КАМЕРАМИ */}
-            <div style={{ width: 250, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
-              <div style={{ height: 140, minHeight: 140 }}>
-                <MeetParticipantTile
-                  name={`${myDisplayName} (Вы)`}
-                  avatarPath={myDisplayAvatar}
-                  stream={localCameraStream}
-                  isLocal={true}
-                  isVideoOn={isVideoOn}
-                  isMuted={isMuted}
-                  onPin={() => {}}
-                />
-              </div>
-
-              {activeParticipants.map((p) => (
-                <div key={p.userId} style={{ height: 140, minHeight: 140 }}>
+            {/* 🟢 БОКОВАЯ ЛЕНТА ВЕБ-КАМЕР (СКРЫВАЕТСЯ ПРИ ФУЛЛСКРИНЕ ДЕМКИ) */}
+            {!isHeroFullScreen && (
+              <div style={{ width: 250, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
+                <div style={{ height: 140, minHeight: 140 }}>
                   <MeetParticipantTile
-                    name={p.username}
-                    avatarPath={p.avatarPath || (p as any).avatar}
-                    stream={remoteCameraStreams.get(p.userId) || null}
-                    isVideoOn={Boolean(p.isVideoOn)}
-                    isMuted={p.isMuted}
-                    onPin={() => setSpotlightUserId(p.userId)}
+                    name={`${myDisplayName} (Вы)`}
+                    avatarPath={myDisplayAvatar}
+                    stream={localCameraStream}
+                    isLocal={true}
+                    isVideoOn={isVideoOn}
+                    isMuted={isMuted}
+                    isScreenSharing={isScreenSharing}
+                    onPin={() => {}}
                   />
                 </div>
-              ))}
-            </div>
+
+                {activeParticipants.map((p) => (
+                  <div key={p.userId} style={{ height: 140, minHeight: 140 }}>
+                    <MeetParticipantTile
+                      name={p.username}
+                      avatarPath={p.avatarPath || (p as any).avatar}
+                      stream={remoteCameraStreams.get(Number(p.userId)) || null}
+                      isVideoOn={Boolean(p.isVideoOn)}
+                      isMuted={Boolean(p.isMuted)}
+                      isScreenSharing={Boolean(p.isScreenSharing)}
+                      onPin={() => setSpotlightUserId(Number(p.userId))}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
-          /* РЕЖИМ 2: СЕТКА 50/50 */
+          /* РЕЖИМ 2: СЕТКА 50/50 (БЕЗ ДЕМОНСТРАЦИИ ЭКРАНА) */
           <div
             style={{
               flex: 1,
@@ -496,6 +612,7 @@ export const CallWindow: React.FC = () => {
               isLocal={true}
               isVideoOn={isVideoOn}
               isMuted={isMuted}
+              isScreenSharing={isScreenSharing}
               onPin={() => {}}
             />
 
@@ -504,17 +621,18 @@ export const CallWindow: React.FC = () => {
                 key={p.userId}
                 name={p.username}
                 avatarPath={p.avatarPath || (p as any).avatar}
-                stream={remoteCameraStreams.get(p.userId) || null}
+                stream={remoteCameraStreams.get(Number(p.userId)) || null}
                 isVideoOn={Boolean(p.isVideoOn)}
-                isMuted={p.isMuted}
-                onPin={() => setSpotlightUserId(p.userId)}
+                isMuted={Boolean(p.isMuted)}
+                isScreenSharing={Boolean(p.isScreenSharing)}
+                onPin={() => setSpotlightUserId(Number(p.userId))}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* ================= ПЛАВАЮЩИЙ ПУЛЬТ УПРАВЛЕНИЯ ================= */}
+      {/* ================= ПУЛЬТ УПРАВЛЕНИЯ ================= */}
       <div
         style={{
           height: 74,
@@ -638,13 +756,12 @@ const MeetParticipantTile: React.FC<{
   isLocal?: boolean;
   isVideoOn: boolean;
   isMuted: boolean;
+  isScreenSharing?: boolean;
   onPin: () => void;
-}> = ({ name, avatarPath, stream, isLocal = false, isVideoOn, isMuted, onPin }) => {
-  // Плитка лица ВСЕГДА берет поток камеры, независимо от демки!
+}> = ({ name, avatarPath, stream, isLocal = false, isVideoOn, isMuted, isScreenSharing = false, onPin }) => {
   const hasVideo = isVideoOn && Boolean(stream && stream.getVideoTracks().some((t) => t.readyState === 'live' && t.enabled));
   const avatarSrc = safeAvatarUrl(avatarPath);
   const firstLetter = (name || 'U').charAt(0).toUpperCase();
-
   const shouldMirror = isLocal && isVideoOn;
 
   return (
@@ -695,7 +812,7 @@ const MeetParticipantTile: React.FC<{
         </div>
       )}
 
-      {/* Бейдж имени */}
+      {/* Бейдж имени и микрофона */}
       <div
         style={{
           position: 'absolute',
@@ -714,9 +831,32 @@ const MeetParticipantTile: React.FC<{
           maxWidth: '85%',
         }}
       >
-        {isMuted && <MdiIcon path={mdiMicrophoneOff} size={14} color="#EA4335" />}
+        <MdiIcon
+          path={isMuted ? mdiMicrophoneOff : mdiMicrophone}
+          size={14}
+          color={isMuted ? '#E53935' : '#2ECC71'}
+        />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
       </div>
+
+      {/* Индикатор демонстрации экрана */}
+      {isScreenSharing && (
+        <div
+          title="Демонстрирует экран"
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: 10,
+            backgroundColor: PALETTE.accentPurple,
+            borderRadius: 6,
+            padding: '4px 6px',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <MdiIcon path={mdiMonitorShare} size={14} color="#FFFFFF" />
+        </div>
+      )}
 
       {!isLocal && (
         <button

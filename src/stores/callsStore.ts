@@ -16,6 +16,14 @@ export interface GroupCallParticipant {
   isMuted?: boolean;
 }
 
+export interface ScreenPresentationSource {
+  id: number | 'local';
+  userId: number;
+  title: string;
+  stream: MediaStream | null;
+  isLocal: boolean;
+}
+
 export type WindowVisualState = 'normal' | 'maximized' | 'minimized';
 
 export function getLocalUserProfile(): { id: number; name: string; avatar: string | null } {
@@ -75,11 +83,15 @@ interface CallsState {
   localUserName: string;
   localUserAvatar: string | null;
 
-  // 🟢 Раздельные реестры стримов
   localCameraStream: MediaStream | null;
   localScreenStream: MediaStream | null;
   remoteCameraStreams: Map<number, MediaStream>;
   remoteScreenStreams: Map<number, MediaStream>;
+
+  availableScreenSources: ScreenPresentationSource[];
+  selectedScreenSourceId: number | 'local' | null;
+  selectScreenSource: (id: number | 'local' | null) => void;
+
   spotlightUserId: number | null;
 
   isWindowOpen: boolean;
@@ -116,13 +128,9 @@ let callLogSent: boolean = false;
 webRtcCallService.sendSignalingData = (targetUserId: number, data: string) => {
   const { isGroupCall, currentGroupId, currentCallUserId } = useCallsStore.getState();
   if (isGroupCall) {
-    signalRService.sendGroupCallWebRTCDataAsync(currentGroupId, targetUserId, data).catch((ex) => {
-      console.error('[CallsStore ERROR] Ошибка отправки сигналинга Group WebRTC:', ex);
-    });
+    signalRService.sendGroupCallWebRTCDataAsync(currentGroupId, targetUserId, data).catch(() => {});
   } else if (currentCallUserId !== 0) {
-    signalRService.sendWebRTCDataAsync(currentCallUserId, data).catch((ex) => {
-      console.error('[CallsStore ERROR] Ошибка отправки сигналинга WebRTC:', ex);
-    });
+    signalRService.sendWebRTCDataAsync(currentCallUserId, data).catch(() => {});
   }
 };
 
@@ -146,6 +154,10 @@ export const useCallsStore = create<CallsState>((set, get) => ({
   localScreenStream: null,
   remoteCameraStreams: new Map(),
   remoteScreenStreams: new Map(),
+
+  availableScreenSources: [],
+  selectedScreenSourceId: null,
+
   spotlightUserId: null,
 
   isWindowOpen: false,
@@ -156,6 +168,12 @@ export const useCallsStore = create<CallsState>((set, get) => ({
 
   isGroupCall: false,
   currentGroupId: 0,
+
+  // 🟢 Переключение экрана: логируем и гарантируем сохранение выбора
+  selectScreenSource: (id) => {
+    console.log(`%c[CallsStore 🖥️] Выбран экран ID=${id}`, 'color: #38BDF8; font-weight: bold;');
+    set({ selectedScreenSourceId: id });
+  },
 
   refreshLocalProfile: () => {
     const me = getLocalUserProfile();
@@ -208,7 +226,6 @@ export const useCallsStore = create<CallsState>((set, get) => ({
     }
   },
 
-  // 🟢 Камера и экран полностью независимы!
   toggleVideo: async () => {
     const { isVideoOn, isMuted, isScreenSharing, isGroupCall, currentGroupId } = get();
     if (isVideoOn) {
@@ -232,14 +249,38 @@ export const useCallsStore = create<CallsState>((set, get) => ({
     const { isScreenSharing, isMuted, isVideoOn, isGroupCall, currentGroupId } = get();
     if (isScreenSharing) {
       await webRtcCallService.stopScreenShare();
-      set({ isScreenSharing: false, localScreenStream: null });
+      set((state) => {
+        const nextSources = state.availableScreenSources.filter((s) => !s.isLocal);
+        const nextSelected = String(state.selectedScreenSourceId) === 'local' ? (nextSources[0]?.id || null) : state.selectedScreenSourceId;
+        return {
+          isScreenSharing: false,
+          localScreenStream: null,
+          availableScreenSources: nextSources,
+          selectedScreenSourceId: nextSelected,
+        };
+      });
       if (isGroupCall && currentGroupId > 0) {
         signalRService.invokeAsync('UpdateGroupCallMediaState', currentGroupId, isMuted, isVideoOn, false).catch(() => {});
       }
     } else {
       const track = await webRtcCallService.startScreenShare();
       if (track) {
-        set({ isScreenSharing: true, localScreenStream: webRtcCallService.localScreenStream });
+        set((state) => {
+          const localSource: ScreenPresentationSource = {
+            id: 'local',
+            userId: state.localUserId,
+            title: 'Ваш экран',
+            stream: webRtcCallService.localScreenStream,
+            isLocal: true,
+          };
+          const nextSources = [localSource, ...state.availableScreenSources.filter((s) => !s.isLocal)];
+          return {
+            isScreenSharing: true,
+            localScreenStream: webRtcCallService.localScreenStream,
+            availableScreenSources: nextSources,
+            selectedScreenSourceId: 'local',
+          };
+        });
         if (isGroupCall && currentGroupId > 0) {
           signalRService.invokeAsync('UpdateGroupCallMediaState', currentGroupId, isMuted, isVideoOn, true).catch(() => {});
         }
@@ -261,6 +302,8 @@ export const useCallsStore = create<CallsState>((set, get) => ({
 
     set({
       activeParticipants: [],
+      availableScreenSources: [],
+      selectedScreenSourceId: null,
       isGroupCall: isGroup,
       isMuted: false,
       isVideoOn: false,
@@ -292,9 +335,7 @@ export const useCallsStore = create<CallsState>((set, get) => ({
         await webRtcCallService.initializeLocalCapture();
         await signalRService.startGroupCallAsync(targetId);
         await signalRService.joinGroupCallAsync(targetId);
-      } catch (ex) {
-        console.error('[CallsStore ERROR] Ошибка запуска группового звонка GroupId=', targetId, ex);
-      }
+      } catch {}
     } else {
       set({
         currentCallUserId: targetId,
@@ -311,9 +352,7 @@ export const useCallsStore = create<CallsState>((set, get) => ({
 
       try {
         await signalRService.startCallAsync(targetId);
-      } catch (ex) {
-        console.error('[CallsStore ERROR] Ошибка отправки личного звонка UserId=', targetId, ex);
-      }
+      } catch {}
     }
   },
 
@@ -342,9 +381,7 @@ export const useCallsStore = create<CallsState>((set, get) => ({
         await webRtcCallService.initializeWebRTCAsync();
         startTimer(set);
       }
-    } catch (ex) {
-      console.error('[CallsStore ERROR] Сбой при принятии звонка:', ex);
-    }
+    } catch {}
   },
 
   rejectCall: async () => {
@@ -362,9 +399,7 @@ export const useCallsStore = create<CallsState>((set, get) => ({
         await signalRService.answerCallAsync(currentCallUserId, false);
       }
       await webRtcCallService.cleanup();
-    } catch (ex) {
-      console.error('[CallsStore ERROR] Ошибка отклонения звонка:', ex);
-    }
+    } catch {}
   },
 
   endCall: async () => {
@@ -382,6 +417,8 @@ export const useCallsStore = create<CallsState>((set, get) => ({
         localScreenStream: null,
         remoteCameraStreams: new Map(),
         remoteScreenStreams: new Map(),
+        availableScreenSources: [],
+        selectedScreenSourceId: null,
         spotlightUserId: null,
         isVideoOn: false,
         isScreenSharing: false,
@@ -397,23 +434,77 @@ export const useCallsStore = create<CallsState>((set, get) => ({
         await signalRService.endCallAsync(currentCallUserId);
       }
       await webRtcCallService.cleanup();
-    } catch (ex) {
-      console.error('[CallsStore ERROR] Ошибка при завершении звонка:', ex);
-    }
+    } catch {}
   },
 }));
 
 webRtcCallService.onLocalStreamsUpdated = (cameraStream, screenStream) => {
-  useCallsStore.setState({
-    localCameraStream: cameraStream,
-    localScreenStream: screenStream,
+  useCallsStore.setState((state) => {
+    let nextSources = [...state.availableScreenSources];
+    if (screenStream) {
+      const localSource: ScreenPresentationSource = {
+        id: 'local',
+        userId: state.localUserId,
+        title: 'Ваш экран',
+        stream: screenStream,
+        isLocal: true,
+      };
+      nextSources = [localSource, ...nextSources.filter((s) => !s.isLocal)];
+    } else {
+      nextSources = nextSources.filter((s) => !s.isLocal);
+    }
+
+    const currentSelected = state.selectedScreenSourceId;
+    const isLocalSelected = String(currentSelected) === 'local';
+
+    return {
+      localCameraStream: cameraStream,
+      localScreenStream: screenStream,
+      availableScreenSources: nextSources,
+      selectedScreenSourceId: screenStream 
+        ? (currentSelected || 'local') 
+        : (isLocalSelected ? (nextSources[0]?.id || null) : currentSelected),
+    };
   });
 };
 
 webRtcCallService.onRemoteStreamsUpdated = (cameras, screens) => {
-  useCallsStore.setState({
-    remoteCameraStreams: new Map(cameras),
-    remoteScreenStreams: new Map(screens),
+  useCallsStore.setState((state) => {
+    const remoteSources: ScreenPresentationSource[] = [];
+
+    screens.forEach((stream, rawUserId) => {
+      const numUserId = Number(rawUserId);
+      const p = state.activeParticipants.find((x) => Number(x.userId) === numUserId);
+      const title = p 
+        ? `Экран: ${p.username}` 
+        : (Number(state.currentCallUserId) === numUserId ? `Экран: ${state.currentCallUserName}` : `Экран: ${numUserId}`);
+
+      remoteSources.push({
+        id: numUserId,
+        userId: numUserId,
+        title,
+        stream,
+        isLocal: false,
+      });
+    });
+
+    const localSource = state.availableScreenSources.find((s) => s.isLocal);
+    const combined = localSource ? [localSource, ...remoteSources] : remoteSources;
+
+    // 🟢 БЕЗОПАСНАЯ ПРОВЕРКА: сравниваем строковые представления, исключая несовпадение number/string
+    let selectedId = state.selectedScreenSourceId;
+    const hasCurrent = combined.some((s) => String(s.id) === String(selectedId));
+
+    if (!hasCurrent) {
+      selectedId = combined[0]?.id || null;
+    }
+
+    return {
+      remoteCameraStreams: new Map(cameras),
+      remoteScreenStreams: new Map(screens),
+      availableScreenSources: combined,
+      selectedScreenSourceId: selectedId,
+    };
   });
 };
 
@@ -465,9 +556,7 @@ async function sendCallLogAsync(state: CallsState): Promise<void> {
 
   try {
     await signalRService.sendMessageAsync(state.currentCallUserId, null, null, messageText);
-  } catch (ex) {
-    console.error('[CallsStore] Ошибка отправки лога звонка:', ex);
-  }
+  } catch {}
 }
 
 function extractCallTarget(data: any): any {
@@ -479,7 +568,6 @@ function extractCallTarget(data: any): any {
   return null;
 }
 
-// Регистрация событий SignalR
 eventBus.on('SyncTimerMessage' as any, () => {
   resetAndStartTimer(useCallsStore.setState);
 });
@@ -552,9 +640,7 @@ eventBus.on('CallResponseMessage' as any, async (data: { receiverId?: number; ac
 
     try {
       await webRtcCallService.startCallAsync();
-    } catch (ex) {
-      console.error('[CallsStore ERROR] Сбой старта WebRTC:', ex);
-    }
+    } catch {}
   } else {
     await sendCallLogAsync(useCallsStore.getState());
     useCallsStore.setState({ isOutgoingCallVisible: false });
@@ -563,9 +649,7 @@ eventBus.on('CallResponseMessage' as any, async (data: { receiverId?: number; ac
 
     try {
       await webRtcCallService.cleanup();
-    } catch (ex) {
-      console.error('[CallsStore ERROR] Ошибка при отклонении вызова:', ex);
-    }
+    } catch {}
   }
 });
 
@@ -581,17 +665,13 @@ eventBus.on('WebRTCDataMessage' as any, async (data: { senderId: number; data: s
 
   try {
     await webRtcCallService.processSignalingData(data.data);
-  } catch (ex) {
-    console.error('[CallsStore ERROR] Ошибка обработки WebRTC данных:', ex);
-  }
+  } catch {}
 });
 
 eventBus.on('GroupCallWebRTCDataMessage' as any, async (data: { groupId: number; senderId: number; data: string }) => {
   try {
     await webRtcCallService.processSignalingDataFromPeer(data.senderId, data.data);
-  } catch (ex) {
-    console.error('[CallsStore ERROR] Ошибка обработки WebRTC данных пира SenderId=', data.senderId, ex);
-  }
+  } catch {}
 });
 
 eventBus.on('GroupCallJoinedMessage' as any, async (data: { groupId: number; participants: any[] }) => {
@@ -648,9 +728,7 @@ eventBus.on('GroupCallJoinedMessage' as any, async (data: { groupId: number; par
     if (myUserId < p.userId) {
       try {
         await webRtcCallService.startCallWithPeerAsync(p.userId);
-      } catch (ex) {
-        console.error('[CallsStore ERROR] Ошибка подключения к пиру UserId=', p.userId, ex);
-      }
+      } catch {}
     }
   }
 });
@@ -685,20 +763,13 @@ eventBus.on('UserJoinedGroupCallMessage' as any, (data: { groupId: number; parti
   }
   startTimer(useCallsStore.setState);
 
-  // 1. Главный канал (голос + камера) по правилу меньшего ID
   if (myUserId < pUserId) {
-    webRtcCallService.startCallWithPeerAsync(pUserId).catch((ex) => {
-      console.error('[CallsStore ERROR] Ошибка подключения к новому участнику:', ex);
-    });
+    webRtcCallService.startCallWithPeerAsync(pUserId).catch(() => {});
   }
 
-  // 🟢 2. ЭКРАННЫЙ КАНАЛ: Независимо от ID, если МЫ транслируем экран — немедленно шлем его новичку!
   if (useCallsStore.getState().isScreenSharing && webRtcCallService.localScreenTrack) {
-    console.log(`%c[WebRTC 🖥️ Screen] Новый участник ${pUserId} зашел в звонок — отправляем ему экран!`, 'color: #9B51E0; font-weight: bold;');
     setTimeout(() => {
-      webRtcCallService.startScreenCallWithPeerAsync(pUserId).catch((ex) => {
-        console.error('[WebRTC ❌ Screen] Ошибка отправки экрана новому участнику:', ex);
-      });
+      webRtcCallService.startScreenCallWithPeerAsync(pUserId).catch(() => {});
     }, 300);
   }
 });
@@ -714,18 +785,18 @@ eventBus.on('UserLeftGroupCallMessage' as any, (data: { groupId: number; userId:
 eventBus.on('UserMediaStateChangedMessage' as any, (data: { groupId: number; userId: number; isMuted: boolean; isVideoOn: boolean; isScreenSharing: boolean }) => {
   const current = useCallsStore.getState().activeParticipants;
   const myUserId = getLocalUserProfile().id;
+  const oldParticipant = current.find((p) => Number(p.userId) === Number(data.userId));
 
   useCallsStore.setState({
     activeParticipants: current.map((p) =>
-      p.userId === data.userId
+      Number(p.userId) === Number(data.userId)
         ? { ...p, isMuted: data.isMuted, isVideoOn: data.isVideoOn, isScreenSharing: data.isScreenSharing }
         : p
     ),
   });
 
-  // 🟢 Сбрасываем сокет только для ЧУЖОГО пира (не для себя самого!)
-  if (!data.isScreenSharing && data.userId !== myUserId) {
-    webRtcCallService.removeScreenPeer(data.userId);
+  if (oldParticipant && oldParticipant.isScreenSharing && !data.isScreenSharing && Number(data.userId) !== myUserId) {
+    webRtcCallService.removeScreenPeer(Number(data.userId));
   }
 });
 
@@ -743,6 +814,8 @@ eventBus.on('CallEndedMessage' as any, async () => {
     localScreenStream: null,
     remoteCameraStreams: new Map(),
     remoteScreenStreams: new Map(),
+    availableScreenSources: [],
+    selectedScreenSourceId: null,
     spotlightUserId: null,
     isVideoOn: false,
     isScreenSharing: false,
@@ -753,7 +826,5 @@ eventBus.on('CallEndedMessage' as any, async () => {
 
   try {
     await webRtcCallService.cleanup();
-  } catch (ex) {
-    console.error('[CallsStore ERROR] Ошибка очистки ресурсов WebRTC:', ex);
-  }
+  } catch {}
 });

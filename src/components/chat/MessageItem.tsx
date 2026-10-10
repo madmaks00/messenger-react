@@ -408,8 +408,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       if (model.isEdited) return '7px 125px 12px 12px';
       return '7px 70px 12px 12px';
     } else {
-      if (model.isEdited) return '7px 100px 12px 12px';
-      return '7px 50px 12px 12px';
+      const topPad = model.isGroupMessage ? '0px' : '7px';
+      if (model.isEdited) return `${topPad} 100px 12px 12px`;
+      return `${topPad} 50px 12px 12px`;
     }
   };
 
@@ -586,7 +587,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                   e.stopPropagation();
                   useNavigationStore.getState().openUserProfile(model.senderId);
                 }}
-                style={{ padding: '6px 12px 2px 12px', fontSize: 14, fontWeight: 600, color: PALETTE.authorName, cursor: 'pointer' }}
+                style={{ padding: '4px 12px 4px 12px', fontSize: 14, fontWeight: 600, color: PALETTE.authorName, cursor: 'pointer' }}
               >
                 {model.senderName}
               </div>
@@ -854,8 +855,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               <div
                 style={{
                   position: 'absolute',
-                  right: 6,
-                  bottom: 4,
+                  right: isMy ? 6 : 12,
+                  bottom: isMy ? 4 : 7,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 4,
