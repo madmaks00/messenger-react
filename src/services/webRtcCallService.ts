@@ -24,7 +24,7 @@ export class WebRtcCallService {
   private candidateQueue: Map<number, RTCIceCandidateInit[]> = new Map();
   private remoteAudioElements: Map<number, HTMLAudioElement> = new Map();
 
-  // 🟢 Раздельные экранные каналы
+  // 🟢 Изолированные экранные каналы H.264
   private screenOutPeerConnections: Map<number, RTCPeerConnection> = new Map();
   private screenOutCandidateQueue: Map<number, RTCIceCandidateInit[]> = new Map();
 
@@ -87,11 +87,11 @@ export class WebRtcCallService {
     this.syncMediaState();
   }
 
-  // ================= 1. КАМЕРА =================
+  // ================= 1. КАМЕРА (H.264 @ 3.5 Mbps) =================
 
   public async startCamera(): Promise<MediaStreamTrack | null> {
     try {
-      console.log('%c[WebRTC 📷 Cam] Включение камеры...', 'color: #3B82F6;');
+      console.log('%c[WebRTC 📷 Cam] Запуск камеры Full HD...', 'color: #3B82F6;');
       if (this.localCameraStream) {
         this.localCameraStream.getTracks().forEach((t) => t.stop());
         this.localCameraStream = null;
@@ -104,6 +104,9 @@ export class WebRtcCallService {
 
       this.localCameraStream = camStream;
       const track = camStream.getVideoTracks()[0];
+      if ('contentHint' in track) {
+        track.contentHint = 'motion';
+      }
       this.localCameraTrack = track;
 
       track.onended = () => { void this.stopCamera(); };
@@ -113,6 +116,7 @@ export class WebRtcCallService {
           const videoTransceiver = pc.getTransceivers().find((t) => t.receiver?.track?.kind === 'video');
           if (videoTransceiver && videoTransceiver.sender) {
             await videoTransceiver.sender.replaceTrack(track);
+            await this.applySenderBitrate(videoTransceiver, 3_500_000);
           }
         } catch {}
       }
@@ -127,6 +131,7 @@ export class WebRtcCallService {
   }
 
   public async stopCamera(): Promise<void> {
+    console.log('%c[WebRTC 📷 Cam] Остановка камеры...', 'color: #6B7280;');
     if (this.localCameraStream) {
       this.localCameraStream.getTracks().forEach((t) => { t.enabled = false; t.stop(); });
       this.localCameraStream = null;
@@ -151,11 +156,11 @@ export class WebRtcCallService {
     this.syncMediaState();
   }
 
-  // ================= 2. ЭКРАН =================
+  // ================= 2. ЭКРАН (H.264 @ 8.0 Mbps 60 FPS) =================
 
   public async startScreenShare(): Promise<MediaStreamTrack | null> {
     try {
-      console.log('%c[WebRTC 🖥️ Screen Out] Запуск экрана...', 'color: #9B51E0; font-weight: bold;');
+      console.log('%c[WebRTC 🖥️ Screen Out] Запуск экрана на 60 FPS...', 'color: #9B51E0; font-weight: bold;');
       if (this.localScreenStream) {
         this.localScreenStream.getTracks().forEach((t) => t.stop());
         this.localScreenStream = null;
@@ -165,18 +170,22 @@ export class WebRtcCallService {
         video: {
           cursor: 'always',
           frameRate: { ideal: 60, max: 60 },
-          width: { max: 1920 },
-          height: { max: 1080 },
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
         },
         audio: false,
       });
 
       this.localScreenStream = screenStream;
       const track = screenStream.getVideoTracks()[0];
+
+      if ('contentHint' in track) {
+        track.contentHint = 'detail';
+      }
       this.localScreenTrack = track;
 
       track.onended = () => {
-        console.log('%c[WebRTC 🖥️ Screen Out] Пользователь остановил трансляцию экрана', 'color: #F59E0B;');
+        console.log('%c[WebRTC 🖥️ Screen Out] Пользователь остановил трансляцию в браузере', 'color: #F59E0B;');
         void this.stopScreenShare();
       };
 
@@ -195,7 +204,7 @@ export class WebRtcCallService {
   }
 
   public async stopScreenShare(): Promise<void> {
-    console.log('%c[WebRTC 🖥️ Screen Out] Остановка экрана...', 'color: #6B7280;');
+    console.log('%c[WebRTC 🖥️ Screen Out] Остановка трансляции экрана...', 'color: #6B7280;');
     if (this.localScreenStream) {
       this.localScreenStream.getTracks().forEach((t) => { t.enabled = false; t.stop(); });
       this.localScreenStream = null;
@@ -221,7 +230,6 @@ export class WebRtcCallService {
   }
 
   public removeScreenPeer(peerId: number): void {
-    // 🟢 Закрываем ТОЛЬКО входящий экран от этого пира
     const inPc = this.screenInPeerConnections.get(peerId);
     if (inPc) {
       console.log(`%c[WebRTC 🖥️ Screen In] Закрытие входящего экрана от ${peerId}`, 'color: #E11D48;');
@@ -236,23 +244,23 @@ export class WebRtcCallService {
       this.remoteScreenStreams.delete(peerId);
       this.notifyRemoteStreams();
     }
-
-    // ❌ screenOutPeerConnections НЕ ТРОГАЕМ: мы продолжаем транслировать свой экран!
   }
 
   public async startScreenCallWithPeerAsync(targetUserId: number): Promise<void> {
     try {
-      console.log(`%c[WebRTC 🖥️ Screen Out] Создание Offer экрана к пиру ${targetUserId}`, 'color: #9B51E0;');
+      console.log(`%c[WebRTC 🖥️ Screen Out] Создание H.264 Offer экрана к пиру ${targetUserId}`, 'color: #9B51E0;');
       const pc = await this.getOrCreateScreenOutPeerConnectionAsync(targetUserId, true);
       const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      
+      const modifiedSdp = this.enforceSdpBitrate(offer.sdp || '', true);
+      await pc.setLocalDescription(new RTCSessionDescription({ type: offer.type, sdp: modifiedSdp }));
 
       this.invokeSignaling(
         targetUserId,
         JSON.stringify({
           isScreen: true,
           screenDirection: 'out',
-          sdp: { type: offer.type, sdp: offer.sdp },
+          sdp: { type: offer.type, sdp: modifiedSdp },
         })
       );
     } catch (ex) {
@@ -260,7 +268,6 @@ export class WebRtcCallService {
     }
   }
 
-  // 🟢 ИСХОДЯЩИЙ СОКЕТ: Используем безопасный direction: 'sendrecv'
   private async getOrCreateScreenOutPeerConnectionAsync(targetUserId: number, forceRecreate: boolean = false): Promise<RTCPeerConnection> {
     const existing = this.screenOutPeerConnections.get(targetUserId);
     if (!forceRecreate && existing && existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
@@ -273,15 +280,16 @@ export class WebRtcCallService {
       this.screenOutCandidateQueue.delete(targetUserId);
     }
 
-    console.log(`[WebRTC 🖥️ Screen Out] Новый сокет к пиру ${targetUserId}`);
+    console.log(`[WebRTC 🖥️ Screen Out] Новый сокет к пиру ${targetUserId} (H.264)`);
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
 
     if (this.localScreenTrack && this.localScreenTrack.readyState === 'live') {
       const transceiver = pc.addTransceiver(this.localScreenTrack, {
-        direction: 'sendrecv', // 🟢 Гарантирует совместимость с Answer без Incompatible receive direction
+        direction: 'sendrecv',
         streams: [new MediaStream([this.localScreenTrack])],
       });
-      this.applyVp8CodecPreference(transceiver);
+      this.applyH264CodecPreference(transceiver);
+      void this.applySenderBitrate(transceiver, 8_000_000);
     }
 
     pc.onicecandidate = (event) => {
@@ -305,7 +313,6 @@ export class WebRtcCallService {
     return pc;
   }
 
-  // 🟢 ВХОДЯЩИЙ СОКЕТ: Используем безопасный direction: 'sendrecv'
   private async getOrCreateScreenInPeerConnectionAsync(senderId: number, forceRecreate: boolean = false): Promise<RTCPeerConnection> {
     const existing = this.screenInPeerConnections.get(senderId);
     if (!forceRecreate && existing && existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
@@ -318,10 +325,10 @@ export class WebRtcCallService {
       this.screenInCandidateQueue.delete(senderId);
     }
 
-    console.log(`[WebRTC 🖥️ Screen In] Новый сокет приема экрана от пира ${senderId}`);
+    console.log(`[WebRTC 🖥️ Screen In] Новый сокет приема H.264 экрана от пира ${senderId}`);
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
-    const transceiver = pc.addTransceiver('video', { direction: 'sendrecv' }); // 🟢 Совместимо со всеми браузерами и C#
-    this.applyVp8CodecPreference(transceiver);
+    const transceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
+    this.applyH264CodecPreference(transceiver);
 
     pc.onicecandidate = (event) => {
       if (event.candidate && event.candidate.candidate && !event.candidate.candidate.includes('0.0.0.0')) {
@@ -341,9 +348,9 @@ export class WebRtcCallService {
     };
 
     pc.ontrack = (event) => {
-      console.log(`%c[WebRTC 🎬 Track In] Получен поток экрана от ${senderId}! TrackID=${event.track.id}`, 'color: #10B981; font-weight: bold;');
+      console.log(`%c[WebRTC 🎬 Track In] Получен H.264 поток экрана от ${senderId}! TrackID=${event.track.id}`, 'color: #10B981; font-weight: bold;');
       const freshStream = new MediaStream([event.track]);
-      this.remoteScreenStreams.set(senderId, freshStream);
+      this.remoteScreenStreams.set(Number(senderId), freshStream);
       this.notifyRemoteStreams();
     };
 
@@ -380,23 +387,39 @@ export class WebRtcCallService {
       ? await this.getOrCreateScreenInPeerConnectionAsync(senderId, true)
       : await this.getOrCreateScreenOutPeerConnectionAsync(senderId, false);
 
-    if (payload.sdp) {
-      const sdpText = typeof payload.sdp === 'string' ? payload.sdp : payload.sdp.sdp;
-      const sdpType: RTCSdpType = typeof payload.sdp === 'object' ? payload.sdp.type || 'offer' : 'offer';
+    // 🟢 СТАЛО (устраняет InvalidStateError: Called in wrong state: stable):
+if (payload.sdp) {
+  const sdpText = typeof payload.sdp === 'string' ? payload.sdp : payload.sdp.sdp;
+  const sdpType: RTCSdpType = typeof payload.sdp === 'object' ? payload.sdp.type || 'offer' : 'offer';
 
-      console.log(`[WebRTC 🖥️ Screen] Установка ${sdpType.toUpperCase()} от ${senderId}`);
-      await pc.setRemoteDescription(new RTCSessionDescription({ type: sdpType, sdp: sdpText }));
+  // Игнорируем Answer, если соединение уже стабильно
+  if (sdpType === 'answer' && pc.signalingState !== 'have-local-offer') {
+    return;
+  }
+
+  console.log(`[WebRTC 🖥️ Screen] Установка H.264 ${sdpType.toUpperCase()} от ${senderId}`);
+  await pc.setRemoteDescription(new RTCSessionDescription({ type: sdpType, sdp: sdpText }));
+
+      // Гарантируем сохранение настроек битрейта после установки ответа
+      if (!isIncomingOffer && this.localScreenTrack) {
+        const vt = pc.getTransceivers().find((t) => t.sender?.track === this.localScreenTrack);
+        if (vt) {
+          void this.applySenderBitrate(vt, 8_000_000);
+        }
+      }
 
       if (sdpType === 'offer') {
         const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
+        const modifiedAnswerSdp = this.enforceSdpBitrate(answer.sdp || '', true);
+        await pc.setLocalDescription(new RTCSessionDescription({ type: answer.type, sdp: modifiedAnswerSdp }));
+
         console.log(`[WebRTC 🖥️ Screen In] Отправка Answer экрану пира ${senderId}`);
         this.invokeSignaling(
           senderId,
           JSON.stringify({
             isScreen: true,
             screenDirection: 'in',
-            sdp: { type: answer.type, sdp: answer.sdp },
+            sdp: { type: answer.type, sdp: modifiedAnswerSdp },
           })
         );
       }
@@ -409,7 +432,9 @@ export class WebRtcCallService {
         }
         qDict.delete(senderId);
       }
+    // 🟢 СТАЛО (чёткая маршрутизация по направлению и приведение ID к числу):
     } else if (payload.candidate) {
+      const numSenderId = Number(senderId);
       const candObj = payload.candidate;
       const iceInit: RTCIceCandidateInit = {
         candidate: candObj.candidate,
@@ -417,16 +442,17 @@ export class WebRtcCallService {
         sdpMLineIndex: candObj.sdpMLineIndex !== undefined ? Number(candObj.sdpMLineIndex) : 0,
       };
 
-      const isTargetIn = payload.screenDirection === 'out' || !this.screenOutPeerConnections.has(senderId);
+      // Если собеседник приемник (in) — значит мы отправитель (ScreenOut)!
+      const isTargetIn = payload.screenDirection === 'out';
       const targetPc = isTargetIn
-        ? await this.getOrCreateScreenInPeerConnectionAsync(senderId, false)
-        : await this.getOrCreateScreenOutPeerConnectionAsync(senderId, false);
+        ? await this.getOrCreateScreenInPeerConnectionAsync(numSenderId, false)
+        : await this.getOrCreateScreenOutPeerConnectionAsync(numSenderId, false);
 
       if (!targetPc.remoteDescription) {
         const qDict = isTargetIn ? this.screenInCandidateQueue : this.screenOutCandidateQueue;
-        const q = qDict.get(senderId) || [];
+        const q = qDict.get(numSenderId) || [];
         q.push(iceInit);
-        qDict.set(senderId, q);
+        qDict.set(numSenderId, q);
       } else {
         try { await targetPc.addIceCandidate(new RTCIceCandidate(iceInit)); } catch {}
       }
@@ -467,16 +493,18 @@ export class WebRtcCallService {
       if (sdpType === 'offer') {
         const videoTransceiver = pc.getTransceivers().find((t) => t.receiver?.track?.kind === 'video');
         if (videoTransceiver) {
-          this.applyVp8CodecPreference(videoTransceiver);
+          this.applyH264CodecPreference(videoTransceiver);
           videoTransceiver.direction = 'sendrecv';
           if (this.localCameraTrack && this.localCameraTrack.readyState === 'live') {
             await videoTransceiver.sender.replaceTrack(this.localCameraTrack);
+            void this.applySenderBitrate(videoTransceiver, 3_500_000);
           }
         }
 
         const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        this.invokeSignaling(senderId, JSON.stringify({ sdp: { type: answer.type, sdp: answer.sdp } }));
+        const modifiedAnswer = this.enforceSdpBitrate(answer.sdp || '', false);
+        await pc.setLocalDescription(new RTCSessionDescription({ type: answer.type, sdp: modifiedAnswer }));
+        this.invokeSignaling(senderId, JSON.stringify({ sdp: { type: answer.type, sdp: modifiedAnswer } }));
       }
 
       const queued = this.candidateQueue.get(senderId);
@@ -507,18 +535,19 @@ export class WebRtcCallService {
     }
   }
 
-  // ================= 4. ГЛАВНОЕ P2P =================
+  // ================= 4. ГЛАВНОЕ P2P (H.264) =================
 
   public async initializeWebRTCAsync(): Promise<void> {
     const targetId = this.singleCallTargetId !== 0 ? this.singleCallTargetId : 1;
     await this.createPeerConnectionAsync(targetId, true);
   }
 
-  public async createPeerConnectionAsync(targetUserId: number, isOfferer: boolean = false): Promise<RTCPeerConnection> {
-    const existing = this.peerConnections.get(targetUserId);
-    if (existing && existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
-      return existing;
-    }
+  // СТАЛО (убрана лишняя переменная):
+public async createPeerConnectionAsync(targetUserId: number, isOfferer: boolean = false): Promise<RTCPeerConnection> {
+  const existing = this.peerConnections.get(targetUserId);
+  if (existing && existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
+    return existing;
+  }
 
     const audioStream = await this.initializeLocalCapture();
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
@@ -538,7 +567,8 @@ export class WebRtcCallService {
       } else {
         videoTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
       }
-      this.applyVp8CodecPreference(videoTransceiver);
+      this.applyH264CodecPreference(videoTransceiver);
+      void this.applySenderBitrate(videoTransceiver, 3_500_000);
     }
 
     pc.onicecandidate = (event) => {
@@ -569,14 +599,9 @@ export class WebRtcCallService {
         return;
       }
 
-      let stream = this.remoteCameraStreams.get(targetUserId);
-      if (!stream) {
-        stream = new MediaStream();
-        this.remoteCameraStreams.set(targetUserId, stream);
-      }
-
-      stream.getTracks().forEach((t) => stream!.removeTrack(t));
-      stream.addTrack(event.track);
+      console.log(`%c[WebRTC 📷 Cam In] Принят H.264 поток камеры от пира ${targetUserId}`, 'color: #10B981; font-weight: bold;');
+      const freshStream = new MediaStream([event.track]);
+      this.remoteCameraStreams.set(Number(targetUserId), freshStream);
       this.notifyRemoteStreams();
     };
 
@@ -590,17 +615,77 @@ export class WebRtcCallService {
     return pc;
   }
 
-  private applyVp8CodecPreference(transceiver: RTCRtpTransceiver): void {
+  private applyH264CodecPreference(transceiver: RTCRtpTransceiver): void {
     if ('setCodecPreferences' in transceiver && typeof RTCRtpReceiver.getCapabilities === 'function') {
       try {
         const capabilities = RTCRtpReceiver.getCapabilities('video');
         if (capabilities && capabilities.codecs) {
-          const vp8Codecs = capabilities.codecs.filter((c) => c.mimeType.toLowerCase() === 'video/vp8');
-          const otherCodecs = capabilities.codecs.filter((c) => c.mimeType.toLowerCase() !== 'video/vp8');
-          if (vp8Codecs.length > 0) {
-            transceiver.setCodecPreferences([...vp8Codecs, ...otherCodecs]);
+          const h264Codecs = capabilities.codecs.filter((c) => c.mimeType.toLowerCase() === 'video/h264');
+
+          h264Codecs.sort((a, b) => {
+            const aFmtp = a.sdpFmtpLine?.toLowerCase() || '';
+            const bFmtp = b.sdpFmtpLine?.toLowerCase() || '';
+            const aMode1 = aFmtp.includes('packetization-mode=1');
+            const bMode1 = bFmtp.includes('packetization-mode=1');
+            if (aMode1 && !bMode1) return -1;
+            if (!aMode1 && bMode1) return 1;
+            return 0;
+          });
+
+          const otherCodecs = capabilities.codecs.filter((c) => c.mimeType.toLowerCase() !== 'video/h264');
+          if (h264Codecs.length > 0) {
+            transceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
+            console.log('%c[WebRTC 🚀 Codec] Кодеки H.264 успешно установлены в приоритет', 'color: #10B981;');
           }
         }
+      } catch (e) {
+        console.warn('[WebRTC ⚠️ H264] Ошибка setCodecPreferences:', e);
+      }
+    }
+  }
+
+  // 🟢 Форсируем минимальный и стартовый битрейт для обхода BWE-ограничения Chrome в 300 кбит/с
+  private enforceSdpBitrate(sdp: string, isScreen: boolean): string {
+    if (!sdp) return sdp;
+    const maxKbps = isScreen ? 8000 : 3500;
+    const minKbps = isScreen ? 5000 : 2000;
+    const startKbps = isScreen ? 7000 : 3000;
+
+    const lines = sdp.split('\r\n');
+    const result: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+
+      // Внедряем параметры x-google прямо в a=fmtp кодека
+      if (line.startsWith('a=fmtp:')) {
+        if (!line.includes('x-google-min-bitrate')) {
+          line = `${line};x-google-min-bitrate=${minKbps};x-google-start-bitrate=${startKbps};x-google-max-bitrate=${maxKbps}`;
+        }
+      }
+
+      result.push(line);
+
+      if (line.startsWith('m=video')) {
+        result.push(`b=AS:${maxKbps}`);
+        result.push(`b=TIAS:${maxKbps * 1000}`);
+      }
+    }
+
+    return result.join('\r\n');
+  }
+
+  private async applySenderBitrate(transceiver: RTCRtpTransceiver, maxBitrateBps: number): Promise<void> {
+    if (transceiver.sender && typeof transceiver.sender.getParameters === 'function') {
+      try {
+        const params = transceiver.sender.getParameters();
+        if (!params.encodings || params.encodings.length === 0) {
+          params.encodings = [{}];
+        }
+        params.encodings[0].maxBitrate = maxBitrateBps;
+        params.encodings[0].scaleResolutionDownBy = 1.0;
+        await transceiver.sender.setParameters(params);
+        console.log(`[WebRTC 🚀 Bitrate] Установлен maxBitrate: ${(maxBitrateBps / 1_000_000).toFixed(1)} Mbps`);
       } catch {}
     }
   }
@@ -609,9 +694,10 @@ export class WebRtcCallService {
     this.singleCallTargetId = targetUserId;
     const pc = await this.createPeerConnectionAsync(targetUserId, true);
     const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-    await pc.setLocalDescription(offer);
+    const modifiedOffer = this.enforceSdpBitrate(offer.sdp || '', false);
+    await pc.setLocalDescription(new RTCSessionDescription({ type: offer.type, sdp: modifiedOffer }));
 
-    this.invokeSignaling(targetUserId, JSON.stringify({ sdp: { type: offer.type, sdp: offer.sdp } }));
+    this.invokeSignaling(targetUserId, JSON.stringify({ sdp: { type: offer.type, sdp: modifiedOffer } }));
   }
 
   public async startCallAsync(): Promise<void> {
@@ -633,7 +719,6 @@ export class WebRtcCallService {
 
     this.removeScreenPeer(userId);
 
-    // 🟢 Исходящий сокет экрана закрываем ТОЛЬКО при полном выходе пира
     const outPc = this.screenOutPeerConnections.get(userId);
     if (outPc) {
       try { outPc.close(); } catch {}
