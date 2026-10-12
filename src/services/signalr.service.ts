@@ -317,9 +317,14 @@ this.hubConnection.on(
       if (!isMyMessage && currentId > 0) {
         try {
           const db = getLocalDatabase(currentId);
-          const { id: _, ...toInsert } = newMsg;
-          const localId = await db.messages.add(toInsert as any);
-          newMsg.id = Number(localId);
+          await db.transaction('rw',db.messages,async()=> {
+            const existing = serverId>0 ? await db.messages.where('serverId').equals(serverId).first() : undefined;
+            if(existing) Object.assign(newMsg,existing);
+            else {
+              const {id:_,...toInsert}=newMsg;
+              newMsg.id=Number(await db.messages.add(toInsert as any));
+            }
+          });
         } catch (err) {
           console.warn('[SignalR] Ошибка сохранения сообщения в локальную БД:', err);
         }
@@ -630,6 +635,15 @@ this.hubConnection.on(
             'color: #3B82F6;'
           );
 
+          eventBus.emit('SidebarUpdateMessage', {
+            userId: senderId,
+            groupId: null,
+            previewText: sidebarPreview,
+            incrementUnread: true,
+            messageType: msgType,
+            secretChatId,
+          });
+
           eventBus.emit('SecretMessageReceivedMessage' as any, {
             senderId,
             secretChatId,
@@ -641,15 +655,6 @@ this.hubConnection.on(
             replySender,
             incomingAttachments,
             message: newMsg,
-          });
-
-          eventBus.emit('SidebarUpdateMessage', {
-            userId: senderId,
-            groupId: null,
-            previewText: sidebarPreview,
-            incrementUnread: true,
-            messageType: msgType,
-            secretChatId,
           });
         } catch (ex) {
           console.error(`❌ [SIGNALR CRITICAL] Сбой расшифровки секретного сообщения: SenderId=${senderId}, ChatId=${secretChatId}, Seq=${seq}`, ex);

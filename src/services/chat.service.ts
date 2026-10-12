@@ -45,7 +45,7 @@ export interface IChatService {
   downloadFileBytesAsync(fileUrl: string): Promise<ArrayBuffer | null>;
   savePermissionsAsync(groupId: number, canSendText: boolean, canSendMedia: boolean, canPinMessages: boolean): Promise<boolean>;
   searchMessagesAsync(query: string, groupId?: number | null, otherUserId?: number | null): Promise<IMessage[]>;
-  getLocalMessagesAsync(currentUserId: number, targetUserId?: number | null, groupId?: number | null, secretChatId?: string | null, take?: number, beforeTimestamp?: string | null): Promise<IMessage[]>;
+  getLocalMessagesAsync(currentUserId: number, targetUserId?: number | null, groupId?: number | null, secretChatId?: string | null, take?: number, beforeTimestamp?: string | null, beforeServerId?: number): Promise<IMessage[]>;
   getLocalPinnedMessagesAsync(currentUserId: number, targetUserId?: number | null, groupId?: number | null, secretChatId?: string | null): Promise<IMessage[]>;
   getMissingQuotedMessagesAsync(messageIds: number[]): Promise<IMessage[]>;
   getLocalMessageByIdAsync(messageId: number): Promise<IMessage | null>;
@@ -184,35 +184,39 @@ export class ChatService implements IChatService {
     return finalAttachment;
   }
 
-  public async syncDeltaAsync(userId: number): Promise<number> {
+  private deltaSyncJobs = new Map<number, Promise<number>>();
+  private deltaEpoch = 0;
+  public invalidateDeltaSync(): void { this.deltaEpoch++;this.deltaSyncJobs.clear(); }
+
+  public syncDeltaAsync(userId: number): Promise<number> {
+    if (userId <= 0 || userSession.userId !== userId) return Promise.resolve(0);
+    const pending = this.deltaSyncJobs.get(userId);if (pending) return pending;
+    const epoch = this.deltaEpoch;
+    const task = this.runDeltaSyncAsync(userId, epoch).finally(() => { if(this.deltaSyncJobs.get(userId) === task)this.deltaSyncJobs.delete(userId); });
+    this.deltaSyncJobs.set(userId,task);return task;
+  }
+
+  private async runDeltaSyncAsync(userId: number, epoch: number): Promise<number> {
+    let processedCount = 0;
+    const current = () => userSession.userId === userId && epoch === this.deltaEpoch;
     try {
       const db = getLocalDatabase(userId);
-
-      let lastId = 0;
-      try {
-        const lastMsg = await db.messages.orderBy('serverId').last();
-        lastId = lastMsg?.serverId || 0;
-      } catch {
-        const all = await db.messages.toArray();
-        lastId = all.reduce((max, m) => Math.max(max, m.serverId || 0), 0);
-      }
-
-      const syncState = await db.syncStates.get('LastDeltaSyncUtc');
-      let lastSyncUtcString = syncState?.value;
-      if (!lastSyncUtcString) {
-        const d = new Date();
-        d.setDate(d.getDate() - 7);
-        lastSyncUtcString = d.toISOString();
-      }
-
-      const url = `api/Messages/delta?lastServerId=${lastId}&lastSyncTime=${encodeURIComponent(lastSyncUtcString)}`;
-      const response = await apiClient.get<any[]>(url);
-      const deltaMessages = response.data;
-
-      if (!deltaMessages || deltaMessages.length === 0) return 0;
-
-      let processedCount = 0;
-
+      // A new checkpoint deliberately bootstraps legacy caches once, including previously missed old rows.
+      const state = await db.syncStates.get('DeltaSyncV2Utc');
+      const since = state?.value ? new Date(Math.max(0,Date.parse(state.value)-30000)).toISOString() : '0001-01-01T00:00:00Z';
+      let until: string | undefined, afterUpdatedAt: string | undefined, afterId = 0;
+      while (current()) {
+        const params = new URLSearchParams({since,limit:'250'});
+        if(until)params.set('until',until);
+        if(afterUpdatedAt){params.set('afterUpdatedAt',afterUpdatedAt);params.set('afterId',String(afterId));}
+        const response = await apiClient.get<any>('api/Messages/delta-page?'+params.toString(),{timeout:30000});
+        if(!current())return processedCount;
+        const page = response.data;
+        if(!page || !Array.isArray(page.messages) || typeof page.until !== 'string' || !Number.isFinite(Date.parse(page.until)) || typeof page.hasMore !== 'boolean')throw new Error('Invalid delta page');
+        until = page.until;
+        const deltaMessages = page.messages;
+        // The page and its local writes are atomic; failure leaves the completed checkpoint intact.
+        await db.transaction('rw',db.messages,async()=> {
       for (const msg of deltaMessages) {
         const serverId = msg.id || msg.serverId;
 
@@ -231,7 +235,9 @@ export class ChatService implements IChatService {
 
         const isMy = msg.senderId === userId;
 
-        let existing = await db.messages.where('serverId').equals(serverId).first();
+        const matches = await db.messages.where('serverId').equals(serverId).toArray();
+        let existing: IMessage | undefined = matches[0];
+        if(matches.length>1)await db.messages.bulkDelete(matches.slice(1).map(m=>m.id!));
 
         if (!existing && isMy) {
           const msgTime = new Date(msg.timestamp).getTime();
@@ -240,6 +246,9 @@ export class ChatService implements IChatService {
               (m) =>
                 (!m.serverId || m.serverId === 0 || !m.isSentToServer) &&
                 m.senderId === userId &&
+                (m.receiverId ?? null) === (msg.receiverId ?? null) &&
+                (m.groupId ?? null) === (msg.groupId ?? null) &&
+                !m.secretChatId &&
                 m.text === msg.text &&
                 Math.abs(new Date(m.timestamp).getTime() - msgTime) < 15000
             )
@@ -288,6 +297,7 @@ export class ChatService implements IChatService {
             text: msg.text,
             isPinned: msg.isPinned,
             isRead: msg.isRead,
+            viewsCount: msg.viewsCount ?? existing.viewsCount ?? 1,
             replyToMessageIds: msg.replyToMessageIds,
             forwardedFromName: msg.forwardedFromName,
             forwardedFromAvatar: msg.forwardedFromAvatar,
@@ -323,16 +333,21 @@ export class ChatService implements IChatService {
         }
       }
 
-      await db.syncStates.put({ key: 'LastDeltaSyncUtc', value: new Date().toISOString() });
-
-      if (processedCount > 0) {
-        eventBus.emit('ActiveChatRefreshRequestedMessage' as any, undefined);
+        });
+        if(!current())return processedCount;
+        if(!page.hasMore) {
+          await db.syncStates.put({key:'DeltaSyncV2Utc',value:until!});
+          if(processedCount>0)eventBus.emit('ActiveChatRefreshRequestedMessage' as any,undefined);
+          return processedCount;
+        }
+        if(typeof page.nextUpdatedAt !== 'string' || !Number.isInteger(page.nextId) || page.nextId<=0 || (page.nextUpdatedAt===afterUpdatedAt&&page.nextId===afterId))throw new Error('Delta cursor did not advance');
+        afterUpdatedAt=page.nextUpdatedAt;afterId=page.nextId;
       }
-
       return processedCount;
-    } catch (ex) {
-      console.error('[CLIENT DELTA_SYNC ERROR] Ошибка дельта-синхронизации:', ex);
-      return 0;
+    } catch(ex) {
+      console.error('[CLIENT DELTA_SYNC ERROR] Delta synchronization failed:',ex);
+      if(processedCount>0 && current())eventBus.emit('ActiveChatRefreshRequestedMessage' as any,undefined);
+      return processedCount;
     }
   }
 
@@ -650,47 +665,30 @@ export class ChatService implements IChatService {
     groupId?: number | null,
     secretChatId?: string | null,
     take: number = 30,
-    beforeTimestamp?: string | null
+    beforeTimestamp?: string | null,
+    beforeServerId?: number
   ): Promise<IMessage[]> {
     const db = getLocalDatabase(currentUserId);
     const maxTime = beforeTimestamp || '\uffff';
 
+    const visible = (m:IMessage) => !m.isDeleted && !m.isDeletedForMe && m.text !== 'This message was deleted';
+    const maxId = beforeTimestamp ? (beforeServerId ?? -Infinity) : Infinity;
     let rawList: IMessage[] = [];
-
     if (secretChatId) {
-      rawList = await db.messages
-        .where('[secretChatId+timestamp]')
-        .between([secretChatId, ''], [secretChatId, maxTime], true, false)
-        .reverse()
-        .limit(take)
-        .toArray();
-    } else if (groupId && groupId > 0) {
-      rawList = await db.messages
-        .where('[groupId+timestamp]')
-        .between([groupId, ''], [groupId, maxTime], true, false)
-        .reverse()
-        .limit(take)
-        .toArray();
-    } else if (targetUserId && targetUserId > 0) {
-      const [sent, received] = await Promise.all([
-        db.messages
-          .where('[senderId+receiverId+timestamp]')
-          .between([currentUserId, targetUserId, ''], [currentUserId, targetUserId, maxTime], true, false)
-          .reverse()
-          .limit(take)
-          .toArray(),
-        db.messages
-          .where('[senderId+receiverId+timestamp]')
-          .between([targetUserId, currentUserId, ''], [targetUserId, currentUserId, maxTime], true, false)
-          .reverse()
-          .limit(take)
-          .toArray(),
+      rawList = await db.messages.where('[secretChatId+timestamp]')
+        .between([secretChatId,''],[secretChatId,maxTime],true,false).reverse().filter(visible).limit(take).toArray();
+    } else if (groupId && groupId>0) {
+      rawList = await db.messages.where('[groupId+timestamp+serverId]')
+        .between([groupId,'',-Infinity],[groupId,maxTime,maxId],true,false).reverse().filter(visible).limit(take).toArray();
+    } else if (targetUserId && targetUserId>0) {
+      const [sent,received] = await Promise.all([
+        db.messages.where('[senderId+receiverId+timestamp+serverId]')
+          .between([currentUserId,targetUserId,'',-Infinity],[currentUserId,targetUserId,maxTime,maxId],true,false).reverse().filter(m=>visible(m)&&!m.secretChatId&&!m.groupId).limit(take).toArray(),
+        db.messages.where('[senderId+receiverId+timestamp+serverId]')
+          .between([targetUserId,currentUserId,'',-Infinity],[targetUserId,currentUserId,maxTime,maxId],true,false).reverse().filter(m=>visible(m)&&!m.secretChatId&&!m.groupId).limit(take).toArray()
       ]);
-
-      rawList = [...sent, ...received];
-    } else {
-      return [];
-    }
+      rawList=[...sent,...received];
+    } else return [];
 
     let list = rawList.filter(
       (m) => !m.isDeleted && !m.isDeletedForMe && m.text !== 'This message was deleted'
@@ -815,7 +813,7 @@ export class ChatService implements IChatService {
   public async markIncomingMessagesAsReadLocallyAsync(senderId: number, currentUserId: number): Promise<void> {
     const db = getLocalDatabase(currentUserId);
     const unread = await db.messages
-      .filter((m) => !m.isMyMessage && !m.isRead && m.senderId === senderId && (!m.receiverId || m.receiverId === currentUserId))
+      .filter((m) => !m.isMyMessage && !m.isRead && !m.secretChatId && !m.groupId && !m.noteId && m.senderId === senderId && (!m.receiverId || m.receiverId === currentUserId))
       .toArray();
 
     for (const m of unread) {
@@ -825,12 +823,15 @@ export class ChatService implements IChatService {
 
   public async saveMessageLocallyAsync(message: IMessage): Promise<void> {
     const db = getLocalDatabase(userSession.userId);
-    if (message.id && message.id > 0) {
-      await db.messages.put(message);
-    } else {
-      const id = await db.messages.add(message);
-      message.id = id;
-    }
+    await db.transaction('rw',db.messages,async()=> {
+      const existing=message.serverId>0 ? await db.messages.where('serverId').equals(message.serverId).first() : undefined;
+      if(existing?.id)message.id=existing.id;
+      if(message.id && message.id>0)await db.messages.put(message);
+      else {
+        const {id:_,...record}=message;
+        message.id=Number(await db.messages.add(record as IMessage));
+      }
+    });
   }
 
   public async updateMessageLocallyAsync(
@@ -1144,3 +1145,8 @@ export class ChatService implements IChatService {
 }
 
 export const chatService = new ChatService();
+eventBus.on('BeforeAccountSwitchMessage',()=>chatService.invalidateDeltaSync());
+eventBus.on('AuthFailedMessage' as any,()=>chatService.invalidateDeltaSync());
+
+
+

@@ -1317,7 +1317,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sendTyping: (text?: string) => {
     const { selectedChatUser } = get();
-    if (!selectedChatUser) return;
+    if (!selectedChatUser || selectedChatUser.isSecretChat) return;
     if (text !== undefined && text.trim().length === 0) return;
 
     if (!typingDebounceTimer) {
@@ -1359,7 +1359,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         selectedChatUser.isGroup ? selectedChatUser.id : null,
         selectedChatUser.isSecretChat ? selectedChatUser.secretChatId : null,
         30,
-        oldestTime
+        oldestTime,
+        currentChatMessages[0].serverId || 0
       );
 
       if (older && older.length > 0 && getChatKey(get().selectedChatUser) === activeKeyBefore) {
@@ -2267,7 +2268,7 @@ eventBus.on('EndSearchBoxMessage', () => {
 
 eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
   const { selectedChatUser } = useChatStore.getState();
-  if (!selectedChatUser) return;
+  if (!selectedChatUser || selectedChatUser.isSecretChat) return;
 
   const activeId = Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? 0);
   const isCurrent = groupId
@@ -2325,7 +2326,7 @@ eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
     selectedChatUser && activeChatId > 0 &&
     (incoming.groupId
       ? selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)
-      : !selectedChatUser.isGroup && (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId)))
+      : !selectedChatUser.isGroup && !selectedChatUser.isSecretChat && (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId)))
   );
 
   if (isFromCurrentChat) {
@@ -2409,7 +2410,7 @@ eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
         return { currentChatMessages: [...state.currentChatMessages, incoming] };
       });
 
-      useChatStore.getState().markAsRead();
+      if(useChatStore.getState().isScrolledToBottom)void useChatStore.getState().markAsRead();
     }
   }
 
@@ -2706,6 +2707,8 @@ eventBus.on('ActiveChatRefreshRequestedMessage' as any, async () => {
     }
   }
 });
+
+eventBus.on('SignalRConnectedMessage' as any,()=>{void useChatStore.getState().triggerDeltaSync();});
 
 eventBus.on('SyncTimerMessage' as any, () => {
   void useChatStore.getState().triggerDeltaSync();

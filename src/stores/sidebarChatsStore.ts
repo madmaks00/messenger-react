@@ -1013,7 +1013,7 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
     if (isGroup && c.isGroup && Number(c.groupId ?? c.id) === Number(groupId)) {
       return { ...c, isTyping: true };
     }
-    if (!isGroup && !c.isGroup && Number(c.userId ?? c.id) === Number(senderId)) {
+    if (!isGroup && !c.isGroup && !c.isSecretChat && Number(c.userId ?? c.id) === Number(senderId)) {
       return { ...c, isTyping: true };
     }
     return c;
@@ -1033,7 +1033,7 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
       if (isGroup && c.isGroup && Number(c.groupId ?? c.id) === Number(groupId)) {
         return { ...c, isTyping: false };
       }
-      if (!isGroup && !c.isGroup && Number(c.userId ?? c.id) === Number(senderId)) {
+      if (!isGroup && !c.isGroup && !c.isSecretChat && Number(c.userId ?? c.id) === Number(senderId)) {
         return { ...c, isTyping: false };
       }
       return c;

@@ -249,7 +249,7 @@ export const ChatWorkspaceView: React.FC = () => {
 
   const isLoadingHistoryRef = useRef<boolean>(false);
   const pendingAnchorRef = useRef<{ anchorMsgId: number; anchorRelativeOffset: number } | null>(null);
-  const prevChatIdRef = useRef<number | null>(null);
+  const prevChatIdRef = useRef<string | null>(null);
   const lastScrollTopRef = useRef<number>(0);
 
   const prevTotalHeightRef = useRef<number>(0);
@@ -562,6 +562,7 @@ export const ChatWorkspaceView: React.FC = () => {
     const maxScroll = Math.max(0, scrollRef.current.scrollHeight - scrollRef.current.clientHeight);
     scrollToOffsetAnimated(maxScroll, () => {
       isAtBottomRef.current = true;
+      if(!useChatStore.getState().isScrolledToBottom)useChatStore.setState({isScrolledToBottom:true});
       setShowScrollBottomBtn(false);
       markAsRead();
     });
@@ -570,13 +571,14 @@ export const ChatWorkspaceView: React.FC = () => {
   useLayoutEffect(() => {
     if (!scrollRef.current || !selectedChatUser) return;
 
-    const chatId = selectedChatUser.id;
+    const chatId = selectedChatUser.isSecretChat ? `s:${selectedChatUser.secretChatId}` : `${selectedChatUser.isGroup ? 'g' : 'u'}:${selectedChatUser.id}`;
     const chatChanged = chatId !== prevChatIdRef.current;
 
     if (chatChanged && !isHistoryLoading && totalContentHeight > 0 && currentChatMessages.length > 0) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       setScrollTop(scrollRef.current.scrollHeight);
       isAtBottomRef.current = true;
+      if(!useChatStore.getState().isScrolledToBottom)useChatStore.setState({isScrolledToBottom:true});
       setShowScrollBottomBtn(false);
       prevChatIdRef.current = chatId;
 
@@ -587,7 +589,7 @@ export const ChatWorkspaceView: React.FC = () => {
       eventBus.emit('FocusMessageInputMessage' as any, undefined);
       markAsRead();
     }
-  }, [selectedChatUser?.id, isHistoryLoading, totalContentHeight, currentChatMessages, markAsRead]);
+  }, [selectedChatUser?.id, selectedChatUser?.secretChatId, selectedChatUser?.isGroup, isHistoryLoading, totalContentHeight, currentChatMessages, markAsRead]);
 
   useLayoutEffect(() => {
     if (pendingAnchorRef.current && scrollRef.current && layoutItems.length > 0) {
@@ -709,6 +711,13 @@ export const ChatWorkspaceView: React.FC = () => {
     }
   };
 
+  useLayoutEffect(()=>{
+    const viewer=scrollRef.current;if(!viewer||!selectedChatUser||isHistoryLoading)return;
+    if(viewer.scrollHeight<=viewer.clientHeight+1){
+      isAtBottomRef.current=true;
+      if(!useChatStore.getState().isScrolledToBottom)useChatStore.setState({isScrolledToBottom:true});
+    }
+  },[selectedChatUser?.id,selectedChatUser?.secretChatId,totalContentHeight,isHistoryLoading]);
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const currentScroll = target.scrollTop;
@@ -724,6 +733,7 @@ export const ChatWorkspaceView: React.FC = () => {
     const distanceFromBottom = target.scrollHeight - currentScroll - target.clientHeight;
     const atBottom = distanceFromBottom < 30;
     isAtBottomRef.current = atBottom;
+    if(useChatStore.getState().isScrolledToBottom!==atBottom)useChatStore.setState({isScrolledToBottom:atBottom});
 
     setShowScrollBottomBtn(distanceFromBottom > 60);
 
@@ -998,7 +1008,7 @@ export const ChatWorkspaceView: React.FC = () => {
                 </div>
 
                 <div style={{ fontSize: 12.5, lineHeight: 1.2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {selectedChatUser.isTyping ? (
+                  {selectedChatUser.isTyping && !selectedChatUser.isSecretChat ? (
                     <span style={{ color: PALETTE.accent, fontWeight: 600 }}>typing...</span>
                   ) : selectedChatUser.isGroup && !selectedChatUser.isChannel ? (
                     <>

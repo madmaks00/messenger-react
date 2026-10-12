@@ -151,6 +151,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const unbindAccountSwitched = eventBus.on('AccountSwitchedMessage' as any, async () => {
       await loadChats(true);
+      void chatService.syncDeltaAsync(userSession.userId);
       initTodo();
       initNotes();
       void useStoriesStore.getState().loadStoriesFeed();

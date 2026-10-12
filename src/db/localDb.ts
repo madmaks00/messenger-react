@@ -45,6 +45,10 @@ export class AppLocalDatabase extends Dexie {
     this.version(2).stores({
       messages: '++id, serverId, senderId, receiverId, groupId, timestamp, secretChatId, isPinned, [groupId+timestamp], [senderId+receiverId+timestamp], [secretChatId+timestamp]',
     });
+    this.version(3).stores({
+      messages: '++id, serverId, senderId, receiverId, groupId, timestamp, secretChatId, isPinned, [groupId+timestamp], [senderId+receiverId+timestamp], [secretChatId+timestamp], [groupId+timestamp+serverId], [senderId+receiverId+timestamp+serverId]',
+    });
+
   }
 }
 

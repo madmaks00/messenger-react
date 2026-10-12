@@ -785,7 +785,7 @@ export const SidebarChatsView: React.FC = () => {
                         )}
                       </div>
 
-                      {Boolean(chat.isOnline) && !chat.isGroup && (
+                      {Boolean(chat.isOnline) && !chat.isGroup && !chat.isSecretChat && (
                         <div role="img" aria-label="Online"
                           style={{
                             position: 'absolute',
@@ -861,7 +861,7 @@ export const SidebarChatsView: React.FC = () => {
                             fontStyle: chat.lastMessageType === LastMessageType.Deleted ? 'italic' : 'normal',
                           }}
                         >
-                          {chat.isTyping ? (
+                          {chat.isTyping && !chat.isSecretChat ? (
                             <span style={{ color: 'var(--app-accent)' }}>typing...</span>
                           ) : (
                             displayLastMessage ? displayLastMessage.replace(/[\r\n]+/g, ' ').trim() : ''

@@ -361,6 +361,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     eventBus.emit('UserProfileUpdatedMessage', { user });
     eventBus.emit('RegistrationSuccessMessage', undefined);
+    eventBus.emit('AccountSwitchedMessage', {nickName:user.nickName});
   },
 
   logOut: async (authService) => {
