@@ -420,30 +420,26 @@ const CachedImageItem: React.FC<{
     ? imageUrl
     : UrlHelper.normalize(imageUrl, BASE_SERVER_URL);
 
-  const [src, setSrc] = useState<string>(initialUrl);
+  const [resolvedImage, setResolvedImage] = useState(() => ({
+    source: initialUrl, src: mediaCacheService.getKnownMediaUrl(initialUrl),
+  }));
+  const src = resolvedImage.source === initialUrl ? resolvedImage.src : mediaCacheService.getKnownMediaUrl(initialUrl);
 
   useEffect(() => {
     let isCancelled = false;
-    if (initialUrl && !initialUrl.startsWith('blob:')) {
-      mediaCacheService
-        .getCachedMediaUrl(initialUrl)
-        .then((cachedUrl) => {
-          if (!isCancelled && cachedUrl) {
-            setSrc(cachedUrl);
-          }
-        })
-        .catch(() => {
-          if (!isCancelled) {
-            setSrc(initialUrl);
-          }
-        });
-    } else {
-      setSrc(initialUrl);
+    if (initialUrl && !initialUrl.startsWith('blob:') && !initialUrl.startsWith('data:')) {
+      mediaCacheService.getCachedMediaUrl(initialUrl).then(async cachedUrl => {
+        if (isCancelled || !cachedUrl || cachedUrl === mediaCacheService.getKnownMediaUrl(initialUrl) && cachedUrl === src) return;
+        // Keep the currently decoded image visible until its cached replacement is ready.
+        const image = new Image();
+        image.src = cachedUrl;
+        await image.decode();
+        if (!isCancelled) setResolvedImage({source: initialUrl, src: cachedUrl});
+      }).catch(() => {
+        // The existing server image remains visible if the cached replacement fails.
+      });
     }
-
-    return () => {
-      isCancelled = true;
-    };
+    return () => { isCancelled = true; };
   }, [initialUrl]);
 
   const handleLoad = useCallback(
@@ -465,7 +461,7 @@ const CachedImageItem: React.FC<{
       onLoad={handleLoad}
       onError={() => {
         if (src !== initialUrl && !initialUrl.startsWith('blob:')) {
-          setSrc(initialUrl);
+          setResolvedImage({source: initialUrl, src: initialUrl});
         }
       }}
       style={{

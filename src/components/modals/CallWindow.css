@@ -1,0 +1,31 @@
+.call-action {
+  --call-accent: #36c2c9;
+  position: relative;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, opacity 160ms ease !important;
+  outline: none;
+}
+.call-action::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255,255,255,.07);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+.call-action:hover:not(:disabled)::after { opacity: 1; }
+.call-action:active:not(:disabled)::after { opacity: 1; background: rgba(255,255,255,.1); }
+.call-action:focus-visible { outline: 2px solid var(--call-accent); outline-offset: 2px; }
+.call-action:disabled { opacity: .5; cursor: default; }
+.call-window-control { border-radius: 6px; }
+.call-window-control:hover { color: #ffffff !important; }
+.call-action svg { transition: opacity 160ms ease; }
+.call-icon-switch { display: inline-flex; align-items: center; justify-content: center; animation: call-icon-fade 160ms ease; }
+@keyframes call-icon-fade { from { opacity: .3; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .call-action, .call-action::after, .call-action svg { transition: none !important; }
+  .call-icon-switch { animation: none; }
+}
+.call-action[data-tone="danger"] { --call-accent: #f0445e; }
+.call-action[data-tone="accept"] { --call-accent: #2ecc71; }

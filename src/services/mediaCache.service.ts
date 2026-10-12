@@ -5,6 +5,7 @@ const CACHE_NAME = 'messenger-media-cache-v1';
 
 class MediaCacheService {
   private inMemoryUrlMap = new Map<string, string>();
+  private pendingUrls = new Map<string, Promise<string>>();
   private failedCorsUrls = new Set<string>(); // Запоминаем URL с CORS-ошибками, чтобы не долбить сеть впустую
 
   public async cacheMediaFile(serverUrl: string, file: File | Blob): Promise<void> {
@@ -30,7 +31,24 @@ class MediaCacheService {
     }
   }
 
+  public getKnownMediaUrl(serverUrl: string): string {
+    if (!serverUrl || serverUrl.startsWith('blob:') || serverUrl.startsWith('data:')) return serverUrl;
+    const normalizedUrl = UrlHelper.normalize(serverUrl, BASE_SERVER_URL);
+    return this.inMemoryUrlMap.get(normalizedUrl) || this.inMemoryUrlMap.get(serverUrl) || normalizedUrl;
+  }
+
   public async getCachedMediaUrl(serverUrl: string): Promise<string> {
+    if (!serverUrl || serverUrl.startsWith('blob:') || serverUrl.startsWith('data:')) return serverUrl;
+    const normalizedUrl = UrlHelper.normalize(serverUrl, BASE_SERVER_URL);
+    const pending = this.pendingUrls.get(normalizedUrl);
+    if (pending) return pending;
+    const request = this.resolveCachedMediaUrl(normalizedUrl);
+    this.pendingUrls.set(normalizedUrl, request);
+    try { return await request; }
+    finally { if (this.pendingUrls.get(normalizedUrl) === request) this.pendingUrls.delete(normalizedUrl); }
+  }
+
+  private async resolveCachedMediaUrl(serverUrl: string): Promise<string> {
     if (!serverUrl) return '';
     if (serverUrl.startsWith('blob:') || serverUrl.startsWith('data:')) {
       return serverUrl;

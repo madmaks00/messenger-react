@@ -71,7 +71,7 @@ export const useStoryViewerStore = create<StoryViewerState>((set, get) => ({
       stories: storiesList,
       currentIndex: safeIndex,
       currentStory: targetStory,
-      isOwnStory: targetStory.userId === currentUserId,
+      isOwnStory: targetStory.groupId ? Boolean(targetStory.canManage) : targetStory.userId === currentUserId,
       hasPreviousStory: safeIndex > 0,
       hasNextStory: safeIndex < storiesList.length - 1,
       storiesProgressList: progressList,

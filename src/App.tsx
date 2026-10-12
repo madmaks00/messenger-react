@@ -102,6 +102,8 @@ export const App: React.FC = () => {
     storyId?: number | null;
     description?: string;
     isPrivate?: boolean;
+    groupId?: number | null;
+    groupName?: string | null;
   }>({ isOpen: false, image: '', storyId: null, description: '', isPrivate: false });
 
   useEffect(() => {
@@ -215,6 +217,8 @@ export const App: React.FC = () => {
         storyId: d.storyId ?? null,
         description: d.description ?? '',
         isPrivate: d.isPrivate ?? false,
+        groupId: d.groupId,
+        groupName: d.groupName,
       })
     );
 
@@ -421,6 +425,8 @@ export const App: React.FC = () => {
         storyId={storyEditor.storyId}
         initialDescription={storyEditor.description}
         initialIsPrivate={storyEditor.isPrivate}
+        groupId={storyEditor.groupId}
+        groupName={storyEditor.groupName}
         onClose={() => setStoryEditor((p) => ({ ...p, isOpen: false }))}
       />
 

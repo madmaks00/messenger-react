@@ -1,3 +1,4 @@
+import { userPresenceState, parsePresence } from '../services/userPresenceState';
 import { create } from 'zustand';
 import {
   IMessage,
@@ -141,6 +142,7 @@ interface ChatState {
   confirmDialogButtonText: string;
   messagesPendingDeletion: IMessage[];
   openDeleteDialog: (msg: IMessage) => void;
+  openDeleteMessagesDialog: (messages: IMessage[]) => void;
   openDeleteSelectedDialog: () => void;
   closeConfirmDialog: () => void;
   confirmDelete: (deleteForAll: boolean) => Promise<void>;
@@ -159,7 +161,7 @@ interface ChatState {
   ensureMyProfileLoadedAsync: () => Promise<void>;
   selectChatUser: (target: IUserSearchResult | null) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
-  ensureMessageLoadedAsync: (messageId: number) => Promise<IMessage | null>;
+  ensureMessageLoadedAsync: (messageId: number, source?: IMessage) => Promise<IMessage | null>;
   startSecretChat: () => Promise<void>;
   sendMessage: (
     text: string,
@@ -573,51 +575,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   confirmDialogButtonText: 'Delete',
   messagesPendingDeletion: [],
 
-  openDeleteDialog: (msg: IMessage) => {
-    if (!msg) return;
-    const { selectedChatUser } = get();
-    const currentUserId = Number(
-      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
-    );
-    const isMy = msg.isMyMessage || Number(msg.senderId) === currentUserId;
+  openDeleteDialog: (msg: IMessage) => get().openDeleteMessagesDialog([msg]),
 
-    const checkboxText = isMy
-      ? selectedChatUser?.isGroup
-        ? 'Delete for everyone'
-        : `Also delete for ${selectedChatUser?.nickName || 'User'}`
-      : null;
+  openDeleteSelectedDialog: () => get().openDeleteMessagesDialog(get().currentChatMessages.filter(message => message.isSelected)),
 
-    set({
-      messagesPendingDeletion: [msg],
-      isConfirmDialogOpen: true,
-      confirmDialogTitle: selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'Delete Message',
-      confirmDialogMessage: 'Do you want to delete this message?',
-      confirmDialogCheckboxText: checkboxText,
-      confirmDialogButtonText: 'Delete',
-    });
-  },
-
-  openDeleteSelectedDialog: () => {
-    const { currentChatMessages, selectedChatUser } = get();
-    const targets = currentChatMessages.filter((m) => m.isSelected);
-    if (targets.length === 0) return;
-
-    const currentUserId = Number(
-      userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
-    );
-    const hasMy = targets.some((m) => m.isMyMessage || Number(m.senderId) === currentUserId);
-
-    let checkboxText: string | null = selectedChatUser?.isGroup
-      ? 'Delete for everyone'
-      : `Also delete for ${selectedChatUser?.nickName || 'User'}`;
-    if (!hasMy) checkboxText = null;
-
-    set({
-      messagesPendingDeletion: targets,
-      isConfirmDialogOpen: true,
-      confirmDialogTitle: selectedChatUser?.nickName || (selectedChatUser as any)?.groupName || 'Delete Messages',
-      confirmDialogMessage: `Do you want to delete ${targets.length} message(s)?`,
-      confirmDialogCheckboxText: checkboxText,
+  openDeleteMessagesDialog: (messages: IMessage[]) => {
+    const targets = Array.from(new Map(messages.map(message => [message.serverId > 0 ? `s_${message.serverId}` : `l_${message.id}`, message])).values());
+    if (!targets.length) return;
+    const selected = get().selectedChatUser;
+    const ownId = Number(userSession.userId || 0);
+    const hasOwn = targets.some(message => Number(message.senderId) === ownId);
+    set({ messagesPendingDeletion: targets, isConfirmDialogOpen: true,
+      confirmDialogTitle: selected?.nickName || 'Delete Messages',
+      confirmDialogMessage: targets.length === 1 ? 'Do you want to delete this message?' : `Do you want to delete ${targets.length} message(s)?`,
+      confirmDialogCheckboxText: hasOwn ? selected?.isGroup ? 'Delete for everyone' : `Also delete for ${selected?.nickName || 'User'}` : null,
       confirmDialogButtonText: 'Delete',
     });
   },
@@ -1060,6 +1031,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isSecretChat: true,
       secretChatId,
       keyFingerprint: undefined,
+      memberCount: 0, onlineCount: 0, isTyping: false, isChannel: false, adminId: 0,
       isGroup: false,
       isOnline: Boolean(selectedChatUser.isOnline),
       lastSeen: selectedChatUser.lastSeen,
@@ -1141,8 +1113,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...target,
       id: targetId,
       isGroup: Boolean(target.isGroup),
-      isOnline: isOnlineInitial,
-      lastSeen: lastSeenInitial,
+      isOnline: !target.isGroup ? userPresenceState.get(Number(target.id))?.isOnline ?? isOnlineInitial : isOnlineInitial,
+      lastSeen: !target.isGroup ? userPresenceState.get(Number(target.id))?.lastSeen ?? lastSeenInitial : lastSeenInitial,
     };
 
     const currentUserId = Number(
@@ -1301,6 +1273,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         })();
 
+        const presenceTicket = userPresenceState.capture();
         apiClient
           .get<any>(`api/Users/${targetUserId}`)
           .catch(() => apiClient.get<any>(`api/User/${targetUserId}`))
@@ -1308,29 +1281,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             if (abortController.signal.aborted || thisLoadSequence !== currentChatLoadSequence) return;
             if (res && res.data) {
               const fresh = res.data;
-              const isOnline = Boolean(fresh.isOnline ?? fresh.IsOnline);
-              const lastSeen = fresh.lastSeen ?? fresh.LastSeen;
+              const status=parsePresence(fresh);
+              if(status)useSidebarChatsStore.getState().applyPresence(targetUserId!,status,presenceTicket);
+              const curr=get().selectedChatUser;
+              if(curr && !curr.isGroup && Number(curr.id)===Number(targetUserId))set({selectedChatUser:{...curr,avatar:fresh.avatar||curr.avatar,avatarPath:fresh.avatarPath||curr.avatarPath}});
 
-              const curr = get().selectedChatUser;
-              if (curr && Number(curr.id) === Number(targetUserId)) {
-                set({
-                  selectedChatUser: {
-                    ...curr,
-                    isOnline: curr.isOnline || isOnline,
-                    lastSeen: isOnline ? new Date().toISOString() : lastSeen || curr.lastSeen,
-                    avatar: fresh.avatar || curr.avatar,
-                    avatarPath: fresh.avatarPath || curr.avatarPath,
-                  },
-                });
-              }
-
-              useSidebarChatsStore.setState((state) => ({
-                allChats: state.allChats.map((c) =>
-                  !c.isGroup && Number(c.userId ?? c.id) === Number(targetUserId)
-                    ? { ...c, isOnline, lastSeen }
-                    : c
-                ),
-              }));
             }
           })
           .catch(() => {});
@@ -1418,7 +1373,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const enriched = older.map((m) =>
           enrichMessage(m, currentUserId, resolvedName, resolvedAvatar, selectedChatUser)
         );
-        set({ currentChatMessages: [...enriched, ...get().currentChatMessages] });
+        const unique = new Map<string, IMessage>();
+        for (const message of [...get().currentChatMessages, ...enriched]) unique.set(message.serverId > 0 ? `s_${message.serverId}` : `l_${message.id}`, message);
+        set({currentChatMessages: Array.from(unique.values()).sort((a,b) => new Date(a.timestamp).getTime()-new Date(b.timestamp).getTime() || a.serverId-b.serverId)});
       }
     } catch (err) {
       console.error('[ChatStore ERROR] Ошибка подгрузки старых сообщений:', err);
@@ -1427,17 +1384,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  ensureMessageLoadedAsync: async (messageId: number) => {
-    const { currentChatMessages, loadOlderMessages } = get();
-    let found = currentChatMessages.find((m) => m.id === messageId || (m.serverId > 0 && m.serverId === messageId));
-    if (found) return found;
-
-    for (let i = 0; i < 10; i++) {
-      await loadOlderMessages();
-      found = get().currentChatMessages.find((m) => m.id === messageId || (m.serverId > 0 && m.serverId === messageId));
-      if (found) return found;
-    }
-    return null;
+  ensureMessageLoadedAsync: async (messageId: number, source?: IMessage) => {
+    if (messageId <= 0 || !get().selectedChatUser) return null;
+    const key = getChatKey(get().selectedChatUser);
+    if (get().isHistoryLoading) await new Promise<void>(resolve => {
+      const unsubscribe = useChatStore.subscribe(state => {
+        if (!state.isHistoryLoading || getChatKey(state.selectedChatUser) !== key) { unsubscribe(); resolve(); }
+      });
+    });
+    if (getChatKey(get().selectedChatUser) !== key) return null;
+    const matches = (message: IMessage) => source?.serverId && source.serverId > 0 ? Number(message.serverId) === Number(source.serverId) : Number(message.serverId) === messageId || Number(message.id) === messageId;
+    const existing = get().currentChatMessages.find(matches);
+    if (existing) return existing;
+    try {
+      const selected = get().selectedChatUser!;
+      const local = source || await chatService.getLocalMessageByIdAsync(messageId);
+      const serverId = local?.serverId && local.serverId > 0 ? local.serverId : messageId;
+      const ownId = Number(userSession.userId || 0);
+      let context = await chatService.getMessageContextAsync(serverId);
+      if (getChatKey(get().selectedChatUser) !== key) return null;
+      context = context.filter(message => !message.isDeleted && !message.isDeletedForMe && (selected.isGroup ? message.groupId === selected.id : !message.groupId &&
+        ((message.senderId === ownId && message.receiverId === selected.id) || (message.senderId === selected.id && message.receiverId === ownId))));
+      if (!context.some(matches)) return null;
+      if (selected.isGroup) await userService.enrichMessagesWithSendersAsync(context, ownId);
+      await userService.enrichForwardedMessagesAsync(context, ownId);
+      if (getChatKey(get().selectedChatUser) !== key) return null;
+      const name = get().currentUserName || resolveSessionUser().name || 'User';
+      const avatar = get().currentUserAvatar || resolveSessionUser().avatar;
+      const enriched = context.map(message => enrichMessage(message, ownId, name, avatar, selected));
+      set(state => {
+        const unique = new Map<string, IMessage>();
+        for (const message of [...state.currentChatMessages, ...enriched]) {
+          const identity = message.serverId > 0 ? `s_${message.serverId}` : `l_${message.id}`;
+          if (!unique.has(identity)) unique.set(identity, message);
+        }
+        return {currentChatMessages: Array.from(unique.values()).sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime() || a.serverId-b.serverId)};
+      });
+      return get().currentChatMessages.find(matches) || null;
+    } catch (error) { console.error('[ChatStore] Cannot load message context:', error); return null; }
   },
 
   sendMessage: async (text, attachments, editingMessage, replies) => {
@@ -1983,40 +1967,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   jumpToSearchedMessage: async (targetMsg: IMessage) => {
     if (!targetMsg) return;
-
-    const targetServerId = Number(targetMsg.serverId || 0);
-    const targetLocalId = Number(targetMsg.id || 0);
-    const targetId = targetServerId > 0 ? targetServerId : targetLocalId;
-
-    let isLoaded = get().currentChatMessages.some(
-      (m) =>
-        (targetServerId > 0 && Number(m.serverId) === targetServerId) ||
-        (targetLocalId > 0 && Number(m.id) === targetLocalId) ||
-        (targetMsg.text && m.text === targetMsg.text && Math.abs(new Date(m.timestamp).getTime() - new Date(targetMsg.timestamp).getTime()) < 3000)
-    );
-
-    if (!isLoaded) {
-      for (let i = 0; i < 10; i++) {
-        await get().loadOlderMessages();
-        isLoaded = get().currentChatMessages.some(
-          (m) =>
-            (targetServerId > 0 && Number(m.serverId) === targetServerId) ||
-            (targetLocalId > 0 && Number(m.id) === targetLocalId) ||
-            (targetMsg.text && m.text === targetMsg.text && Math.abs(new Date(m.timestamp).getTime() - new Date(targetMsg.timestamp).getTime()) < 3000)
-        );
-        if (isLoaded) break;
-      }
-    }
-
-    setTimeout(() => {
-      eventBus.emit('ScrollToMessageRequestMessage' as any, {
-        messageId: targetId,
-        localId: targetLocalId,
-        serverId: targetServerId,
-        text: targetMsg.text,
-        timestamp: targetMsg.timestamp,
-      });
-    }, 60);
+    const key = getChatKey(get().selectedChatUser);
+    const loaded = await get().ensureMessageLoadedAsync(targetMsg.serverId > 0 ? targetMsg.serverId : targetMsg.id, targetMsg);
+    if (!loaded || getChatKey(get().selectedChatUser) !== key) return;
+    eventBus.emit('ScrollToMessageRequestMessage' as any, {
+      messageId: loaded.serverId > 0 ? loaded.serverId : loaded.id,
+      localId: loaded.id, serverId: loaded.serverId,
+    });
   },
 
   markAsRead: async () => {
@@ -2307,22 +2264,6 @@ eventBus.on('EndSearchBoxMessage', () => {
     });
   }
 });
-
-eventBus.on(
-  'UserStatusChangedMessage' as any,
-  ({ userId, isOnline, lastSeen }: { userId: number; isOnline: boolean; lastSeen: string }) => {
-    const { selectedChatUser } = useChatStore.getState();
-    if (selectedChatUser && !selectedChatUser.isGroup && Number(selectedChatUser.id) === Number(userId)) {
-      useChatStore.setState({
-        selectedChatUser: {
-          ...selectedChatUser,
-          isOnline: Boolean(isOnline),
-          lastSeen: isOnline ? new Date().toISOString() : lastSeen || selectedChatUser.lastSeen,
-        },
-      });
-    }
-  }
-);
 
 eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
   const { selectedChatUser } = useChatStore.getState();

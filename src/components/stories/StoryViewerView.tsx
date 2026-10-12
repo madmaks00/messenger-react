@@ -423,7 +423,7 @@ export const StoryViewerView: React.FC = () => {
                       width: 38,
                       height: 38,
                       borderRadius: 19,
-                      backgroundColor: getAvatarColor(currentStory.userId),
+                      backgroundColor: getAvatarColor(currentStory.groupId ?? currentStory.userId),
                       color: '#FFFFFF',
                       display: 'flex',
                       alignItems: 'center',

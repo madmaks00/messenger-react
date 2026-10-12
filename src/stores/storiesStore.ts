@@ -31,8 +31,8 @@ interface StoriesState {
   toggleStoriesPanel: () => void;
   loadStoriesFeed: () => Promise<void>;
   loadMyStories: () => Promise<void>;
-  createNewStory: (file: File) => Promise<void>;
-  postStory: (image: string, description: string, isPrivate: boolean) => Promise<boolean>;
+  createNewStory: (file: File, group?: { id: number; name: string; isPublic: boolean }) => Promise<void>;
+  postStory: (image: string, description: string, isPrivate: boolean, groupId?: number | null) => Promise<boolean>;
   updateStory: (storyId: number, image: string | null | undefined, description: string, isPrivate: boolean) => Promise<boolean>;
   editStory: (story: IStory) => Promise<void>;
   deleteStory: (story: IStory) => Promise<void>;
@@ -103,7 +103,7 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
     }
   },
 
-  createNewStory: async (file: File) => {
+  createNewStory: async (file: File, group?: { id: number; name: string; isPublic: boolean }) => {
     return new Promise<void>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -112,7 +112,9 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
           image: dataUrl,
           storyId: null,
           description: '',
-          isPrivate: false,
+          isPrivate: group ? !group.isPublic : false,
+          groupId: group?.id,
+          groupName: group?.name,
         });
         resolve();
       };
@@ -124,10 +126,15 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
     });
   },
 
-  postStory: async (image: string, description: string, isPrivate: boolean) => {
+  postStory: async (image: string, description: string, isPrivate: boolean, groupId?: number | null) => {
     try {
-      const createdStory = await storiesService.postStoryAsync(image, description, isPrivate);
+      const createdStory = await storiesService.postStoryAsync(image, description, isPrivate, groupId);
       if (createdStory) {
+        if (createdStory.groupId) {
+          eventBus.emit('GroupStoriesChangedMessage', { groupId: createdStory.groupId });
+          await get().loadStoriesFeed();
+          return true;
+        }
         set((state) => ({
           myStories: [createdStory, ...state.myStories.filter((s) => s.id !== createdStory.id)],
         }));
@@ -147,6 +154,7 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
     try {
       const updatedStory = await storiesService.updateStoryAsync(storyId, image, description, isPrivate);
       if (updatedStory) {
+        if (updatedStory.groupId) eventBus.emit('GroupStoriesChangedMessage', { groupId: updatedStory.groupId });
         set((state) => ({
           myStories: state.myStories.map((s) => (s.id === storyId ? updatedStory : s)),
         }));
@@ -164,7 +172,7 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
 
   // 🟢 1:1 С WPF StoriesViewModel.EditStory: скачивает изображение в память перед открытием редактора
   editStory: async (story: IStory) => {
-    if (!story) return;
+    if (!story || (story.groupId ? !story.canManage : story.userId !== userSession.userId)) return;
 
     const loadedDataUrl = await storiesService.getStoryImageDataUrlAsync(story.id, story.imagePath);
 
@@ -173,12 +181,14 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
       storyId: story.id,
       description: story.description ?? '',
       isPrivate: story.isPrivate ?? false,
+      groupId: story.groupId,
+      groupName: story.groupName,
     });
   },
 
   // 🟢 ВЫЗОВ ОФИЦИАЛЬНОГО ДИАЛОГА ПОДТВЕРЖДЕНИЯ (ConfirmDialogView)
   requestDeleteStoryWithConfirmation: (story: IStory) => {
-    if (!story) return;
+    if (!story || (story.groupId ? !story.canManage : story.userId !== userSession.userId)) return;
 
     eventBus.emit('OpenConfirmDialogMessage', {
       title: 'Delete Story',
@@ -195,6 +205,7 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
     try {
       const success = await storiesService.deleteStoryAsync(story.id);
       if (success) {
+        if (story.groupId) eventBus.emit('GroupStoriesChangedMessage', { groupId: story.groupId });
         set((state) => ({ myStories: state.myStories.filter((s) => s.id !== story.id) }));
         await get().loadStoriesFeed();
       }
@@ -222,10 +233,12 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
     let targetList: IStory[] = [];
     const currentUserId = userSession.userId;
 
-    if (selectedStory.userId === currentUserId && get().myStories.length > 0) {
+    if (selectedStory.groupId) {
+      targetList = await storiesService.getGroupStoriesAsync(selectedStory.groupId) || [selectedStory];
+    } else if (selectedStory.userId === currentUserId && get().myStories.length > 0) {
       targetList = [...get().myStories];
     } else {
-      const group = get().authorGroups.find((g) => g.userId === selectedStory.userId);
+      const group = get().authorGroups.find((g) => !g.groupId && g.userId === selectedStory.userId);
       if (group && group.stories.some((s) => s.id === selectedStory.id)) {
         targetList = [...group.stories];
       } else {
@@ -239,7 +252,7 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
         }
 
         if (targetList.length === 0) {
-          const feedAuthorStories = get().storiesFeed.filter((s) => s.userId === selectedStory.userId);
+          const feedAuthorStories = get().storiesFeed.filter((s) => !s.groupId && s.userId === selectedStory.userId);
           targetList = feedAuthorStories.length > 0 ? feedAuthorStories : [selectedStory];
         }
       }
@@ -328,22 +341,25 @@ export const useStoriesStore = create<StoriesState>((set, get) => ({
   },
 }));
 
+function storyAuthorKey(story: IStory) { return story.groupId ? `group:${story.groupId}` : `user:${story.userId}`; }
+
 function updateCalculatedFeedState(feed: IStory[], set: any) {
-  const distinctMap = new Map<number, IStory>();
+  const distinctMap = new Map<string, IStory>();
   feed.forEach((s) => {
-    if (!distinctMap.has(s.userId)) distinctMap.set(s.userId, s);
+    if (!distinctMap.has(storyAuthorKey(s))) distinctMap.set(storyAuthorKey(s), s);
   });
   const distinct = Array.from(distinctMap.values());
 
-  const groupsMap = new Map<number, IStory[]>();
+  const groupsMap = new Map<string, IStory[]>();
   feed.forEach((s) => {
-    const list = groupsMap.get(s.userId) || [];
+    const list = groupsMap.get(storyAuthorKey(s)) || [];
     list.push(s);
-    groupsMap.set(s.userId, list);
+    groupsMap.set(storyAuthorKey(s), list);
   });
 
-  const groups: IUserStoryGroup[] = Array.from(groupsMap.entries()).map(([userId, stories]) => ({
-    userId,
+  const groups: IUserStoryGroup[] = Array.from(groupsMap.entries()).map(([, stories]) => ({
+    userId: stories[0].userId,
+    groupId: stories[0].groupId,
     authorName: stories[0].authorName,
     authorAvatar: stories[0].authorAvatar,
     stories: stories.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
@@ -369,8 +385,8 @@ function updateCalculatedFeedState(feed: IStory[], set: any) {
 }
 
 // 🟢 Слушатели шины сообщений
-eventBus.on('PostStoryMessage', async ({ image, description, isPrivate }) => {
-  await useStoriesStore.getState().postStory(image, description, isPrivate);
+eventBus.on('PostStoryMessage', async ({ image, description, isPrivate, groupId }) => {
+  await useStoriesStore.getState().postStory(image, description, isPrivate, groupId);
 });
 
 eventBus.on('UpdateStoryMessage', async ({ storyId, image, description, isPrivate }) => {
@@ -412,3 +428,4 @@ eventBus.on('StoryDeletedMessage', ({ storyId, userId }) => {
     void useStoriesStore.getState().loadMyStories();
   }
 });
+eventBus.on('GroupStoriesChangedMessage', () => { void useStoriesStore.getState().loadStoriesFeed(); });

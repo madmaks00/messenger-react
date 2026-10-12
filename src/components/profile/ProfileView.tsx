@@ -141,8 +141,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const handleGlobalClick = () => {
       setActiveContextMenu(null);
     };
+    const handleKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setActiveContextMenu(null); };
+    window.addEventListener('keydown', handleKey);
     window.addEventListener('click', handleGlobalClick);
-    return () => window.removeEventListener('click', handleGlobalClick);
+    return () => { window.removeEventListener('click', handleGlobalClick); window.removeEventListener('keydown', handleKey); };
   }, [setActiveContextMenu]);
 
   if (!effectiveIsOpen) return null;
@@ -158,19 +160,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       username: effectiveUser.username,
       avatar: effectiveUser.avatar,
       avatarPath: effectiveUser.avatarPath,
-      isGroup: false,
+      isGroup: effectiveIsGroupProfile,
+      memberCount: vm.membersCount, onlineCount: 0, isTyping: false, isChannel: Boolean(vm.groupDetails?.isChannel), isSecretChat: false, adminId: vm.groupDetails?.adminId || 0,
       isOnline: Boolean(effectiveUser.isOnline),
       lastSeen: effectiveUser.lastSeen,
     };
 
     useChatStore.getState().selectChatUser(targetSearchResult);
+    if (effectiveIsGroupProfile) return;
     onStartChat?.(userId);
     services.onStartChat?.(userId);
   };
 
   // 2. «Call» (Звонок)
   const handleCallUserSafe = (targetUser: IUser) => {
-    if (vm.isBlockedByMe || vm.isBlockedByThem) return;
+    if (!effectiveIsGroupProfile && (vm.isBlockedByMe || vm.isBlockedByThem)) return;
     handleAnimateClose();
 
     useCallsStore.getState().startCall({
@@ -179,54 +183,45 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       username: targetUser.username,
       avatar: targetUser.avatar,
       avatarPath: targetUser.avatarPath,
-      isGroup: false,
+      isGroup: effectiveIsGroupProfile,
       isOnline: Boolean(targetUser.isOnline),
       lastSeen: targetUser.lastSeen,
     });
 
+    if (effectiveIsGroupProfile) return;
     onCallUser?.(targetUser);
     services.onCallUser?.(targetUser);
   };
 
   // 3. «Notification» (Mute/Unmute)
-  const handleToggleMuteSafe = async (userId: number) => {
-    const nextMuted = !vm.isObservedUserMuted;
-    vm.setIsObservedUserMuted(nextMuted);
-
-    useSidebarChatsStore.setState((state) => ({
-      allChats: state.allChats.map((c) => {
-        const cId = Number(c.userId || c.id || 0);
-        if (!c.isGroup && cId === Number(userId)) {
-          return { ...c, isMuted: nextMuted };
-        }
-        return c;
-      }),
-    }));
-
-    eventBus.emit('UserMuteStatusChangedMessage' as any, { userId, isMuted: nextMuted });
-
+  const handleToggleMuteSafe = async (targetId: number) => {
+    const previous = vm.isObservedUserMuted;
+    const apply = (isMuted: boolean) => {
+      vm.setIsObservedUserMuted(isMuted);
+      useSidebarChatsStore.setState(state => ({ allChats: state.allChats.map(chat =>
+        effectiveIsGroupProfile ? chat.isGroup && Number(chat.groupId ?? chat.id) === targetId ? { ...chat, isMuted } : chat
+          : !chat.isGroup && Number(chat.userId ?? chat.id) === targetId ? { ...chat, isMuted } : chat) }));
+      if (effectiveIsGroupProfile) eventBus.emit('GroupMuteStatusChangedMessage', { groupId: targetId, isMuted });
+      else eventBus.emit('UserMuteStatusChangedMessage', { userId: targetId, isMuted });
+    };
+    apply(!previous);
     try {
-      await chatService.toggleMuteChatAsync(userId, null);
-    } catch (err) {
-      console.error('[ProfileView ERROR] Сбой смены статуса Mute на сервере:', err);
-      vm.setIsObservedUserMuted(!nextMuted);
-      useSidebarChatsStore.setState((state) => ({
-        allChats: state.allChats.map((c) => {
-          const cId = Number(c.userId || c.id || 0);
-          if (!c.isGroup && cId === Number(userId)) {
-            return { ...c, isMuted: !nextMuted };
-          }
-          return c;
-        }),
-      }));
-      eventBus.emit('UserMuteStatusChangedMessage' as any, { userId, isMuted: !nextMuted });
-    }
-
-    services.onToggleMute?.(userId);
+      const result = await chatService.toggleMuteChatAsync(effectiveIsGroupProfile ? null : targetId, effectiveIsGroupProfile ? targetId : null);
+      if (result === null) apply(previous); else apply(result);
+    } catch { apply(previous); }
+    if (!effectiveIsGroupProfile) services.onToggleMute?.(targetId);
   };
 
-  const handleRevokeInviteSafe = services.revokeInviteLink || (async () => false);
-  const handleGenerateInviteSafe = services.generateInviteLink || (async () => null);
+  const handleRevokeInviteSafe = async (groupId: number) => {
+    const success = await vm.services.revokeInviteLink(groupId);
+    if (success) await vm.loadGroupDetails(groupId);
+    return success;
+  };
+  const handleGenerateInviteSafe = async (groupId: number) => {
+    const result = await vm.services.generateInviteLink(groupId);
+    if (result) await vm.loadGroupDetails(groupId);
+    return result;
+  };
 
   const isVisible = isRendered && !isClosing;
 
@@ -287,6 +282,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
+          fontFamily: '"Segoe UI", sans-serif',
           width: isExpanded ? 888 : 365,
           height: 720,
           backgroundColor: Theme.ProfileCardBackground,
@@ -342,14 +338,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               vm={vm}
               isOwnProfile={effectiveIsOwnProfile}
               onClose={handleAnimateClose}
-              onCreateNewStory={services.createNewStory || ((file) => { void useStoriesStore.getState().createNewStory(file); })}
+              onCreateNewStory={effectiveIsGroupProfile ? vm.createGroupStory : services.createNewStory || ((file) => { void useStoriesStore.getState().createNewStory(file); })}
               onOpenStoryViewer={services.openStoryViewer || ((story) => { void useStoriesStore.getState().openStoryViewer(story); })}
-              onEditStory={services.editStory || ((storyId) => {
-                const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
+              onEditStory={effectiveIsGroupProfile ? ((storyId) => {
+                const story = vm.activeStories.find(s => s.id === storyId);
+                if (story?.canManage) void useStoriesStore.getState().editStory(story);
+              }) : services.editStory || ((storyId) => {
+                const story = vm.activeStories.find((s) => s.id === storyId);
                 if (story) void useStoriesStore.getState().editStory(story);
               })}
               onDeleteStory={services.deleteStory || (async (storyId) => {
-                const story = useStoriesStore.getState().myStories.find((s) => s.id === storyId);
+                const story = vm.activeStories.find((s) => s.id === storyId);
                 if (story) {
                   await useStoriesStore.getState().deleteStory(story);
                   return true;
@@ -365,6 +364,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               onClose={handleAnimateClose}
               onForwardMessages={services.onForwardMessages || ((msgs) => vm.services.onForwardMessages(msgs))}
               onDeleteMessage={services.onDeleteMessage || ((msg) => vm.services.onDeleteMessage(msg))}
+              onDeleteMessages={services.onDeleteMessages || ((messages) => vm.services.onDeleteMessages(messages))}
               onOpenFile={services.onOpenFile || ((att) => vm.services.onOpenFile(att))}
             />
           )}
@@ -391,8 +391,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               vm={vm}
               onClose={handleAnimateClose}
               onLeaveGroup={() => services.leaveGroup?.(effectiveUser.id)}
-              onKickMember={(memberId) => services.kickMember?.(effectiveUser.id, memberId)}
-              onUnbanMember={(memberId) => services.unbanMember?.(effectiveUser.id, memberId)}
+              onKickMember={async (memberId) => { await vm.services.kickMember(effectiveUser.id, memberId); await vm.loadGroupDetails(effectiveUser.id); }}
+              onUnbanMember={async (memberId) => { await vm.services.unbanMember(effectiveUser.id, memberId); await vm.loadGroupDetails(effectiveUser.id); }}
             />
           )}
         </div>
@@ -507,27 +507,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* КОНТЕКСТНОЕ МЕНЮ ПКМ */}
       {activeContextMenu && (
-        <div
+        <div role="menu" aria-label="Действия с сообщением"
           onClick={(e) => e.stopPropagation()}
           style={{
             ...dropdownMenuStyle,
             position: 'fixed',
-            left: activeContextMenu.x,
-            top: activeContextMenu.y,
+            left: Math.max(8, Math.min(activeContextMenu.x, window.innerWidth - 248)),
+            top: Math.max(8, Math.min(activeContextMenu.y, window.innerHeight - 208)),
             zIndex: 7000,
           }}
         >
           <div
             onClick={() => {
-              if (activeContextMenu.item) {
-                const item = activeContextMenu.item;
-                const isAtt = 'type' in item;
-                const msg = isAtt ? (item as any).message : (item as IMessage);
-                const targetMsgId = isAtt ? (msg?.serverId || msg?.id || (item as IAttachment).messageId) : (item.serverId || item.id);
-                if (targetMsgId) {
-                  vm.services.onJumpToMessage(targetMsgId, effectiveUser.id, msg);
-                }
-              }
+              if (activeContextMenu.item) vm.jumpToSharedItem(activeContextMenu.item);
               setActiveContextMenu(null);
             }}
             style={dropdownItemStyle}

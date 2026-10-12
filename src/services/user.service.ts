@@ -1,3 +1,4 @@
+import { userPresenceState, UserPresence } from './userPresenceState';
 import { apiClient } from './apiClient';
 import { IUser, IUserSearchResult, IMessage } from '../types/models';
 import { DeviceSessionDto, PrivacySettingsDto, ResolvedEntityResponseDto, ResolvedEntityResult } from '../types/dtos';
@@ -23,6 +24,7 @@ export interface IUserService {
   enrichMessagesWithSendersAsync(messages: IMessage[], currentUserId: number): Promise<void>;
   enrichForwardedMessagesAsync(messages: IMessage[], currentUserId: number, currentChatAvatarPath?: string | null, currentChatId?: number | null): Promise<void>;
   cacheUserProfile(user: IUser): void;
+  updateCachedPresence(userId: number, status: UserPresence): void;
   invalidateUserCache(userId: number): void;
   clearUserCache(): void;
 }
@@ -70,7 +72,8 @@ export class UserService implements IUserService {
     if (targetId <= 0) return null;
 
     if (this.userCache.has(targetId)) {
-      return this.userCache.get(targetId)!;
+      const cached=this.userCache.get(targetId)!;
+      return {...cached,...userPresenceState.get(targetId)};
     }
 
     try {
@@ -87,6 +90,7 @@ export class UserService implements IUserService {
           ...user,
           id: Number(user.id || (user as any).userId),
         };
+          Object.assign(normalizedUser,userPresenceState.get(targetId));
         this.cacheUserProfile(normalizedUser);
         return normalizedUser;
       }
@@ -176,6 +180,10 @@ export class UserService implements IUserService {
         }
       }
     }
+  }
+
+  public updateCachedPresence(userId: number, status: UserPresence): void {
+    const cached=this.userCache.get(Number(userId));if(cached)Object.assign(cached,status);
   }
 
   public invalidateUserCache(userId: number): void {

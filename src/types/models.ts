@@ -497,6 +497,10 @@ export interface IUserSearchResult {
 // 5. STORIES
 // =========================================================================
 export interface IStory {
+  groupId?: number | null;
+  groupName?: string | null;
+  canManage?: boolean;
+  imageDataUrl?: string | null;
   id: number;
   userId: number;
   imagePath: string;
@@ -558,6 +562,7 @@ export interface IStoryProgressItem {
 }
 
 export interface IUserStoryGroup {
+  groupId?: number | null;
   userId: number;
   authorName: string;
   authorAvatar?: any;

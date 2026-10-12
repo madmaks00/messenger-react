@@ -38,6 +38,8 @@ export interface IChatService {
   toggleMuteChatAsync(targetUserId?: number | null, targetGroupId?: number | null): Promise<boolean | null>;
   togglePinChatAsync(targetUserId?: number | null, targetGroupId?: number | null): Promise<boolean | null>;
   clearChatHistoryAsync(targetUserId?: number | null, targetGroupId?: number | null, deleteForAll?: boolean): Promise<boolean>;
+  getMessageContextAsync(serverMessageId: number): Promise<IMessage[]>;
+  getGroupSharedMediaMessagesAsync(groupId: number): Promise<IMessage[]>;
   getGroupHistoryAsync(groupId: number): Promise<IMessage[] | null>;
   uploadAttachmentsAsync(files: File[]): Promise<AttachmentDto[] | null>;
   downloadFileBytesAsync(fileUrl: string): Promise<ArrayBuffer | null>;
@@ -450,6 +452,52 @@ export class ChatService implements IChatService {
       console.error('[ChatService ERROR] Ошибка очистки истории чата:', ex);
       return false;
     }
+  }
+
+  public async getMessageContextAsync(serverMessageId: number): Promise<IMessage[]> {
+    const response = await apiClient.get<any[]>(`api/Messages/context/${serverMessageId}`);
+    const db = getLocalDatabase(userSession.userId);
+    const messages: IMessage[] = [];
+    for (const raw of response.data || []) {
+      const cached = await db.messages.filter(message => message.serverId === raw.id).first();
+      if (cached) { if (!cached.isDeleted && !cached.isDeletedForMe) messages.push(cached); continue; }
+      const message = {
+        ...raw, serverId: raw.id, isMyMessage: raw.senderId === userSession.userId,
+        isSentToServer: true, isDeleted: false, isDeletedForMe: false, timestamp: new Date(raw.timestamp).toISOString(),
+        attachments: (raw.attachments || []).map((attachment: any, index: number) => ({
+          ...attachment, id: -raw.id * 1000 - index - 1, messageId: raw.id,
+          url: UrlHelper.normalize(attachment.url, BASE_SERVER_URL), thumbnailUrl: UrlHelper.normalize(attachment.thumbnailUrl, BASE_SERVER_URL),
+        })),
+      } as IMessage;
+      // Server IDs and the auto-increment local primary key are different namespaces.
+      delete (message as any).id;
+      await this.saveMessageLocallyAsync(message);
+      messages.push(message);
+    }
+    return messages;
+  }
+
+  public async getGroupSharedMediaMessagesAsync(groupId: number): Promise<IMessage[]> {
+    const messages: IMessage[] = [];
+    let beforeId: number | undefined;
+    while (true) {
+      const response = await apiClient.get<any[]>(`api/Messages/group-shared-media/${groupId}`, { params: { beforeId } });
+      const page = response.data || [];
+      messages.push(...page.map((message: any) => ({
+        ...message, serverId: message.id, isMyMessage: message.senderId === userSession.userId,
+        isSentToServer: true, isDeleted: false, isDeletedForMe: false, timestamp: new Date(message.timestamp).toISOString(),
+        attachments: (message.attachments || []).map((attachment: any, index: number) => ({
+          ...attachment, id: -message.id * 1000 - index - 1, messageId: message.id, fileSizeBytes: 0,
+          url: UrlHelper.normalize(attachment.url, BASE_SERVER_URL),
+          thumbnailUrl: UrlHelper.normalize(attachment.thumbnailUrl, BASE_SERVER_URL),
+        })),
+      })));
+      if (page.length < 200) break;
+      const cursor = Math.min(...page.map((message: any) => message.id));
+      if (beforeId !== undefined && cursor >= beforeId) break;
+      beforeId = cursor;
+    }
+    return messages;
   }
 
   public async getGroupHistoryAsync(groupId: number): Promise<IMessage[] | null> {

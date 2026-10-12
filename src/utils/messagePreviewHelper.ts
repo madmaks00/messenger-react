@@ -22,6 +22,7 @@ export class MessagePreviewHelper {
       rawText &&
       (rawText.startsWith(CALL_SECRET_PREFIX) ||
         rawText.startsWith('_CALL:') ||
+        rawText.toUpperCase().startsWith('CALL:') ||
         rawText.toLowerCase().includes('_call:'))
     ) {
       const cleanText = rawText.replace(/\u200B/g, '');

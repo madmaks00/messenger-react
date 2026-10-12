@@ -35,6 +35,7 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
     collapseRightPanel,
   } = vm;
 
+  const canCreateStory = isOwnProfile || vm.canPublishGroupStory;
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -67,7 +68,7 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          {isOwnProfile && (
+          {canCreateStory && (
             <label
               style={{ ...iconBtnStyle, width: 32, height: 32, cursor: 'pointer' }}
               title="Create Story"
@@ -132,7 +133,7 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
                 key={story.id}
                 onClick={() => onOpenStoryViewer(story, activeStories)}
                 onContextMenu={(e) => {
-                  if (isOwnProfile) {
+                  if (story.groupId ? story.canManage : isOwnProfile) {
                     e.preventDefault();
                     setContextMenu({
                       x: e.clientX,
@@ -161,7 +162,7 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
                 }}
               >
                 <img
-                  src={normalizeImageSrc(story.imagePath)}
+                  src={story.imageDataUrl || normalizeImageSrc(story.imagePath)}
                   alt=""
                   style={{
                     width: '100%',
@@ -200,7 +201,7 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
             <ProfileEmptyState
               icon={<Icons.ImageMultipleOutline size={56} color={Theme.ProfileNoStoriesIcon} />}
               title="No stories yet"
-              subtitle="Photos published by user will appear here"
+              subtitle={vm.isGroupProfile ? "Photos published by the group will appear here" : "Photos published by user will appear here"}
             />
           )
         )}

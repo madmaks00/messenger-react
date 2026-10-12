@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { eventBus } from '../../services/eventBus';
+import { useStoriesStore } from '../../stores/storiesStore';
 import { Theme } from '../profile/profile.theme';
 import { normalizeImageSrc } from '../profile/profileView.utils';
 
@@ -67,6 +67,8 @@ export interface StoryEditorViewProps {
   storyId?: number | null;
   initialDescription?: string;
   initialIsPrivate?: boolean;
+  groupId?: number | null;
+  groupName?: string | null;
   onClose: () => void;
 }
 
@@ -86,12 +88,16 @@ export const StoryEditorView: React.FC<StoryEditorViewProps> = ({
   storyId,
   initialDescription = '',
   initialIsPrivate = false,
+  groupId,
+  groupName,
   onClose,
 }) => {
   const [mode, setMode] = useState<'drawing' | 'stickers'>('drawing');
   const [brushSize, setBrushSize] = useState<number>(6);
   const [brushColor, setBrushColor] = useState<string>('#FFFFFF');
   const [description, setDescription] = useState<string>(initialDescription);
+  const [isPosting, setIsPosting] = useState(false);
+  const [postError, setPostError] = useState('');
   const [isPrivate, setIsPrivate] = useState<boolean>(initialIsPrivate);
   const [overlayElements, setOverlayElements] = useState<OverlayElement[]>([]);
 
@@ -140,6 +146,8 @@ export const StoryEditorView: React.FC<StoryEditorViewProps> = ({
     if (!isOpen) return;
     setDescription(initialDescription || '');
     setIsPrivate(initialIsPrivate || false);
+    setPostError('');
+    setIsPosting(false);
     setOverlayElements([]);
     clearDrawing();
     setMode('drawing');
@@ -279,31 +287,30 @@ export const StoryEditorView: React.FC<StoryEditorViewProps> = ({
   };
 
   const handlePostStory = async () => {
-    const finalDataUrl = await renderFinalCanvas();
-
-    if (storyId) {
-      eventBus.emit('UpdateStoryMessage', {
-        storyId,
-        image: finalDataUrl,
-        description,
-        isPrivate,
-      });
-    } else {
-      eventBus.emit('PostStoryMessage', {
-        image: finalDataUrl,
-        description,
-        isPrivate,
-      });
+    if (isPosting) return;
+    setIsPosting(true);
+    setPostError('');
+    try {
+      const image = await renderFinalCanvas();
+      const store = useStoriesStore.getState();
+      const success = storyId
+        ? await store.updateStory(storyId, image, description, isPrivate)
+        : await store.postStory(image, description, isPrivate, groupId);
+      if (success) onClose();
+      else setPostError('Unable to publish story. Check your connection and group permissions.');
+    } catch {
+      setPostError('Unable to prepare story image. Please try again.');
+    } finally {
+      setIsPosting(false);
     }
-
-    onClose();
   };
 
+  const closeEditor = () => { if (!isPosting) onClose(); };
   if (!isOpen) return null;
 
   return (
     <div
-      onClick={onClose}
+      onClick={closeEditor}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       style={{
@@ -346,7 +353,7 @@ export const StoryEditorView: React.FC<StoryEditorViewProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={closeEditor}
             title="Close"
             style={{
               width: 32,
@@ -655,7 +662,9 @@ export const StoryEditorView: React.FC<StoryEditorViewProps> = ({
                 />
               </div>
 
-              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', marginBottom: 12 }}>
+              {groupId ? <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12, marginBottom: 12 }}>
+                {groupName}<br />{initialIsPrivate ? 'Visible to group members' : 'Visible to all group visitors'}
+              </div> : <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', marginBottom: 12 }}>
                 <input
                   type="checkbox"
                   checked={isPrivate}
@@ -663,10 +672,12 @@ export const StoryEditorView: React.FC<StoryEditorViewProps> = ({
                   style={{ accentColor: Theme.AppAccent, width: 14, height: 14, margin: 0, marginRight: 8 }}
                 />
                 <span style={{ color: '#FFFFFF', fontSize: 12 }}>Keep private (Only me)</span>
-              </label>
+              </label>}
+              {postError && <div role="alert" style={{ color: '#FF6B6B', fontSize: 12, marginBottom: 8 }}>{postError}</div>}
 
               <button
                 onClick={handlePostStory}
+                disabled={isPosting}
                 style={{
                   width: '100%',
                   height: 38,
@@ -680,11 +691,11 @@ export const StoryEditorView: React.FC<StoryEditorViewProps> = ({
                   marginBottom: 6,
                 }}
               >
-                {storyId ? 'Save Changes' : 'Post Story'}
+                {isPosting ? 'Publishing…' : storyId ? 'Save Changes' : 'Post Story'}
               </button>
 
               <button
-                onClick={onClose}
+                onClick={closeEditor}
                 style={{
                   width: '100%',
                   height: 34,

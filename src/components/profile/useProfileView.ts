@@ -1,3 +1,8 @@
+import { useAuthStore } from '../../stores/authStore';
+import { audioPlayerService } from '../../services/audioPlayer.service';
+import { AudioConverterHelper } from '../../utils/audioConverters';
+import { AudioMetadataHelper } from '../../types/audio.types';
+import { useMusicPlayerStore } from '../../stores/musicPlayerStore';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AttachmentType, PrivacyVisibility, MainTab } from '../../types/enums';
 import { apiClient } from '../../services/apiClient';
@@ -71,6 +76,7 @@ export interface ProfileServices {
   onJumpToMessage: (messageId: number, targetUserId: number, rawMsg?: IMessage) => void;
   onForwardMessages: (messages: IMessage[]) => void;
   onDeleteMessage: (message: IMessage) => void;
+  onDeleteMessages: (messages: IMessage[]) => void;
   onOpenFile: (attachment: IAttachment) => void;
   onPlayAudio: (attachment: IAttachment) => void;
   onOpenPhotoGallery: (attachments: IAttachment[], index: number) => void;
@@ -143,6 +149,34 @@ export function useProfileView(
   const [isBlockedByMe, setIsBlockedByMe] = useState<boolean>(false);
   const [isBlockedByThem, setIsBlockedByThem] = useState<boolean>(false);
   const [isObservedUserMuted, setIsObservedUserMuted] = useState<boolean>(false);
+
+  const prepareSharedConversation = async () => {
+    onClose();
+    useNavigationStore.getState().switchTab(MainTab.Chats);
+    const selected = useChatStore.getState().selectedChatUser;
+    if (!selected || Boolean(selected.isGroup) !== isGroupProfile || selected.id !== displayedUser.id) {
+      await useChatStore.getState().selectChatUser({
+        id: displayedUser.id, nickName: displayedUser.nickName || 'Chat', username: displayedUser.username,
+        avatar: displayedUser.avatar, avatarPath: displayedUser.avatarPath, isGroup: isGroupProfile,
+        memberCount: 0, onlineCount: 0, isTyping: false, isChannel: false, isSecretChat: false, adminId: 0,
+        isOnline: Boolean(displayedUser.isOnline), lastSeen: displayedUser.lastSeen,
+      });
+    }
+    const current = useChatStore.getState().selectedChatUser;
+    return current?.id === displayedUser.id && Boolean(current?.isGroup) === isGroupProfile;
+  };
+  const resolveSharedMessages = async (messages: IMessage[]) => {
+    if (!messages.length || !await prepareSharedConversation()) return [];
+    const resolved: IMessage[] = [];
+    const unique = new Map(messages.map(message => [message.serverId > 0 ? `s_${message.serverId}` : `l_${message.id}`, message]));
+    for (const message of unique.values()) {
+      const loaded = await useChatStore.getState().ensureMessageLoadedAsync(message.serverId > 0 ? message.serverId : message.id, message);
+      const selected = useChatStore.getState().selectedChatUser;
+      if (selected?.id !== displayedUser.id || Boolean(selected?.isGroup) !== isGroupProfile) return [];
+      if (loaded) resolved.push(loaded);
+    }
+    return resolved;
+  };
 
   const services: ProfileServices = {
     getUserProfile: customServices.getUserProfile || ((id) => (userService as any)?.getUserProfileAsync?.(id) || Promise.resolve(null)),
@@ -251,50 +285,25 @@ export function useProfileView(
     onCallUser: onCallUserProp || customServices.onCallUser || (() => {}),
     onToggleMute: customServices.onToggleMute || (() => {}),
 
-    onJumpToMessage: customServices.onJumpToMessage || (async (messageId: number, targetUserId: number, rawMsg?: IMessage) => {
-      onClose();
-      useNavigationStore.getState().switchTab(MainTab.Chats);
-
-      const chatStore = useChatStore.getState();
-      const currentSelected = chatStore.selectedChatUser;
-      const isSameChat = currentSelected && !currentSelected.isGroup && Number(currentSelected.id) === Number(targetUserId);
-
-      if (!isSameChat) {
-        await chatStore.selectChatUser({
-          id: targetUserId,
-          nickName: displayedUser.nickName || 'User',
-          username: displayedUser.username,
-          avatar: displayedUser.avatar,
-          avatarPath: displayedUser.avatarPath,
-          isGroup: false,
-          isOnline: Boolean(displayedUser.isOnline),
-          lastSeen: displayedUser.lastSeen,
-        });
-      }
-
-      if (rawMsg) {
-        await chatStore.jumpToSearchedMessage(rawMsg);
-      } else {
-        const found = await chatStore.ensureMessageLoadedAsync(messageId);
-        if (found) {
-          await chatStore.jumpToSearchedMessage(found);
-        } else {
-          eventBus.emit('ScrollToMessageRequestMessage' as any, {
-            messageId,
-            serverId: messageId,
-          });
-        }
-      }
+    onJumpToMessage: customServices.onJumpToMessage || (async (messageId: number, _targetUserId: number, rawMsg?: IMessage) => {
+      if (!await prepareSharedConversation()) return;
+      const loaded = await useChatStore.getState().ensureMessageLoadedAsync(messageId, rawMsg);
+      const selected = useChatStore.getState().selectedChatUser;
+      if (loaded && selected?.id === displayedUser.id && Boolean(selected?.isGroup) === isGroupProfile) await useChatStore.getState().jumpToSearchedMessage(loaded);
     }),
 
-    onForwardMessages: customServices.onForwardMessages || ((messages: IMessage[]) => {
-      if (!messages || messages.length === 0) return;
-      useChatStore.getState().openForwardDialog(messages);
+    onForwardMessages: customServices.onForwardMessages || (async (messages: IMessage[]) => {
+      const resolved = await resolveSharedMessages(messages);
+      if (resolved.length) useChatStore.getState().openForwardDialog(resolved);
     }),
 
-    onDeleteMessage: customServices.onDeleteMessage || ((message: IMessage) => {
-      if (!message) return;
-      useChatStore.getState().openDeleteDialog(message);
+    onDeleteMessage: customServices.onDeleteMessage || (async (message: IMessage) => {
+      const resolved = await resolveSharedMessages([message]);
+      if (resolved.length) useChatStore.getState().openDeleteMessagesDialog(resolved);
+    }),
+    onDeleteMessages: customServices.onDeleteMessages || (async (messages: IMessage[]) => {
+      const resolved = await resolveSharedMessages(messages);
+      if (resolved.length) useChatStore.getState().openDeleteMessagesDialog(resolved);
     }),
 
     onOpenFile: customServices.onOpenFile || ((att: IAttachment) => {
@@ -402,6 +411,8 @@ export function useProfileView(
   const [groupMembersPanelTitle, setGroupMembersPanelTitle] = useState<string>('Group Members');
   const [activeMembersList, setActiveMembersList] = useState<IGroupMember[]>([]);
   const [membersCount, setMembersCount] = useState<number>(0);
+  const [isGroupMembersLoading, setIsGroupMembersLoading] = useState(false);
+  const memberListRequestRef = useRef(0);
   const [adminsCount, setAdminsCount] = useState<number>(1);
   const [blackListCount, setBlackListCount] = useState<number>(0);
 
@@ -534,10 +545,13 @@ export function useProfileView(
     }
   }, [isBlockedByMe, isBlockedByThem, services]);
 
+  const currentProfileRef = useRef({ id: displayedUser.id, isOpen, isGroupProfile });
+  currentProfileRef.current = { id: displayedUser.id, isOpen, isGroupProfile };
   const loadGroupDetails = useCallback(async (groupId: number) => {
     if (!groupId) return;
     try {
       const details = await services.getGroupDetails(groupId);
+      if (!currentProfileRef.current.isOpen || !currentProfileRef.current.isGroupProfile || currentProfileRef.current.id !== groupId) return;
       if (details) {
         setGroupDetails(details);
         setEditGroupName(details.name || '');
@@ -554,15 +568,18 @@ export function useProfileView(
       }
 
       const members = await services.getGroupMembers(groupId);
+      if (currentProfileRef.current.id !== groupId || !currentProfileRef.current.isGroupProfile) return;
       if (members) {
         setMembersCount(members.length);
         setActiveMembersList(members);
       }
       const admins = await services.getGroupAdministrators(groupId);
+      if (currentProfileRef.current.id !== groupId || !currentProfileRef.current.isGroupProfile) return;
       if (admins) {
         setAdminsCount(admins.length);
       }
-      const bans = await services.getGroupBlacklist(groupId);
+      const bans = details?.isAdmin || details?.isOwner ? await services.getGroupBlacklist(groupId) : null;
+      if (currentProfileRef.current.id !== groupId || !currentProfileRef.current.isGroupProfile) return;
       if (bans) {
         setBlackListCount(bans.length);
       }
@@ -581,6 +598,7 @@ export function useProfileView(
     }
   }, [isOwnProfile]);
 
+  const previousGroupProfileRef = useRef(isGroupProfile);
   useEffect(() => {
     if (!isOpen) {
       prevIsOpenRef.current = false;
@@ -589,7 +607,8 @@ export function useProfileView(
     }
 
     const isJustOpened = !prevIsOpenRef.current;
-    const isDifferentUser = prevUserIdRef.current !== user?.id;
+    const isDifferentUser = prevUserIdRef.current !== user?.id || previousGroupProfileRef.current !== isGroupProfile;
+    previousGroupProfileRef.current = isGroupProfile;
 
     prevIsOpenRef.current = true;
     prevUserIdRef.current = user?.id ?? null;
@@ -610,7 +629,12 @@ export function useProfileView(
         }
       } else if (isGroupProfile) {
         setActiveRightContainer(null);
-        if (user?.id) void loadGroupDetails(user.id);
+        setGroupDetails(null);
+        setActiveStories([]);
+        if (user?.id) {
+          currentProfileRef.current = { id: user.id, isOpen, isGroupProfile };
+          void loadGroupDetails(user.id);
+        }
       } else {
         setActiveRightContainer(null);
         if (user?.id) void loadOtherUserProfile(user.id);
@@ -688,18 +712,46 @@ export function useProfileView(
     setActiveRightContainer(null);
   };
 
+  const groupStoriesRequestRef = useRef(0);
+  const loadGroupStories = useCallback(async (groupId: number) => {
+    const request = ++groupStoriesRequestRef.current;
+    setIsStoriesLoading(true);
+    try {
+      const stories = await storiesService.getGroupStoriesAsync(groupId);
+      const hydrated = await Promise.all((stories || []).map(async story => ({
+        ...story, imageDataUrl: await storiesService.getStoryImageDataUrlAsync(story.id, story.imagePath),
+      })));
+      if (request === groupStoriesRequestRef.current && currentProfileRef.current.isOpen && currentProfileRef.current.isGroupProfile && currentProfileRef.current.id === groupId)
+        setActiveStories(hydrated);
+    } finally {
+      if (request === groupStoriesRequestRef.current) setIsStoriesLoading(false);
+    }
+  }, []);
+  useEffect(() => eventBus.on('GroupStoriesChangedMessage', ({ groupId }) => {
+    if (isOpen && isGroupProfile && displayedUser.id === groupId && activeRightContainer === 'stories')
+      void loadGroupStories(groupId);
+  }), [isOpen, isGroupProfile, displayedUser.id, activeRightContainer, loadGroupStories]);
+  const canPublishGroupStory = Boolean(isGroupProfile && (groupDetails?.isAdmin || groupDetails?.isOwner));
+  const createGroupStory = async (file: File) => {
+    if (!canPublishGroupStory) return;
+    await useStoriesStore.getState().createNewStory(file, {
+      id: displayedUser.id, name: groupDetails?.name || displayedUser.nickName, isPublic: Boolean(groupDetails?.isPublic),
+    });
+  };
   const handleOpenStoriesMenu = async () => {
     expandRightPanel('stories');
+    setActiveStories([]);
+    if (isGroupProfile) { await loadGroupStories(displayedUser.id); return; }
     setIsStoriesLoading(true);
     try {
       const stories = await services.getUserStories(displayedUser.id);
       setActiveStories(stories || []);
-    } finally {
-      setIsStoriesLoading(false);
-    }
+    } finally { setIsStoriesLoading(false); }
   };
 
+  const mediaRequestRef = useRef(0);
   const loadSharedMedia = async (mediaType: string) => {
+    const request = ++mediaRequestRef.current;
     setSelectedSharedMediaType(mediaType);
     const titlesMap: Record<string, string> = {
       Photos: 'Photos',
@@ -716,19 +768,26 @@ export function useProfileView(
     expandRightPanel('sharedMedia');
 
     try {
-      const myName = user?.nickName || user?.username || 'Me';
+      const me = useAuthStore.getState().currentUser || await userService.getUserProfileAsync(effectiveUserId);
+      const myName = me?.nickName || me?.username || userService.getCachedUserName(effectiveUserId);
       const targetName = displayedUser.nickName || displayedUser.username || 'User';
 
+      const groupMessages = isGroupProfile ? await chatService.getGroupSharedMediaMessagesAsync(displayedUser.id) : null;
+      if (groupMessages) {
+        await userService.enrichMessagesWithSendersAsync(groupMessages, effectiveUserId);
+        for (const message of groupMessages) if (message.senderId === effectiveUserId) message.senderName = myName;
+      }
+      if (request !== mediaRequestRef.current || currentProfileRef.current.id !== displayedUser.id) return;
       if (mediaType === 'Pinned') {
-        const msgs = await services.getSharedPinnedMessages(effectiveUserId, displayedUser.id);
+        const msgs = groupMessages ? groupMessages.filter(message => message.isPinned) : await services.getSharedPinnedMessages(effectiveUserId, displayedUser.id);
         setSharedPinnedGroups(groupMessagesByMonth(msgs, effectiveUserId, myName, targetName));
         setSharedAttachmentGroups([]);
       } else if (mediaType === 'Links') {
-        const msgs = await services.getSharedLinkMessages(effectiveUserId, displayedUser.id);
+        const msgs = groupMessages ? groupMessages.filter(message => /https?:\/\/|www\.|t\.me\//i.test(message.text || '')) : await services.getSharedLinkMessages(effectiveUserId, displayedUser.id);
         setSharedPinnedGroups(groupMessagesByMonth(msgs, effectiveUserId, myName, targetName));
         setSharedAttachmentGroups([]);
       } else {
-        const messages = await services.getSharedMediaMessages(effectiveUserId, displayedUser.id);
+        const messages = groupMessages || await services.getSharedMediaMessages(effectiveUserId, displayedUser.id);
         const attachments: IAttachment[] = [];
         messages.forEach((m) => {
           (m.attachments || []).forEach((a) => {
@@ -742,9 +801,36 @@ export function useProfileView(
         setSharedPinnedGroups([]);
       }
     } finally {
-      setIsSharedMediaLoading(false);
+      if (request === mediaRequestRef.current) setIsSharedMediaLoading(false);
     }
   };
+
+  const reloadMediaRef = useRef(loadSharedMedia);
+  reloadMediaRef.current = loadSharedMedia;
+  useEffect(() => {
+    if (!isOpen || activeRightContainer !== 'sharedMedia') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const reload = () => { clearTimeout(timer); timer = setTimeout(() => { void reloadMediaRef.current(selectedSharedMediaType); }, 120); };
+    const receive = eventBus.on('ReceiveMessage', message => {
+      const matches = isGroupProfile ? message.groupId === displayedUser.id : !message.groupId && (message.senderId === displayedUser.id || message.receiverId === displayedUser.id);
+      if (matches) reload();
+    });
+    const edited = eventBus.on('MessageEditedMessage', reload);
+    const deleted = eventBus.on('MessageDeletedMessage', reload);
+    const pinned = eventBus.on('MessagePinnedMessage', reload);
+    const processed = eventBus.on('AttachmentProcessedMessage', reload);
+    return () => { clearTimeout(timer); receive(); edited(); deleted(); pinned(); processed(); };
+  }, [isOpen, activeRightContainer, selectedSharedMediaType, displayedUser.id, isGroupProfile]);
+
+  useEffect(() => {
+    if (!isGroupProfile) return;
+    const syncMute = () => {
+      const chat = useSidebarChatsStore.getState().allChats.find(chat => chat.isGroup && Number(chat.groupId ?? chat.id) === displayedUser.id);
+      setIsObservedUserMuted(Boolean(chat?.isMuted));
+    };
+    syncMute();
+    return useSidebarChatsStore.subscribe(syncMute);
+  }, [isGroupProfile, displayedUser.id]);
 
   const updateSelectedCount = () => {
     let count = 0;
@@ -797,28 +883,37 @@ export function useProfileView(
         return;
       }
 
-      // Музыка или Голосовые -> MusicPlayerView / audioPlayerService
       if (resolved === AttachmentType.Audio || resolved === AttachmentType.Voice) {
-        services.onPlayAudio(att);
+        jumpToSharedItem(att);
         return;
       }
 
       // Документ -> Скачивание
       services.onOpenFile(att);
-    } else {
-      const msg = item as IMessage;
-      if (selectedSharedMediaType === 'Links') {
-        const urlMatch = msg.text.match(/(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)/i);
-        if (urlMatch) {
-          let url = urlMatch[0];
-          if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
-          window.open(url, '_blank');
+    } else jumpToSharedItem(item);
+  };
+
+  const jumpToSharedItem = (item: IAttachment | IMessage) => {
+    const message = 'type' in item ? (item as any).message as IMessage | undefined : item as IMessage;
+    const id = message?.serverId && message.serverId > 0 ? message.serverId : message?.id || ('messageId' in item ? item.messageId : 0);
+    if (id) services.onJumpToMessage(id, displayedUser.id, message);
+  };
+
+  const playSharedAudio = (att: IAttachment) => {
+    if (isSelectionMode) { toggleItemSelection(att); return; }
+    const resolved = resolveAttachmentType(att);
+        const current = audioPlayerService.currentAttachment;
+        if (AudioConverterHelper.isSameAttachment(current, att)) {
+          if (useMusicPlayerStore.getState().currentTrack && resolved === AttachmentType.Audio) useMusicPlayerStore.getState().togglePlay();
+          else audioPlayerService.togglePlay(current!);
+        } else if (resolved === AttachmentType.Voice) services.onPlayAudio(att);
+        else {
+          const tracks = sharedAttachmentGroups.flatMap(group => group.items).filter(item => resolveAttachmentType(item) === AttachmentType.Audio)
+            .map(item => AudioMetadataHelper.createAudioTrackFromAttachment(item, (item as any).message || null,
+              displayedUser.nickName || 'Chat', displayedUser.avatar || null, isGroupProfile, Boolean(groupDetails?.isChannel)));
+          const selected = tracks.find(track => AudioConverterHelper.isSameAttachment(track.attachment, att));
+          if (selected) useMusicPlayerStore.getState().loadPlaylistAndPlay(tracks, selected);
         }
-      } else {
-        const targetId = msg.serverId > 0 ? msg.serverId : msg.id;
-        services.onJumpToMessage(targetId, displayedUser.id, msg);
-      }
-    }
   };
 
   const getSelectedMessagesList = (): IMessage[] => {
@@ -833,7 +928,7 @@ export function useProfileView(
         if (m.isSelected) list.push(m);
       });
     });
-    return Array.from(new Set(list));
+    return Array.from(new Map(list.map(message => [message.serverId > 0 ? `s_${message.serverId}` : `l_${message.id}`, message])).values());
   };
 
   const validateEditProfile = (u: IUser): boolean => {
@@ -1049,20 +1144,20 @@ export function useProfileView(
   };
 
   const handleShowMembers = async (type: 'members' | 'admins' | 'blacklist') => {
-    if (type === 'members') {
-      setGroupMembersPanelTitle('Group Members');
-      const list = await services.getGroupMembers(user.id);
-      setActiveMembersList(list || []);
-    } else if (type === 'admins') {
-      setGroupMembersPanelTitle('Administrators');
-      const list = await services.getGroupAdministrators(user.id);
-      setActiveMembersList(list || []);
-    } else {
-      setGroupMembersPanelTitle('Blacklist');
-      const list = await services.getGroupBlacklist(user.id);
-      setActiveMembersList(list || []);
-    }
+    const request = ++memberListRequestRef.current;
+    setGroupMembersPanelTitle(type === 'members' ? 'Group Members' : type === 'admins' ? 'Administrators' : 'Blacklist');
+    setActiveMembersList([]);
+    setIsGroupMembersLoading(true);
     expandRightPanel('members');
+    try {
+      const list = type === 'members' ? await services.getGroupMembers(user.id)
+        : type === 'admins' ? await services.getGroupAdministrators(user.id) : await services.getGroupBlacklist(user.id);
+      if (request !== memberListRequestRef.current) return;
+      setActiveMembersList(list || []);
+      if (type === 'members') setMembersCount(list?.length || 0);
+      else if (type === 'admins') setAdminsCount(list?.length || 0);
+      else setBlackListCount(list?.length || 0);
+    } finally { if (request === memberListRequestRef.current) setIsGroupMembersLoading(false); }
   };
 
   const handleOpenMemberPermissions = async (m: IGroupMember) => {
@@ -1089,6 +1184,7 @@ export function useProfileView(
     if (ok) {
       setIsMemberPermissionsOpen(false);
       setEditingMember(null);
+      await loadGroupDetails(user.id);
       void handleShowMembers('members');
     }
   };
@@ -1109,6 +1205,7 @@ export function useProfileView(
       await loadGroupDetails(user.id);
       collapseRightPanel();
     }
+    return ok;
   };
 
   return {
@@ -1181,6 +1278,7 @@ export function useProfileView(
     selectedCount,
     groupDetails,
     groupMembersPanelTitle,
+    isGroupMembersLoading,
     activeMembersList,
     membersCount,
     adminsCount,
@@ -1219,10 +1317,15 @@ export function useProfileView(
     expandRightPanel,
     collapseRightPanel,
     handleOpenStoriesMenu,
+    canPublishGroupStory,
+    createGroupStory,
+    isGroupProfile,
     loadSharedMedia,
     toggleItemSelection,
     handleCancelSelection,
     handleSharedItemClick,
+    jumpToSharedItem,
+    playSharedAudio,
     getSelectedMessagesList,
     handleSaveEditProfile,
     handlePrivacyChange,

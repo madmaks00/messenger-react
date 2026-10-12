@@ -1,3 +1,4 @@
+import { userPresenceState, parsePresence, UserPresence, PresenceTicket, GroupPresence, parseGroupPresence } from '../services/userPresenceState';
 import { create } from 'zustand';
 import { IChatListItem, IUserSearchResult } from '../types/models';
 import { LastMessageType } from '../types/enums';
@@ -43,11 +44,14 @@ interface SidebarChatsState {
   blockUser: (chat: IChatListItem) => Promise<void>;
   deleteChat: (chat: IChatListItem, groupService?: any, deleteForAll?: boolean) => Promise<void>;
   clearChatHistory: (chat: IChatListItem, deleteForAll: boolean) => Promise<void>;
-  syncOnlineStatuses: () => Promise<void>;
+  applyGroupPresence: (groupId:number,status:GroupPresence,ticket?:PresenceTicket)=>boolean;
+  applyPresence: (userId: number, status: UserPresence, ticket?: PresenceTicket) => boolean;
+  syncOnlineStatuses: (force?: boolean) => Promise<void>;
   startGlobalStatusPolling: () => void;
   stopGlobalStatusPolling: () => void;
 }
 
+let statusSyncPromise: Promise<void> | null = null;
 let globalStatusTimer: ReturnType<typeof setInterval> | null = null;
 
 function sortChats(chats: IChatListItem[]): IChatListItem[] {
@@ -93,42 +97,17 @@ function isMatchingChat(a: IChatListItem, b: IChatListItem): boolean {
   }
 }
 
-function extractOnline(statuses: any, userId: number): boolean | undefined {
+function extractPresence(statuses: any, userId: number): UserPresence | undefined {
   if (!statuses) return undefined;
-  const num = Number(userId);
-
-  if (statuses instanceof Map) {
-    if (statuses.has(num)) return Boolean(statuses.get(num));
-    if (statuses.has(String(num))) return Boolean(statuses.get(String(num)));
-    for (const [k, v] of statuses.entries()) {
-      if (Number(k) === num) return Boolean(v);
-    }
-    return undefined;
-  }
-
+  if (statuses instanceof Map) return parsePresence(statuses.get(userId) ?? statuses.get(String(userId)));
   if (Array.isArray(statuses)) {
     for (const item of statuses) {
-      if (Array.isArray(item) && item.length >= 2) {
-        if (Number(item[0]) === num) return Boolean(item[1]);
-      } else if (item && typeof item === 'object') {
-        const k = item.key ?? item.Key ?? item.userId ?? item.UserId;
-        const v = item.value ?? item.Value ?? item.isOnline ?? item.IsOnline;
-        if (Number(k) === num && v !== undefined) return Boolean(v);
-      }
+      if (Array.isArray(item) && Number(item[0]) === userId) return parsePresence(item[1]);
+      if (item && Number(item.key ?? item.Key ?? item.userId ?? item.UserId) === userId) return parsePresence(item.value ?? item.Value ?? item);
     }
     return undefined;
   }
-
-  if (typeof statuses === 'object') {
-    if (num in statuses) return Boolean(statuses[num]);
-    const str = String(num);
-    if (str in statuses) return Boolean(statuses[str]);
-    for (const [k, v] of Object.entries(statuses)) {
-      if (Number(k) === num) return Boolean(v);
-    }
-  }
-
-  return undefined;
+  return parsePresence(statuses[userId]);
 }
 
 export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
@@ -201,6 +180,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       set({ selectedFolderId: null, isSystemFolder: true });
     }
 
+    const presenceTicket = userPresenceState.capture();
     try {
       const fetchedChats: IChatListItem[] = await chatService.getChatsAsync();
       const cachedSecrets: any[] = (await chatService.getCachedSecretChatsAsync?.()) || [];
@@ -328,6 +308,17 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
         });
       }
 
+      if (presenceTicket.owner !== Number(userSession.userId || 0)) return;
+      for (const chat of merged) {
+        if (chat.isGroup) {
+          const id=Number(chat.groupId??chat.id);const value=parseGroupPresence(chat);if(value)get().applyGroupPresence(id,value,presenceTicket);
+          const known=userPresenceState.getGroup(id);if(known)Object.assign(chat,known);continue;
+        }
+        const id = Number(chat.userId ?? chat.id);
+        // Push updates received while the list was loading take precedence over that HTTP response.
+        if (!chat.isSecretChat) get().applyPresence(id, {isOnline:Boolean(chat.isOnline),lastSeen:chat.lastSeen}, presenceTicket);
+        const known = userPresenceState.get(id);if (known) Object.assign(chat, known);
+      }
       const sorted = sortChats(merged);
       const { selectedFolderId, isSystemFolder } = get();
       const filteredResult = applyFolderFilter(sorted, selectedFolderId, isSystemFolder);
@@ -390,6 +381,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
       }
     }
 
+    if(resolvedUser.isGroup){const known=userPresenceState.getGroup(Number(resolvedUser.id));if(known)Object.assign(resolvedUser,known);}
     // 🟢 Гарантированно подписываемся на открытую группу в SignalR
     if (resolvedUser.isGroup && resolvedUser.id > 0) {
       void signalRService.subscribeToGroupAsync(Number(resolvedUser.id));
@@ -834,73 +826,59 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     }
   },
 
-  syncOnlineStatuses: async () => {
-    const currentChats = get().allChats;
-    const userIds = Array.from(
-      new Set(
-        currentChats
-          .filter((c) => !c.isGroup && !c.isSecretChat)
-          .map((c) => Number(c.userId ?? (c as any).UserId ?? c.id ?? 0))
-          .filter((id) => id > 0)
-      )
-    );
-
-    const activeUser = useChatStore.getState().selectedChatUser;
-    if (activeUser && !activeUser.isGroup && !activeUser.isSecretChat) {
-      const activeId = Number(activeUser.id ?? (activeUser as any).userId ?? 0);
-      if (activeId > 0 && !userIds.includes(activeId)) {
-        userIds.push(activeId);
-      }
-    }
-
-    if (userIds.length === 0) return;
-
-    try {
-      const statuses = await signalRService.getOnlineStatusesAsync(userIds);
-      if (!statuses) return;
-
-      const updated = get().allChats.map((c) => {
-        if (c.isGroup || c.isSecretChat) return c;
-        const uid = Number(c.userId ?? (c as any).UserId ?? c.id ?? 0);
-        if (uid > 0) {
-          const isOnline = extractOnline(statuses, uid);
-          if (isOnline !== undefined) {
-            return {
-              ...c,
-              isOnline,
-              lastSeen: isOnline ? new Date().toISOString() : c.lastSeen,
-            };
-          }
-        }
-        return c;
-      });
-
-      const { selectedFolderId, isSystemFolder } = get();
-
-      set({
-        allChats: updated,
-        filteredChats: applyFolderFilter(updated, selectedFolderId, isSystemFolder),
-      });
-
-      const currentActive = useChatStore.getState().selectedChatUser;
-      if (currentActive && !currentActive.isGroup && !currentActive.isSecretChat) {
-        const activeId = Number(currentActive.id ?? (currentActive as any).userId ?? 0);
-        const isOnlineNow = extractOnline(statuses, activeId);
-
-        if (isOnlineNow !== undefined && isOnlineNow !== currentActive.isOnline) {
-          useChatStore.setState({
-            selectedChatUser: {
-              ...currentActive,
-              isOnline: isOnlineNow,
-              lastSeen: isOnlineNow ? new Date().toISOString() : currentActive.lastSeen,
-            },
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('[SidebarChatsStore] Ошибка синхронизации онлайна:', err);
-    }
+  applyGroupPresence: (groupId,snapshot,ticket) => {
+    const accepted=userPresenceState.acceptGroup(groupId,snapshot,ticket);if(!accepted)return false;
+    const update=(chat:IChatListItem)=>chat.isGroup&&Number(chat.groupId??chat.id)===Number(groupId)?{...chat,...accepted}:chat;
+    set(state=>{const chats=state.allChats.map(update);const selected=state.selectedChatUser;
+      return {allChats:chats,filteredChats:applyFolderFilter(chats,state.selectedFolderId,state.isSystemFolder),
+        currentSidebarChat:state.currentSidebarChat?update(state.currentSidebarChat):null,
+        selectedChatUser:selected?.isGroup&&Number(selected.id)===Number(groupId)?{...selected,...accepted}:selected};});
+    const active=useChatStore.getState().selectedChatUser;
+    if(active?.isGroup&&Number(active.id)===Number(groupId))useChatStore.setState({selectedChatUser:{...active,...accepted}});
+    return true;
   },
+  applyPresence: (userId, snapshot, ticket) => {
+    const accepted = userPresenceState.accept(userId, snapshot, ticket);
+    if (!accepted) return false;
+    const update = (chat: IChatListItem) => !chat.isGroup && Number(chat.userId ?? chat.id) === Number(userId) ? {...chat,...accepted} : chat;
+    set(state => {
+      const chats = state.allChats.map(update);
+      const selected = state.selectedChatUser;
+      return {allChats:chats, filteredChats:applyFolderFilter(chats,state.selectedFolderId,state.isSystemFolder),
+        currentSidebarChat:state.currentSidebarChat ? chats.find(chat=>isMatchingChat(chat,state.currentSidebarChat!)) || update(state.currentSidebarChat) : null,
+        selectedChatUser:selected && !selected.isGroup && Number(selected.id)===Number(userId) ? {...selected,...accepted} : selected};
+    });
+    const active = useChatStore.getState().selectedChatUser;
+    if (active && !active.isGroup && Number(active.id)===Number(userId)) useChatStore.setState({selectedChatUser:{...active,...accepted}});
+    userService.updateCachedPresence(userId, accepted);
+    return true;
+  },
+
+  syncOnlineStatuses: async (force=false) => {
+    if (statusSyncPromise) return force ? statusSyncPromise.then(()=>get().syncOnlineStatuses()) : statusSyncPromise;
+    const task = (async () => {
+      const userIds = new Set(get().allChats.filter(chat=>!chat.isGroup).map(chat=>Number(chat.userId??chat.id)).filter(id=>id>0));
+      const active=useChatStore.getState().selectedChatUser;if(active&&!active.isGroup&&active.id>0)userIds.add(Number(active.id));
+      const groupIds=new Set(get().allChats.filter(chat=>chat.isGroup).map(chat=>Number(chat.groupId??chat.id)).filter(id=>id>0));
+      if(active?.isGroup&&active.id>0)groupIds.add(Number(active.id));
+      if (!userIds.size&&!groupIds.size) return;
+      const ticket=userPresenceState.capture();
+      try {
+        // Each result is independent: a failed group snapshot must not suppress personal status updates.
+        const results=await Promise.allSettled([
+          userIds.size?signalRService.getPresenceSnapshotAsync([...userIds]):Promise.resolve(null),
+          groupIds.size?signalRService.getGroupPresenceSnapshotAsync([...groupIds]):Promise.resolve(null)]);
+        if(ticket.owner!==Number(userSession.userId||0))return;
+        const statuses=results[0].status==='fulfilled'?results[0].value:null;
+        const groups=results[1].status==='fulfilled'?results[1].value:null;
+        for(const id of userIds){const value=extractPresence(statuses,id);if(value)get().applyPresence(id,value,ticket);}
+        for(const id of groupIds){const value=parseGroupPresence(groups?.[id]);if(value)get().applyGroupPresence(id,value,ticket);}
+      }catch(error){console.warn('[Presence] Status synchronization failed:',error);}
+    })();
+    const tracked=task.finally(()=>{if(statusSyncPromise===tracked)statusSyncPromise=null;});statusSyncPromise=tracked;
+    return tracked;
+  },
+
 }));
 
 // ================= ВСЕ СЛУШАТЕЛИ EVENTBUS =================
@@ -927,40 +905,14 @@ eventBus.on('NewMessageAddedMessage' as any, (m: any) => {
   );
 });
 
-eventBus.on('UserStatusChangedMessage' as any, ({ userId, isOnline, lastSeen }: { userId: number; isOnline: boolean; lastSeen: string }) => {
-  const numId = Number(userId);
+eventBus.on('GroupPresenceChangedMessage' as any,({groupId,onlineCount,memberCount}:any)=>{const value=parseGroupPresence({onlineCount,memberCount});if(value)useSidebarChatsStore.getState().applyGroupPresence(Number(groupId),value);});
+eventBus.on('UserJoinedGroupMessage' as any,()=>{void useSidebarChatsStore.getState().syncOnlineStatuses(true);});
+eventBus.on('UserLeftGroupMessage' as any,()=>{void useSidebarChatsStore.getState().syncOnlineStatuses(true);});
 
-  useSidebarChatsStore.setState((state) => {
-    const updatedChats = state.allChats.map((c) => {
-      if (c.isGroup || c.isSecretChat) return c;
-      const uid = Number(c.userId ?? (c as any).UserId ?? c.id ?? (c as any).Id ?? 0);
-      if (uid === numId) {
-        return {
-          ...c,
-          isOnline: Boolean(isOnline),
-          lastSeen: isOnline ? new Date().toISOString() : (lastSeen || c.lastSeen),
-        };
-      }
-      return c;
-    });
-
-    return {
-      allChats: updatedChats,
-      filteredChats: applyFolderFilter(updatedChats, state.selectedFolderId, state.isSystemFolder),
-    };
-  });
-
-  const activeChat = useChatStore.getState().selectedChatUser;
-  if (activeChat && !activeChat.isGroup && !activeChat.isSecretChat && Number(activeChat.id ?? (activeChat as any).userId) === numId) {
-    useChatStore.setState({
-      selectedChatUser: {
-        ...activeChat,
-        isOnline: Boolean(isOnline),
-        lastSeen: isOnline ? new Date().toISOString() : (lastSeen || activeChat.lastSeen),
-      },
-    });
-  }
+eventBus.on('UserStatusChangedMessage', ({userId,isOnline,lastSeen}) => {
+  const status = parsePresence({isOnline,lastSeen});if(status)useSidebarChatsStore.getState().applyPresence(userId,status);
 });
+eventBus.on('BeforeAccountSwitchMessage',()=>{userPresenceState.reset();useSidebarChatsStore.getState().stopGlobalStatusPolling();});
 
 eventBus.on('SelectChatUserMessage' as any, (data: any) => {
   const target = data && typeof data === 'object' && 'target' in data ? data.target : data;
@@ -1037,7 +989,8 @@ eventBus.on('SyncTimerMessage' as any, () => {
 });
 
 eventBus.on('SignalRConnectedMessage' as any, () => {
-  useSidebarChatsStore.getState().syncOnlineStatuses();
+  userPresenceState.invalidateRequests();
+  void useSidebarChatsStore.getState().syncOnlineStatuses(true);
 });
 
 eventBus.on('SidebarUpdateMessage' as any, (data: any) => {

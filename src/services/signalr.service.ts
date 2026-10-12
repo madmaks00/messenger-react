@@ -1,3 +1,4 @@
+import { UserPresence, parsePresence, GroupPresence } from './userPresenceState';
 import {
   HubConnection,
   HubConnectionBuilder,
@@ -38,10 +39,34 @@ export class SignalRService {
   private hubConnection: HubConnection | null = null;
   private readonly serverUrl: string;
   private readonly hubPath: string = 'chat';
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatRunning = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
+  private connectionGeneration = 0;
   private connectingPromise: Promise<boolean> | null = null;
 
   constructor() {
     this.serverUrl = (BASE_SERVER_URL || 'https://localhost:7214').replace(/\/+$/, '');
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!this.stopped){if(this.isConnected){void this.heartbeat();void useSidebarChatsStore.getState().syncOnlineStatuses(true);}else void this.ensureConnectedAsync();}});
+    window.addEventListener('pagehide',(event)=>{if(!event.persisted)void this.stopAsync();});
+    window.addEventListener('online',()=>{if(!this.stopped)void this.ensureConnectedAsync();});
+  }
+
+  private scheduleReconnect(generation: number) {
+    if(this.stopped||generation!==this.connectionGeneration||!userSession.isAuthenticated)return;
+    if(this.reconnectTimer)clearTimeout(this.reconnectTimer);
+    this.reconnectTimer=setTimeout(()=>{this.reconnectTimer=null;if(!this.stopped&&generation===this.connectionGeneration)void this.ensureConnectedAsync();},5000);
+  }
+
+  private async heartbeat(): Promise<void> {
+    if(!this.isConnected||this.heartbeatRunning)return;
+    this.heartbeatRunning=true;
+    try{await this.safeInvoke('Heartbeat');}finally{this.heartbeatRunning=false;}
+  }
+  private startHeartbeat() {
+    if(this.heartbeatTimer)clearInterval(this.heartbeatTimer);
+    void this.heartbeat();this.heartbeatTimer=setInterval(()=>{void this.heartbeat();},25000);
   }
 
   public get connection(): HubConnection {
@@ -81,6 +106,8 @@ export class SignalRService {
       return await this.connectingPromise;
     }
 
+    const generation=++this.connectionGeneration;this.stopped=false;
+    if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null;}
     this.connectingPromise = (async () => {
       try {
         if (this.hubConnection) {
@@ -105,13 +132,16 @@ export class SignalRService {
           .configureLogging(LogLevel.Warning);
 
         this.hubConnection = builder.build();
+        const connection=this.hubConnection;
 
         this.hubConnection.onreconnecting((error) => {
           console.warn('[SignalR] Потеря связи с хабом. Переподключение...', error);
         });
 
         this.hubConnection.onreconnected(async (id) => {
+          if(this.stopped||generation!==this.connectionGeneration||this.hubConnection!==connection)return;
           console.info('[SignalR] Соединение восстановлено. ConnectionId:', id);
+          this.startHeartbeat();
 
           // 🟢 Переподписываемся на группы после разрыва соединения
           try {
@@ -137,19 +167,22 @@ export class SignalRService {
 
         this.hubConnection.onclose((error) => {
           console.warn('[SignalR] Соединение закрыто.', error);
+          this.scheduleReconnect(generation);
         });
 
         this.registerHubHandlers();
 
-        await this.hubConnection.start();
+        await connection.start();
+        if(this.stopped||generation!==this.connectionGeneration||this.hubConnection!==connection)return false;
         console.info('[SignalR] Соединение успешно установлено.');
+        this.startHeartbeat();
         eventBus.emit('SignalRConnectedMessage' as any, undefined);
         return true;
       } catch (err: any) {
-        console.error('[SignalR ERROR] Сбой подключения к хабу:', err);
+        if(generation===this.connectionGeneration){console.error('[SignalR ERROR] Сбой подключения к хабу:', err);this.scheduleReconnect(generation);}
         return false;
       } finally {
-        this.connectingPromise = null;
+        if(generation===this.connectionGeneration)this.connectingPromise = null;
       }
     })();
 
@@ -157,19 +190,19 @@ export class SignalRService {
   }
 
   public async stopAsync(): Promise<void> {
-    if (this.hubConnection) {
-      try {
-        await this.hubConnection.stop();
-      } finally {
-        this.hubConnection = null;
-        this.connectingPromise = null;
-      }
-    }
+    this.stopped=true;this.connectionGeneration++;
+    if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null;}
+    if(this.heartbeatTimer){clearInterval(this.heartbeatTimer);this.heartbeatTimer=null;}
+    const connection=this.hubConnection;this.hubConnection=null;this.connectingPromise=null;
+    if(connection)await connection.stop();
   }
 
   private registerHubHandlers(): void {
     if (!this.hubConnection) return;
 
+    this.hubConnection.on('GroupStoriesChanged', (groupId: number) => {
+      eventBus.emit('GroupStoriesChangedMessage', { groupId });
+    });
     this.hubConnection.on('StoryPosted', (userId: number, userName: string, userAvatar: any) => {
       eventBus.emit('StoryPostedMessage', { userId, userName, userAvatar });
     });
@@ -366,6 +399,7 @@ this.hubConnection.on(
             targetAvatar: typeof initiatorAvatar === 'string' ? initiatorAvatar : null,
             sharedKey: protectedState,
             keyFingerprint: fingerprint,
+            emojiFingerprint: secretChatCrypto.getSession(secretChatId)?.emojiFingerprint || '',
             isEstablished: true,
             lastMessage: '🔒 Секретный чат создан.',
             lastMessageTime: new Date().toISOString(),
@@ -663,15 +697,22 @@ this.hubConnection.on(
     });
 
     // 🟢 6. СТАТУСЫ ОНЛАЙНА
+    const presenceConnection=this.hubConnection;const presenceOwner=Number(userSession.userId||0);
+    this.hubConnection.on('GroupPresenceChanged',(groupId:number,onlineCount:number,memberCount:number)=>{
+      if(this.hubConnection!==presenceConnection||Number(userSession.userId||0)!==presenceOwner)return;
+      eventBus.emit('GroupPresenceChangedMessage' as any,{groupId,onlineCount,memberCount});
+    });
     this.hubConnection.on('UserStatusChanged', (userId: any, isOnline: any, lastSeen: any) => {
+      if(this.hubConnection!==presenceConnection||Number(userSession.userId||0)!==presenceOwner)return;
       const uid = Number(userId);
-      const online = Boolean(isOnline);
+      const parsedPresence = parsePresence(isOnline); if(!parsedPresence)return;
+      const online = parsedPresence.isOnline;
       const seen =
         typeof lastSeen === 'string'
           ? lastSeen
           : lastSeen
           ? new Date(lastSeen).toISOString()
-          : new Date().toISOString();
+          : '0001-01-01T00:00:00Z';
 
       eventBus.emit('UserStatusChangedMessage', {
         userId: uid,
@@ -927,6 +968,13 @@ this.hubConnection.on(
       console.error(`[SignalR ERROR] Ошибка вызова '${methodName}':`, err);
       return null;
     }
+  }
+
+  public async getGroupPresenceSnapshotAsync(groupIds:number[]):Promise<Record<number,GroupPresence>|null> {return this.safeInvoke<Record<number,GroupPresence>>('GetGroupPresenceSnapshot',groupIds);}
+
+  public async getPresenceSnapshotAsync(userIds: number[]): Promise<Record<number,UserPresence>|null> {
+    if(!userIds?.length)return null;
+    return this.safeInvoke<Record<number,UserPresence>>('GetPresenceSnapshot',userIds);
   }
 
   public async getOnlineStatusesAsync(userIds: number[]): Promise<Record<number, boolean> | null> {

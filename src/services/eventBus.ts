@@ -133,13 +133,17 @@ VoiceRecordingTickMessage: { elapsedSeconds: number };
   // Notes & Stories
   NoteUpdatedMessage: { noteId: number };
   StoryPostedMessage: { userId: number; userName: string; userAvatar?: string | null };
+  GroupStoriesChangedMessage: { groupId: number };
   OpenStoryEditorMessage: {
+    groupId?: number | null;
+    groupName?: string | null;
     image: string;
     storyId?: number | null;
     description?: string | null;
     isPrivate?: boolean;
   };
   PostStoryMessage: {
+    groupId?: number | null;
     image: string;
     description: string;
     isPrivate: boolean;

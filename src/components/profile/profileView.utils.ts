@@ -145,7 +145,7 @@ export function getGroupTitle(date: Date): string {
 
 // =========================================================================
 // 4. СТРОГИЙ РЕЗОЛВЕР ТИПОВ ВЛОЖЕНИЙ (1:1 C# WPF PrepareMessageMedia & MatchesCategory)
-// В C# WPF: Photo = 0, Video = 1, Audio = 2, Document = 3, Voice = 4
+// В C# WPF: Photo = 0, Video = 1, Document = 2, Audio = 3, Voice = 4
 // =========================================================================
 
 export function resolveAttachmentType(a: IAttachment): AttachmentType {
@@ -179,6 +179,8 @@ export function resolveAttachmentType(a: IAttachment): AttachmentType {
     return AttachmentType.Audio;
   }
 
+  if (['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar'].includes(ext)) return AttachmentType.Document;
+
   // 5. По числовому или строковому enum
   if (typeVal === AttachmentType.Photo || typeVal === 0 || typeVal === 'Photo') {
     return AttachmentType.Photo;
@@ -186,10 +188,10 @@ export function resolveAttachmentType(a: IAttachment): AttachmentType {
   if (typeVal === AttachmentType.Video || typeVal === 1 || typeVal === 'Video') {
     return AttachmentType.Video;
   }
-  if (typeVal === AttachmentType.Audio || typeVal === 2 || typeVal === 'Audio') {
+  if (typeVal === AttachmentType.Audio || typeVal === 'Audio') {
     return AttachmentType.Audio;
   }
-  if (typeVal === AttachmentType.Document || typeVal === 3 || typeVal === 'Document') {
+  if (typeVal === AttachmentType.Document || typeVal === 'Document') {
     return AttachmentType.Document;
   }
 
@@ -275,7 +277,7 @@ export function groupAttachmentsByMonth(
 
     if ((att as any).message) {
       (att as any).message.isMyMessage = Number((att as any).message.senderId) === Number(currentUserId);
-      (att as any).message.senderName = (att as any).message.isMyMessage ? myName : targetName;
+      (att as any).message.senderName = (att as any).message.senderName || ((att as any).message.isMyMessage ? myName : targetName);
     }
 
     groupsMap.get(groupKey)!.items.push({
@@ -320,7 +322,7 @@ export function groupMessagesByMonth(
     const msg: IMessage = {
       ...rawMsg,
       isMyMessage,
-      senderName: isMyMessage ? myName : targetName,
+      senderName: rawMsg.senderName || (isMyMessage ? myName : targetName),
       isSelected: Boolean(rawMsg.isSelected),
     };
 

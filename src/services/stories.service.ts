@@ -37,6 +37,16 @@ export class StoriesService {
     }
   }
 
+  public async getGroupStoriesAsync(groupId: number): Promise<IStory[] | null> {
+    try {
+      const response = await apiClient.get<IStory[]>(`api/Stories/group/${groupId}`);
+      return response.data || [];
+    } catch (error) {
+      console.error('[StoriesService] Unable to load group stories', error);
+      return null;
+    }
+  }
+
   // 🟢 Загрузка картинки через защищенный API контроллер с гарантированным CORS
   public async getStoryImageDataUrlAsync(storyId: number, imagePath: string): Promise<string | null> {
     try {
@@ -81,13 +91,14 @@ export class StoriesService {
     }
   }
 
-  public async postStoryAsync(image: string, description: string, isPrivate: boolean): Promise<IStory | null> {
+  public async postStoryAsync(image: string, description: string, isPrivate: boolean, groupId?: number | null): Promise<IStory | null> {
     try {
       const formData = new FormData();
       const blob = dataUrlToBlob(image);
       formData.append('file', blob, 'story.jpg');
       formData.append('description', description || '');
       formData.append('isPrivate', isPrivate ? 'true' : 'false');
+      if (groupId) formData.append('groupId', String(groupId));
 
       // 🟢 Без ручного Content-Type: Axios сам установит boundary
       const response = await apiClient.post<IStory>('api/Stories/upload', formData);

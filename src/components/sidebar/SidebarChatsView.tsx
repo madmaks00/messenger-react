@@ -786,7 +786,7 @@ export const SidebarChatsView: React.FC = () => {
                       </div>
 
                       {Boolean(chat.isOnline) && !chat.isGroup && (
-                        <div
+                        <div role="img" aria-label="Online"
                           style={{
                             position: 'absolute',
                             bottom: 0,
@@ -1070,6 +1070,7 @@ export const SidebarChatsView: React.FC = () => {
                                 id: targetChatId,
                                 nickName: titleName || 'User',
                                 isGroup: isGroupMsg,
+                                memberCount: 0, onlineCount: 0, isTyping: false, isChannel: false, adminId: 0, isSecretChat: false,
                                 avatar: null,
                                 avatarPath: null,
                                 isOnline: false,

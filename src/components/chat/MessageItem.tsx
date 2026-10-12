@@ -551,6 +551,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             style={{
               position: 'relative',
               backgroundColor: model.isMediaOnly ? 'transparent' : isMy ? PALETTE.myBubbleBg : PALETTE.otherBubbleBg,
+              minWidth: 0,
               borderRadius: bubbleRadius,
               boxSizing: 'border-box',
               overflow: 'visible',
@@ -575,7 +576,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             )}
 
             {model.isPinned && (
-              <div style={{ position: 'absolute', top: 5, right: 10, transform: 'rotate(45deg)', zIndex: 10 }}>
+              <div style={{ position: 'absolute', top: 5, right: 10, transform: 'rotate(45deg)', zIndex: 10, pointerEvents: 'none' }}>
                 <SvgIcon path={ICONS.pin} size={14} color={PALETTE.tgCheckmark} />
               </div>
             )}
@@ -587,7 +588,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                   e.stopPropagation();
                   useNavigationStore.getState().openUserProfile(model.senderId);
                 }}
-                style={{ padding: '4px 12px 4px 12px', fontSize: 14, fontWeight: 600, color: PALETTE.authorName, cursor: 'pointer' }}
+                style={{ padding: model.isPinned ? '4px 36px 4px 12px' : '4px 12px', fontSize: 14, fontWeight: 600, color: PALETTE.authorName, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
               >
                 {model.senderName}
               </div>

@@ -1,506 +1,133 @@
-import React, { useRef } from 'react';
-import { getAvatarColor, getFirstLetter, normalizeImageSrc } from './profileView.utils';
+import React, { useRef, useState } from 'react';
+import { normalizeCallAvatar } from '../../utils/callAvatar';
+import { getAvatarColor, getFirstLetter } from './profileView.utils';
 import { useProfileView } from './useProfileView';
-import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
+import './ProfileGroup.css';
 
 interface ProfileRightGroupProps {
   vm: ReturnType<typeof useProfileView>;
   onClose: () => void;
   onLeaveGroup: () => void;
-  onKickMember: (memberId: number) => void;
-  onUnbanMember: (memberId: number) => void;
+  onKickMember: (memberId: number) => void | Promise<unknown>;
+  onUnbanMember: (memberId: number) => void | Promise<unknown>;
 }
 
-export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({
-  vm,
-  onClose,
-  onLeaveGroup,
-  onKickMember,
-  onUnbanMember,
-}) => {
-  const {
-    displayedUser,
-    activeRightContainer,
-    groupMembersPanelTitle,
-    activeMembersList,
-    groupDetails,
-    editGroupName,
-    setEditGroupName,
-    editGroupDescription,
-    setEditGroupDescription,
-    editGroupAvatar,
-    setEditGroupAvatar,
-    editGroupIsPublic,
-    setEditGroupIsPublic,
-    editGroupLink,
-    setEditGroupLink,
-    groupCanSendText,
-    setGroupCanSendText,
-    groupCanSendMedia,
-    setGroupCanSendMedia,
-    groupCanPinMessages,
-    setGroupCanPinMessages,
-    collapseRightPanel,
-    handleOpenMemberPermissions,
-    handleSaveGroupSettings,
-    handleShowMembers,
-  } = vm;
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const handleGroupAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (uploadEvent) => {
-        setEditGroupAvatar(uploadEvent.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({ vm, onClose, onLeaveGroup, onKickMember, onUnbanMember }) => {
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const { displayedUser, activeRightContainer, groupMembersPanelTitle, activeMembersList, groupDetails,
+    editGroupName, setEditGroupName, editGroupDescription, setEditGroupDescription, editGroupAvatar, setEditGroupAvatar,
+    editGroupIsPublic, setEditGroupIsPublic, editGroupLink, setEditGroupLink, groupCanSendText, setGroupCanSendText,
+    groupCanSendMedia, setGroupCanSendMedia, groupCanPinMessages, setGroupCanPinMessages, collapseRightPanel,
+    handleOpenMemberPermissions, handleSaveGroupSettings, handleShowMembers } = vm;
+  const groupId = displayedUser.id;
+  const isBlacklist = groupMembersPanelTitle === 'Blacklist';
+  const managing = activeRightContainer === 'editGroup';
+  const inviteActive = Boolean(groupDetails?.isLinkActive && groupDetails?.groupLink);
+  const title = managing ? 'Manage Group' : groupMembersPanelTitle;
+  const save = async () => {
+    if (saving) return;
+    setSaving(true); setSaveError('');
+    try { if (!await handleSaveGroupSettings()) setSaveError('Unable to save changes. Please check the group settings.'); }
+    catch { setSaveError('Unable to save changes. Please try again.'); }
+    finally { setSaving(false); }
   };
+  return <div className="profile-group-shell" data-group-panel={managing ? 'manage' : isBlacklist ? 'blacklist' : 'members'}>
+    <header className="profile-group-header">
+      <div className="profile-group-heading">
+        <button className="profile-group-icon-button" onClick={collapseRightPanel} title="Back to Profile"><Icons.ArrowLeft size={20} /></button>
+        <h2>{title}</h2>
+      </div>
+      <button className="profile-group-icon-button" onClick={onClose} title="Close Profile"><Icons.Close size={20} /></button>
+    </header>
 
-  const targetGroupId = displayedUser?.id || groupDetails?.id || 0;
-
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 1. СПИСОК УЧАСТНИКОВ / ЧЕРНЫЙ СПИСОК */}
-      {activeRightContainer === 'members' && (
-        <>
-          <div style={rightHeaderStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={collapseRightPanel} style={iconBtnStyle} title="Back to Profile">
-                <Icons.ArrowLeft size={20} color={Theme.ProfileSectionLabel} />
-              </button>
-              <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText }}>
-                {groupMembersPanelTitle}
-              </span>
+    {!managing && <div className="wpf-scroll-viewer profile-group-scroll">
+      {vm.isGroupMembersLoading ? <div className="profile-group-empty" role="status"><p>Loading members…</p></div> : activeMembersList.length === 0 ?
+        <div className="profile-group-empty" role="status">
+          <div className="profile-group-empty-icon"><Icons.BlockHelper size={34} color="#46505f" /></div>
+          <h3>{isBlacklist ? 'No blocked members' : 'No members found'}</h3>
+          <p>{isBlacklist ? "The group's blacklist is empty." : 'Members will appear here.'}</p>
+        </div> : <div className="profile-group-members">{activeMembersList.map(member => {
+          const role = member.roleName === 'Owner' ? 'owner' : member.roleName === 'Admin' || member.roleName === 'Administrator' ? 'admin' : '';
+          const canModerate = !member.isCurrentUser && (groupDetails?.isOwner || (groupDetails?.isAdmin && !role));
+          const avatar = normalizeCallAvatar(member.avatar);
+          return <div key={member.id} className="profile-group-member">
+            <div className="profile-group-member-avatar" style={{ backgroundColor: getAvatarColor(member.id) }}>{getFirstLetter(member.name)}
+              {avatar && <img key={avatar} src={avatar} alt="" onError={event => { event.currentTarget.style.visibility = 'hidden'; }} />}
             </div>
-            <button onClick={onClose} style={iconBtnStyle} title="Close Profile">
-              <Icons.Close size={20} color={Theme.ProfileSectionLabel} />
+            <div className="profile-group-member-info"><strong>{member.name}</strong><small>@{member.username}</small></div>
+            <div className="profile-group-member-actions">
+              {isBlacklist ? <button className="profile-group-button link" onClick={async () => { await onUnbanMember(member.id); await handleShowMembers('blacklist'); }}>Unban</button> : <>
+                <span className={`profile-group-role ${role}`}>{member.roleName || 'Member'}</span>
+                {canModerate && <>
+                  <button className="profile-group-button" onClick={() => handleOpenMemberPermissions(member)}>Permissions</button>
+                  <button className="profile-group-button danger" onClick={async () => { await onKickMember(member.id); await handleShowMembers('members'); }}>Remove</button>
+                </>}
+              </>}
+            </div>
+          </div>;
+        })}</div>}
+    </div>}
+
+    {managing && <>
+      <div className="wpf-scroll-viewer profile-group-scroll">
+        <section className="profile-group-section">
+          <div className="profile-group-general">
+            <button className="profile-group-avatar" style={{ backgroundColor: getAvatarColor(groupId) }} onClick={() => fileInput.current?.click()} title="Change group avatar">
+              {normalizeCallAvatar(editGroupAvatar) ? <img src={normalizeCallAvatar(editGroupAvatar) || undefined} alt="Group avatar" /> : <span className="profile-group-avatar-letter">{getFirstLetter(editGroupName)}</span>}
+              <span className="profile-group-avatar-mark"><Icons.PencilOutline size={13} color="#fff" /></span>
             </button>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 25px 24px 25px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {activeMembersList.map((m) => (
-                <div key={m.id} style={mediaRowCardStyle}>
-                  <div
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
-                      backgroundColor: getAvatarColor(m.id),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: Theme.MainWindowText,
-                      fontWeight: 'bold',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {getFirstLetter(m.name)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: Theme.MainWindowText, fontWeight: 600, fontSize: 14 }}>{m.name}</div>
-                    <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12 }}>@{m.username}</div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    {groupMembersPanelTitle === 'Blacklist' ? (
-                      <button
-                        onClick={async () => {
-                          onUnbanMember(m.id);
-                          handleShowMembers('blacklist');
-                        }}
-                        style={{ ...smallActionBtn, color: Theme.AppAccent }}
-                      >
-                        Unban
-                      </button>
-                    ) : (
-                      <>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 'bold',
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            backgroundColor:
-                              m.roleName === 'Owner'
-                                ? Theme.GroupOwnerBadgeBg
-                                : m.roleName === 'Admin' || m.roleName === 'Administrator'
-                                ? 'rgba(16, 185, 129, 0.15)'
-                                : 'rgba(255, 255, 255, 0.08)',
-                            color:
-                              m.roleName === 'Owner'
-                                ? Theme.GroupOwnerBadgeText
-                                : m.roleName === 'Admin' || m.roleName === 'Administrator'
-                                ? '#10B981'
-                                : Theme.ProfileSectionLabel,
-                          }}
-                        >
-                          {m.roleName || 'Member'}
-                        </span>
-
-                        {!m.isCurrentUser && (groupDetails?.isAdmin || groupDetails?.isOwner) && (
-                          <button onClick={() => handleOpenMemberPermissions(m)} style={smallActionBtn}>
-                            Permissions
-                          </button>
-                        )}
-                        {!m.isCurrentUser && (groupDetails?.isAdmin || groupDetails?.isOwner) && (
-                          <button
-                            onClick={() => {
-                              onKickMember(m.id);
-                              handleShowMembers('members');
-                            }}
-                            style={{ ...smallActionBtn, color: Theme.ProfileDestructiveAction }}
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <input ref={fileInput} type="file" accept="image/*" hidden onChange={event => {
+              const file = event.target.files?.[0]; if (!file) return;
+              const reader = new FileReader(); reader.onload = () => setEditGroupAvatar(String(reader.result).split(',')[1]); reader.readAsDataURL(file);
+              event.target.value = '';
+            }} />
+            <div><label className="profile-group-label" htmlFor="group-profile-name">Group name</label>
+              <input id="group-profile-name" className="profile-group-field" value={editGroupName} onChange={event => setEditGroupName(event.target.value)} />
             </div>
           </div>
-        </>
-      )}
+          <label className="profile-group-label" htmlFor="group-profile-description">Description</label>
+          <textarea id="group-profile-description" className="profile-group-field" rows={3} value={editGroupDescription} onChange={event => setEditGroupDescription(event.target.value)} placeholder="Add a description for this group…" />
+        </section>
 
-      {/* 2. УПРАВЛЕНИЕ ГРУППОЙ */}
-      {activeRightContainer === 'editGroup' && (
-        <>
-          <div style={rightHeaderStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={collapseRightPanel} style={iconBtnStyle} title="Back to Profile">
-                <Icons.ArrowLeft size={20} color={Theme.ProfileSectionLabel} />
-              </button>
-              <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText }}>
-                Manage Group
-              </span>
-            </div>
-            <button onClick={onClose} style={iconBtnStyle} title="Close Profile">
-              <Icons.Close size={20} color={Theme.ProfileSectionLabel} />
-            </button>
+        <section className="profile-group-section">
+          <span className="profile-group-label">Group type</span>
+          <div className="profile-group-type" role="group" aria-label="Group type">
+            <button aria-pressed={!editGroupIsPublic} onClick={() => setEditGroupIsPublic(false)}>Private</button>
+            <button aria-pressed={editGroupIsPublic} onClick={() => setEditGroupIsPublic(true)}>Public</button>
           </div>
+          {editGroupIsPublic ? <><label className="profile-group-label" htmlFor="group-profile-link">Public link</label>
+            <input id="group-profile-link" className="profile-group-field" value={editGroupLink} onChange={event => setEditGroupLink(event.target.value)} placeholder="Group link" /></> : <>
+            <span className="profile-group-label">Invite link</span>
+            {inviteActive ? <div className="profile-group-link-row"><span className="profile-group-link" title={groupDetails.groupLink}>{groupDetails.groupLink}</span>
+              <button className="profile-group-button danger" onClick={async () => { if (await vm.services.revokeInviteLink(groupId)) await vm.loadGroupDetails(groupId); }}>Revoke</button>
+            </div> : <><p className="profile-group-note">No active invite link</p>
+              <button className="profile-group-button link" onClick={async () => { if (await vm.services.generateInviteLink(groupId)) await vm.loadGroupDetails(groupId); }}>Create Invite Link</button></>}
+          </>}
+        </section>
 
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 25px 24px 25px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={labelStyle}>GENERAL INFO</div>
-              <div style={avatarSectionStyle}>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Change group avatar"
-                  style={{
-                    width: 90,
-                    height: 90,
-                    borderRadius: 45,
-                    border: `2px solid ${Theme.AppAccent}`,
-                    overflow: 'hidden',
-                    position: 'relative',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    backgroundColor: Theme.ProfileEditAvatarFallbackBg,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    onChange={handleGroupAvatarChange}
-                  />
-                  {editGroupAvatar ? (
-                    <img src={normalizeImageSrc(editGroupAvatar)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ fontSize: 28, color: '#FFF', fontWeight: 'bold' }}>
-                      {getFirstLetter(editGroupName)}
-                    </span>
-                  )}
-                  <div style={cameraOverlayStyle}>
-                    <Icons.PencilOutline size={22} color="#FFF" />
-                  </div>
-                </div>
-
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <div style={labelStyle}>GROUP NAME</div>
-                  <input
-                    type="text"
-                    value={editGroupName}
-                    onChange={(e) => setEditGroupName(e.target.value)}
-                    style={cardInputStyle}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div style={labelStyle}>DESCRIPTION</div>
-                <textarea
-                  rows={3}
-                  value={editGroupDescription}
-                  onChange={(e) => setEditGroupDescription(e.target.value)}
-                  placeholder="Add an optional description for this group..."
-                  style={{ ...cardInputStyle, resize: 'none' }}
-                />
-              </div>
-
-              <div style={subPanelCardStyle}>
-                <div style={labelStyle}>GROUP TYPE &amp; LINK</div>
-                <div style={{ ...settingRowStyle, padding: '4px 0', border: 'none' }}>
-                  <span style={{ color: Theme.MainWindowText, fontSize: 14 }}>Group Type</span>
-                  <select
-                    value={editGroupIsPublic ? 'public' : 'private'}
-                    onChange={(e) => setEditGroupIsPublic(e.target.value === 'public')}
-                    style={selectStyle}
-                  >
-                    <option value="private">Private</option>
-                    <option value="public">Public</option>
-                  </select>
-                </div>
-
-                {editGroupIsPublic ? (
-                  <div style={{ marginTop: 12 }}>
-                    <div style={labelStyle}>PUBLIC LINK</div>
-                    <input
-                      type="text"
-                      value={editGroupLink}
-                      onChange={(e) => setEditGroupLink(e.target.value)}
-                      style={cardInputStyle}
-                    />
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 12 }}>
-                    <div style={labelStyle}>INVITE LINK</div>
-                    {groupDetails?.groupLink ? (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ color: Theme.AppAccent, fontSize: 13, fontWeight: 600 }}>{groupDetails.groupLink}</span>
-                        <button
-                          onClick={() => vm.services.revokeInviteLink(targetGroupId)}
-                          style={{ background: 'none', border: 'none', color: Theme.ProfileDestructiveAction, fontSize: 12, cursor: 'pointer', fontWeight: 'bold' }}
-                        >
-                          Revoke
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => vm.services.generateInviteLink(targetGroupId)}
-                        style={{ background: 'none', border: 'none', color: Theme.AppAccent, fontSize: 12.5, cursor: 'pointer', fontWeight: 'bold', padding: 0 }}
-                      >
-                        Generate Invite Link
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div style={subPanelCardStyle}>
-                <div style={labelStyle}>DEFAULT MEMBER PERMISSIONS</div>
-                <label style={toggleLabelStyle}>
-                  <div>
-                    <div style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>Send Text Messages</div>
-                    <div style={{ color: Theme.ProfileSectionLabel, fontSize: 11.5 }}>Members can write text in chat</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={groupCanSendText}
-                    onChange={(e) => setGroupCanSendText(e.target.checked)}
-                    style={{ width: 18, height: 18, accentColor: Theme.AppAccent }}
-                  />
-                </label>
-                <div style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '8px 0' }} />
-                <label style={toggleLabelStyle}>
-                  <div>
-                    <div style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>Send Media Files</div>
-                    <div style={{ color: Theme.ProfileSectionLabel, fontSize: 11.5 }}>Photos, videos, files and documents</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={groupCanSendMedia}
-                    onChange={(e) => setGroupCanSendMedia(e.target.checked)}
-                    style={{ width: 18, height: 18, accentColor: Theme.AppAccent }}
-                  />
-                </label>
-                <div style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '8px 0' }} />
-                <label style={toggleLabelStyle}>
-                  <div>
-                    <div style={{ color: Theme.MainWindowText, fontSize: 14, fontWeight: 600 }}>Pin Messages</div>
-                    <div style={{ color: Theme.ProfileSectionLabel, fontSize: 11.5 }}>Members can pin messages</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={groupCanPinMessages}
-                    onChange={(e) => setGroupCanPinMessages(e.target.checked)}
-                    style={{ width: 18, height: 18, accentColor: Theme.AppAccent }}
-                  />
-                </label>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                <button
-                  onClick={onLeaveGroup}
-                  style={{
-                    background: 'transparent',
-                    border: `1px solid ${Theme.ProfileDestructiveAction}`,
-                    color: Theme.ProfileDestructiveAction,
-                    padding: '10px 18px',
-                    borderRadius: 8,
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Delete Group
-                </button>
-
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={collapseRightPanel} style={secondaryBtnStyle}>
-                    Cancel
-                  </button>
-                  <button onClick={handleSaveGroupSettings} style={primaryBtnStyle}>
-                    Save Changes
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-const rightHeaderStyle: React.CSSProperties = {
-  height: 64,
-  padding: '0 25px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-};
-
-const iconBtnStyle: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  background: 'transparent',
-  border: 'none',
-  color: Theme.ProfileSectionLabel,
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 0,
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 'bold',
-  color: Theme.ProfileSectionLabel,
-  marginBottom: 6,
-};
-
-const cardInputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 14px',
-  background: Theme.ProfileInputContainerBg,
-  border: `1px solid ${Theme.ProfileInputContainerBorder}`,
-  borderRadius: 10,
-  color: Theme.ProfileInputText,
-  fontSize: 14,
-  outline: 'none',
-  boxSizing: 'border-box',
-};
-
-const selectStyle: React.CSSProperties = {
-  width: 130,
-  padding: '6px 10px',
-  background: Theme.ProfileComboBoxDropdownBg,
-  border: `1px solid ${Theme.ProfileInputContainerBorder}`,
-  borderRadius: 6,
-  color: Theme.ProfileComboBoxDropdownText,
-  fontSize: 13,
-  outline: 'none',
-};
-
-const avatarSectionStyle: React.CSSProperties = {
-  background: Theme.ProfileInputContainerBg,
-  borderRadius: 12,
-  padding: 16,
-  display: 'flex',
-  gap: 16,
-  border: `1px solid ${Theme.ProfileInputContainerBorder}`,
-};
-
-const cameraOverlayStyle: React.CSSProperties = {
-  position: 'absolute',
-  inset: 0,
-  backgroundColor: Theme.ProfileEditAvatarCameraOverlayBg,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  opacity: 0.85,
-};
-
-const subPanelCardStyle: React.CSSProperties = {
-  background: Theme.ProfileInputContainerBg,
-  borderRadius: 12,
-  border: `1px solid ${Theme.ProfileInputContainerBorder}`,
-  padding: 16,
-};
-
-const settingRowStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-};
-
-const mediaRowCardStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-  padding: '10px 14px',
-  background: Theme.ProfileInputContainerBg,
-  border: `1px solid ${Theme.ProfileInputContainerBorder}`,
-  borderRadius: 10,
-};
-
-const smallActionBtn: React.CSSProperties = {
-  padding: '6px 12px',
-  borderRadius: 6,
-  background: Theme.ProfileDeviceItemBg,
-  color: '#FFF',
-  border: 'none',
-  fontSize: 12,
-  cursor: 'pointer',
-  fontWeight: 600,
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  padding: '10px 20px',
-  borderRadius: 8,
-  background: Theme.AppAccent,
-  color: '#FFF',
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 'bold',
-  cursor: 'pointer',
-};
-
-const secondaryBtnStyle: React.CSSProperties = {
-  padding: '10px 18px',
-  borderRadius: 8,
-  background: 'transparent',
-  color: Theme.ProfileSectionLabel,
-  border: 'none',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-};
-
-const toggleLabelStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  cursor: 'pointer',
+        <section className="profile-group-section">
+          <span className="profile-group-label">Default member permissions</span>
+          {([
+            ['Send Text Messages', 'Members can write text in chat', groupCanSendText, setGroupCanSendText],
+            ['Send Media Files', 'Photos, videos, files and documents', groupCanSendMedia, setGroupCanSendMedia],
+            ['Pin Messages', 'Members can pin messages', groupCanPinMessages, setGroupCanPinMessages],
+          ] as const).map(([label, description, checked, onChange]) => <label className="profile-group-permission" key={label}>
+            <div><div className="profile-group-permission-title">{label}</div><p className="profile-group-note">{description}</p></div>
+            <input className="profile-group-switch" type="checkbox" role="switch" checked={checked} onChange={event => onChange(event.target.checked)} />
+          </label>)}
+        </section>
+      </div>
+      {saveError && <div className="profile-group-error" role="alert">{saveError}</div>}
+      <footer className="profile-group-footer">
+        <button className="profile-group-button danger" onClick={onLeaveGroup}>Delete Group</button>
+        <div className="profile-group-footer-actions">
+          <button className="profile-group-button" onClick={collapseRightPanel} disabled={saving}>Cancel</button>
+          <button className="profile-group-button primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+        </div>
+      </footer>
+    </>}
+  </div>;
 };

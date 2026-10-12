@@ -1,3 +1,5 @@
+import './CallWindow.css';
+import { normalizeCallAvatar } from '../../utils/callAvatar';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   mdiWindowMinimize,
@@ -18,10 +20,10 @@ import {
   mdiFullscreenExit,
 } from '@mdi/js';
 
-import { useCallsStore } from '../../stores/callsStore';
+import { useCallsStore, getLocalUserProfile } from '../../stores/callsStore';
 import { useChatStore } from '../../stores/chatStore';
-import { eventBus } from '../../services/eventBus';
-import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
+import { userService } from '../../services/user.service';
+import { getAvatarColor } from '../../utils/helpers';
 
 const PALETTE = {
   windowBg: '#12151B',
@@ -29,22 +31,16 @@ const PALETTE = {
   windowBorder: 'rgba(255, 255, 255, 0.08)',
   textControls: '#8B9197',
   textWhite: '#FFFFFF',
-  accentBlue: '#1E9BEB',
-  accentPurple: '#9B51E0',
+  accentBlue: '#36C2C9',
+  accentPurple: '#7C6EF6',
   activeIndicator: '#2ECC71',
-  actionBtnDarkBg: '#242A35',
-  actionBtnRedBg: '#E53935',
+  actionBtnDarkBg: '#202735',
+  actionBtnRedBg: '#F0445E',
 };
 
-function safeAvatarUrl(avatar?: string | null): string | null {
-  if (!avatar || typeof avatar !== 'string') return null;
-  const trimmed = avatar.trim();
-  if (trimmed.length === 0) return null;
-  if (trimmed.startsWith('data:image') || trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
-  if (trimmed.startsWith('/9j/') || trimmed.startsWith('iVBORw') || (!trimmed.includes('/') && trimmed.length > 50)) {
-    return `data:image/jpeg;base64,${trimmed}`;
-  }
-  return normalizeAvatarUrl(trimmed);
+// 🟢 Гарантированная загрузка аватарки: если base64 отсутствует, грузим по API бэкенда
+function safeAvatarUrl(avatar?: unknown, userId?: number): string | null {
+  return normalizeCallAvatar(avatar) || (userId ? normalizeCallAvatar(userService.getCachedUserAvatar(userId)) : null);
 }
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
@@ -126,10 +122,13 @@ export const CallWindow: React.FC = () => {
   const {
     isWindowOpen,
     windowState,
+    currentCallUserId,
     currentCallUserName,
+    currentCallUserAvatar,
     localUserName,
     localUserAvatar,
     isIncomingCallVisible,
+    isOutgoingCallVisible,
     isActiveCallVisible,
     callDurationText,
     activeParticipants,
@@ -156,48 +155,31 @@ export const CallWindow: React.FC = () => {
 
   const { currentUserName: chatUserName, currentUserAvatar: chatUserAvatar } = useChatStore();
 
-  // 1. Подписка на медиа-статусы участников
-  useEffect(() => {
-    const unsub = eventBus.on('UserMediaStateChangedMessage' as any, (data: any) => {
-      useCallsStore.setState((state) => ({
-        activeParticipants: state.activeParticipants.map((p) =>
-          Number(p.userId) === Number(data.userId)
-            ? { ...p, isMuted: data.isMuted, isVideoOn: data.isVideoOn, isScreenSharing: data.isScreenSharing }
-            : p
-        ),
-      }));
-    });
-    return () => { unsub(); };
-  }, []);
-
-  // 2. Отображение профиля пользователя
   const myDisplayName = useMemo(() => {
-    try {
-      const sess = JSON.parse(localStorage.getItem('user_session_data') || '{}');
-      if (sess.nickName || sess.userName || sess.username) {
-        return sess.nickName || sess.userName || sess.username;
-      }
-    } catch {}
-    if (chatUserName && chatUserName !== 'Me' && chatUserName !== 'User' && chatUserName !== 'Вы') {
-      return chatUserName;
+    const profile = getLocalUserProfile();
+    if (profile.name && profile.name !== 'Вы') {
+      return profile.name;
     }
     if (localUserName && localUserName !== 'Вы') {
       return localUserName;
     }
+    if (chatUserName && chatUserName !== 'Me' && chatUserName !== 'User' && chatUserName !== 'Вы') {
+      return chatUserName;
+    }
     return 'Вы';
-  }, [chatUserName, localUserName]);
+  }, [localUserName, chatUserName]);
 
   const myDisplayAvatar = useMemo(() => {
-    try {
-      const sess = JSON.parse(localStorage.getItem('user_session_data') || '{}');
-      if (sess.avatarPath || sess.avatar) {
-        return sess.avatarPath || sess.avatar;
-      }
-    } catch {}
-    return chatUserAvatar || localUserAvatar || null;
+    const profile = getLocalUserProfile();
+    return (
+      profile.avatar ||
+      chatUserAvatar ||
+      localUserAvatar ||
+      (profile.id > 0 ? userService.getCachedUserAvatar(profile.id) : null) ||
+      null
+    );
   }, [chatUserAvatar, localUserAvatar]);
 
-  // 3. Выбор активного экрана (строго до ранних return!)
   const currentSelectedSource = useMemo(() => {
     return (
       availableScreenSources.find((s) => String(s.id) === String(selectedScreenSourceId)) ||
@@ -205,11 +187,11 @@ export const CallWindow: React.FC = () => {
     );
   }, [availableScreenSources, selectedScreenSourceId]);
 
-  // 4. Локальные состояния компонента
   const [position, setPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isHeroFullScreen, setIsHeroFullScreen] = useState(false);
   const [isHeroHovered, setIsHeroHovered] = useState(false);
+
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number }>({
     mouseX: 0,
     mouseY: 0,
@@ -230,7 +212,7 @@ export const CallWindow: React.FC = () => {
   }, [isWindowOpen, currentWindowWidth, currentWindowHeight]);
 
   const handleMouseDownHeader = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (windowState !== 'normal') return;
+    if (windowState !== 'normal' || (e.target as Element).closest('button')) return;
     setIsDragging(true);
     dragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, startX: position.x, startY: position.y };
   };
@@ -260,7 +242,6 @@ export const CallWindow: React.FC = () => {
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
-  // ================= УСЛОВНЫЕ ВЫХОДЫ (СТРОГО ПОСЛЕ ВСЕХ ХУКОВ) =================
   if (!isWindowOpen) return null;
 
   if (windowState === 'minimized') {
@@ -287,6 +268,7 @@ export const CallWindow: React.FC = () => {
         <span style={{ color: PALETTE.textWhite, fontSize: 13, fontWeight: 600 }}>{currentCallUserName}</span>
         <span style={{ color: PALETTE.textControls, fontSize: 12 }}>{callDurationText}</span>
         <button
+            className="call-action" data-tone="danger"
           onClick={(e) => { e.stopPropagation(); void endCall(); }}
           style={{
             background: PALETTE.actionBtnRedBg,
@@ -341,15 +323,15 @@ export const CallWindow: React.FC = () => {
     ? currentSelectedSource.stream
     : null;
 
-  const heroBadgeTitle = currentSelectedSource
+  const heroBadgeTitle = spotlightUserId !== null
+    ? `${activeParticipants.find(p => Number(p.userId) === spotlightUserId)?.username || 'Участник'} (Закреплено)`
+    : currentSelectedSource
     ? (currentSelectedSource.isLocal ? 'Вы ведете презентацию (Ваш экран)' : currentSelectedSource.title)
-    : spotlightUserId
-    ? `${currentCallUserName} (Закреплено)`
     : 'Презентация';
 
   return (
     <div style={containerStyle}>
-      {/* ================= ШАПКА ОКНА ================= */}
+      {/* ШАПКА ОКНА */}
       <div
         onMouseDown={handleMouseDownHeader}
         style={{
@@ -366,385 +348,477 @@ export const CallWindow: React.FC = () => {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '3px 8px',
-              borderRadius: 6,
-              background: 'rgba(46, 204, 113, 0.15)',
-              border: '1px solid rgba(46, 204, 113, 0.3)',
-            }}
-          >
-            <div style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: PALETTE.activeIndicator }} />
-            <span style={{ color: PALETTE.activeIndicator, fontSize: 11, fontWeight: 'bold' }}>{callDurationText}</span>
-          </div>
+          {isActiveCallVisible && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '3px 8px',
+                borderRadius: 6,
+                background: 'rgba(46, 204, 113, 0.15)',
+                border: '1px solid rgba(46, 204, 113, 0.3)',
+              }}
+            >
+              <div style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: PALETTE.activeIndicator }} />
+              <span style={{ color: PALETTE.activeIndicator, fontSize: 11, fontWeight: 'bold' }}>{callDurationText}</span>
+            </div>
+          )}
           <span style={{ color: PALETTE.textWhite, fontSize: 14, fontWeight: 600 }}>{currentCallUserName}</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
+            className="call-action call-window-control"
             onClick={minimizeWindow}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: PALETTE.textControls, padding: 6 }}
           >
             <MdiIcon path={mdiWindowMinimize} size={16} />
           </button>
           <button
+            className="call-action call-window-control"
             onClick={isMaximized ? restoreWindow : maximizeWindow}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: PALETTE.textControls, padding: 6 }}
           >
             <MdiIcon path={isMaximized ? mdiWindowRestore : mdiWindowMaximize} size={15} />
           </button>
           <button
+            className="call-action call-window-control" data-tone="danger"
             onClick={() => void endCall()}
-            style={{ background: PALETTE.actionBtnRedBg, border: 'none', borderRadius: 6, cursor: 'pointer', color: '#FFF', padding: '4px 8px' }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+              color: PALETTE.textControls,
+              padding: '4px 8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background-color 0.2s ease, color 0.2s ease',
+            }}
           >
             <MdiIcon path={mdiClose} size={16} />
           </button>
         </div>
       </div>
 
-      {/* ================= ОСНОВНОЙ ЭКРАН ================= */}
-      <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden', padding: 12 }}>
-        {isPresenterMode ? (
-          /* РЕЖИМ 1: ПРЕЗЕНТАЦИЯ / МУЛЬТИ-СКРИН */
-          <div style={{ flex: 1, display: 'flex', gap: 12, width: '100%', height: '100%' }}>
-            
-            {/* 🟢 БОЛЬШОЙ ЭКРАН ПРЕЗЕНТАЦИИ (С КНОПКОЙ ФУЛЛСКРИНА ПРИ HOVER) */}
-            <div
-              onMouseEnter={() => setIsHeroHovered(true)}
-              onMouseLeave={() => setIsHeroHovered(false)}
+      {/* ЭКРАН ИСХОДЯЩЕГО ВЫЗОВА */}
+      {isOutgoingCallVisible && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div
+            style={{
+              width: 120,
+              height: 120,
+              borderRadius: 60,
+              backgroundColor: PALETTE.accentBlue,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#FFFFFF',
+              fontWeight: 'bold',
+              fontSize: 48,
+              position: 'relative',
+              overflow: 'hidden',
+              marginBottom: 18,
+            }}
+          >
+            <span>{(currentCallUserName || 'U').charAt(0).toUpperCase()}</span>
+            {safeAvatarUrl(currentCallUserAvatar, currentCallUserId) && (
+              <img
+                key={safeAvatarUrl(currentCallUserAvatar, currentCallUserId)!}
+                src={safeAvatarUrl(currentCallUserAvatar, currentCallUserId)!}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            )}
+          </div>
+          <div style={{ color: '#FFFFFF', fontSize: 20, fontWeight: 'bold', marginBottom: 6 }}>{currentCallUserName}</div>
+          <div style={{ color: PALETTE.textControls, fontSize: 14, marginBottom: 32 }}>Вызов...</div>
+
+          <button
+            className="call-action" data-tone="danger"
+            onClick={() => void endCall()}
+            title="Завершить вызов"
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: PALETTE.actionBtnRedBg,
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 20px rgba(229, 57, 53, 0.4)',
+              transition: 'transform 0.15s ease',
+            }}
+          >
+            <MdiIcon path={mdiPhoneHangup} size={28} color="#FFFFFF" />
+          </button>
+        </div>
+      )}
+
+      {/* ЭКРАН ВХОДЯЩЕГО ВЫЗОВА */}
+      {isIncomingCallVisible && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div
+            style={{
+              width: 120,
+              height: 120,
+              borderRadius: 60,
+              backgroundColor: PALETTE.accentBlue,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#FFFFFF',
+              fontWeight: 'bold',
+              fontSize: 48,
+              position: 'relative',
+              overflow: 'hidden',
+              marginBottom: 18,
+            }}
+          >
+            <span>{(currentCallUserName || 'U').charAt(0).toUpperCase()}</span>
+            {safeAvatarUrl(currentCallUserAvatar, currentCallUserId) && (
+              <img
+                key={safeAvatarUrl(currentCallUserAvatar, currentCallUserId)!}
+                src={safeAvatarUrl(currentCallUserAvatar, currentCallUserId)!}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            )}
+          </div>
+          <div style={{ color: '#FFFFFF', fontSize: 20, fontWeight: 'bold', marginBottom: 6 }}>{currentCallUserName}</div>
+          <div style={{ color: PALETTE.textControls, fontSize: 14, marginBottom: 32 }}>Входящий вызов...</div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+            <button
+            className="call-action" data-tone="accept"
+              onClick={() => void acceptCall()}
+              title="Принять"
               style={{
-                flex: 1,
-                backgroundColor: '#000000',
-                borderRadius: 14,
-                overflow: 'hidden',
-                position: 'relative',
-                border: `1px solid ${PALETTE.windowBorder}`,
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: PALETTE.activeIndicator,
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 20px rgba(46, 204, 113, 0.4)',
               }}
             >
-              <VideoPlayerTile
-                key={currentSelectedSource ? String(currentSelectedSource.id) : 'empty_hero'}
-                stream={heroStream}
-                objectFit="contain"
-                isMirror={false}
-              />
+              <MdiIcon path={mdiPhone} size={28} color="#FFFFFF" />
+            </button>
+            <button
+            className="call-action" data-tone="danger"
+              onClick={() => void endCall()}
+              title="Отклонить"
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: PALETTE.actionBtnRedBg,
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 20px rgba(229, 57, 53, 0.4)',
+              }}
+            >
+              <MdiIcon path={mdiPhoneHangup} size={28} color="#FFFFFF" />
+            </button>
+          </div>
+        </div>
+      )}
 
-              {/* МУЛЬТИ-СКРИН ТАБЫ */}
-              {availableScreenSources.length > 1 && (
+      {/* ОСНОВНОЙ ЭКРАН АКТИВНОГО ЗВОНКА */}
+      {isActiveCallVisible && (
+        <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden', padding: 12 }}>
+          {isPresenterMode ? (
+            /* РЕЖИМ 1: ПРЕЗЕНТАЦИЯ / МУЛЬТИ-СКРИН */
+            <div style={{ flex: 1, display: 'flex', gap: 12, width: '100%', height: '100%' }}>
+              <div
+                onMouseEnter={() => setIsHeroHovered(true)}
+                onMouseLeave={() => setIsHeroHovered(false)}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#000000',
+                  borderRadius: 14,
+                  overflow: 'hidden',
+                  position: 'relative',
+                  border: `1px solid ${PALETTE.windowBorder}`,
+                }}
+              >
+                <VideoPlayerTile
+                  key={currentSelectedSource ? String(currentSelectedSource.id) : 'empty_hero'}
+                  stream={heroStream}
+                  objectFit="contain"
+                  isMirror={false}
+                />
+
+                {availableScreenSources.length > 1 && (
+                  <div style={{ position: 'absolute', top: 14, left: 14, display: 'flex', alignItems: 'center', gap: 8, zIndex: 20 }}>
+                    {availableScreenSources.map((source) => {
+                      const isSelected = spotlightUserId === null && String(source.id) === String(currentSelectedSource?.id);
+                      return (
+                        <button
+            className="call-action"
+                          key={String(source.id)}
+                          aria-pressed={isSelected}
+                          onClick={(e) => { e.stopPropagation(); selectScreenSource(source.id); }}
+                          style={{
+                            backgroundColor: isSelected ? PALETTE.accentBlue : 'rgba(26, 30, 39, 0.85)',
+                            border: isSelected ? '1px solid #38BDF8' : '1px solid rgba(255, 255, 255, 0.2)',
+                            color: '#FFFFFF',
+                            padding: '6px 12px',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            backdropFilter: 'blur(8px)',
+                          }}
+                        >
+                          <MdiIcon path={mdiMonitorShare} size={14} color="#FFFFFF" />
+                          <span>{source.title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div
                   style={{
                     position: 'absolute',
-                    top: 14,
+                    bottom: 14,
                     left: 14,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    zIndex: 20,
+                    background: 'rgba(0, 0, 0, 0.75)',
+                    backdropFilter: 'blur(8px)',
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    color: '#FFFFFF',
+                    fontSize: 12,
+                    fontWeight: 600,
                   }}
                 >
-                  {availableScreenSources.map((source) => {
-                    const isSelected = String(source.id) === String(currentSelectedSource?.id);
-                    return (
-                      <button
-                        key={String(source.id)}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          selectScreenSource(source.id);
-                        }}
-                        style={{
-                          backgroundColor: isSelected ? PALETTE.accentBlue : 'rgba(26, 30, 39, 0.85)',
-                          border: isSelected ? '1px solid #38BDF8' : '1px solid rgba(255, 255, 255, 0.2)',
-                          color: '#FFFFFF',
-                          padding: '6px 12px',
-                          borderRadius: 8,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          backdropFilter: 'blur(8px)',
-                          transition: 'all 0.2s ease',
-                        }}
-                      >
-                        <MdiIcon path={mdiMonitorShare} size={14} color="#FFFFFF" />
-                        <span>{source.title}</span>
-                      </button>
-                    );
-                  })}
+                  {heroBadgeTitle}
                 </div>
-              )}
 
-              {/* Бейдж выбранного экрана слева снизу */}
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 14,
-                  left: 14,
-                  background: 'rgba(0, 0, 0, 0.75)',
-                  backdropFilter: 'blur(8px)',
-                  padding: '6px 12px',
-                  borderRadius: 6,
-                  color: '#FFFFFF',
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                {heroBadgeTitle}
-              </div>
-
-              {/* 🟢 ВСПЛЫВАЮЩАЯ КНОПКА РАЗВОРАЧИВАНИЯ НА ВЕСЬ ЭКРАН (СПРАВА СНИЗУ) */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsHeroFullScreen(!isHeroFullScreen);
-                }}
-                title={isHeroFullScreen ? 'Свернуть' : 'Развернуть на весь экран'}
-                style={{
-                  position: 'absolute',
-                  bottom: 14,
-                  right: 14,
-                  width: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(26, 30, 39, 0.85)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  color: '#FFFFFF',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: isHeroHovered || isHeroFullScreen ? 1 : 0,
-                  transition: 'opacity 0.2s ease, background-color 0.2s ease',
-                  backdropFilter: 'blur(8px)',
-                  zIndex: 20,
-                }}
-              >
-                <MdiIcon
-                  path={isHeroFullScreen ? mdiFullscreenExit : mdiFullscreen}
-                  size={20}
-                  color="#FFFFFF"
-                />
-              </button>
-
-              {spotlightUserId && (
                 <button
-                  onClick={() => setSpotlightUserId(null)}
+            className="call-action"
+                  onClick={(e) => { e.stopPropagation(); setIsHeroFullScreen(!isHeroFullScreen); }}
+                  title={isHeroFullScreen ? 'Свернуть' : 'Развернуть на весь экран'}
+                  aria-pressed={isHeroFullScreen}
                   style={{
                     position: 'absolute',
-                    top: 14,
+                    bottom: 14,
                     right: 14,
-                    background: 'rgba(0,0,0,0.65)',
-                    border: 'none',
+                    width: 36,
+                    height: 36,
                     borderRadius: 8,
-                    padding: '6px 12px',
+                    backgroundColor: 'rgba(26, 30, 39, 0.85)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
                     color: '#FFFFFF',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6,
-                    fontSize: 12,
+                    justifyContent: 'center',
+                    opacity: isHeroHovered || isHeroFullScreen ? 1 : 0,
+                    transition: 'opacity 0.2s ease',
+                    backdropFilter: 'blur(8px)',
+                    zIndex: 20,
                   }}
                 >
-                  <MdiIcon path={mdiPinOff} size={16} />
-                  <span>Вернуться к сетке</span>
+                  <MdiIcon path={isHeroFullScreen ? mdiFullscreenExit : mdiFullscreen} size={20} color="#FFFFFF" />
                 </button>
-              )}
-            </div>
 
-            {/* 🟢 БОКОВАЯ ЛЕНТА ВЕБ-КАМЕР (СКРЫВАЕТСЯ ПРИ ФУЛЛСКРИНЕ ДЕМКИ) */}
-            {!isHeroFullScreen && (
-              <div style={{ width: 250, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
-                <div style={{ height: 140, minHeight: 140 }}>
-                  <MeetParticipantTile
-                    name={`${myDisplayName} (Вы)`}
-                    avatarPath={myDisplayAvatar}
-                    stream={localCameraStream}
-                    isLocal={true}
-                    isVideoOn={isVideoOn}
-                    isMuted={isMuted}
-                    isScreenSharing={isScreenSharing}
-                    onPin={() => {}}
-                  />
-                </div>
+                {spotlightUserId && (
+                  <button
+            className="call-action"
+                    onClick={() => setSpotlightUserId(null)}
+                    style={{
+                      position: 'absolute',
+                      top: 14,
+                      right: 14,
+                      background: 'rgba(0,0,0,0.65)',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '6px 12px',
+                      color: '#FFFFFF',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                    }}
+                  >
+                    <MdiIcon path={mdiPinOff} size={16} />
+                    <span>Вернуться к сетке</span>
+                  </button>
+                )}
+              </div>
 
-                {activeParticipants.map((p) => (
-                  <div key={p.userId} style={{ height: 140, minHeight: 140 }}>
+              {!isHeroFullScreen && (
+                <div style={{ width: 250, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
+                  <div style={{ height: 140, minHeight: 140 }}>
                     <MeetParticipantTile
-                      name={p.username}
-                      avatarPath={p.avatarPath || (p as any).avatar}
-                      stream={remoteCameraStreams.get(Number(p.userId)) || null}
-                      isVideoOn={Boolean(p.isVideoOn)}
-                      isMuted={Boolean(p.isMuted)}
-                      isScreenSharing={Boolean(p.isScreenSharing)}
-                      onPin={() => setSpotlightUserId(Number(p.userId))}
+                      name={myDisplayName === 'Вы' ? 'Вы' : `${myDisplayName} (Вы)`}
+                      avatarPath={myDisplayAvatar}
+                      stream={localCameraStream}
+                      isLocal={true}
+                      isVideoOn={isVideoOn}
+                      isMuted={isMuted}
+                      isScreenSharing={isScreenSharing}
+                      onPin={() => {}}
                     />
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          /* РЕЖИМ 2: СЕТКА 50/50 (БЕЗ ДЕМОНСТРАЦИИ ЭКРАНА) */
-          <div
-            style={{
-              flex: 1,
-              display: 'grid',
-              gridTemplateColumns:
-                activeParticipants.length <= 1
-                  ? 'repeat(2, minmax(0, 1fr))'
-                  : activeParticipants.length <= 3
-                  ? 'repeat(2, minmax(0, 1fr))'
-                  : 'repeat(3, minmax(0, 1fr))',
-              gridAutoRows: '1fr',
-              gap: 12,
-              width: '100%',
-              height: '100%',
-              boxSizing: 'border-box',
-            }}
-          >
-            <MeetParticipantTile
-              name={`${myDisplayName} (Вы)`}
-              avatarPath={myDisplayAvatar}
-              stream={localCameraStream}
-              isLocal={true}
-              isVideoOn={isVideoOn}
-              isMuted={isMuted}
-              isScreenSharing={isScreenSharing}
-              onPin={() => {}}
-            />
 
-            {activeParticipants.map((p) => (
+                  {activeParticipants.map((p) => (
+                    <div key={p.userId} style={{ height: 140, minHeight: 140 }}>
+                      <MeetParticipantTile
+                        name={p.username}
+                        avatarPath={p.avatarPath || (p as any).avatar}
+                        userId={p.userId}
+                        stream={remoteCameraStreams.get(Number(p.userId)) || null}
+                        isVideoOn={Boolean(p.isVideoOn)}
+                        isMuted={Boolean(p.isMuted)}
+                        isScreenSharing={Boolean(p.isScreenSharing)}
+                        isPinned={spotlightUserId === Number(p.userId)}
+                        onPin={() => setSpotlightUserId(Number(p.userId))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* РЕЖИМ 2: СЕТКА (50/50 ДЛЯ 1-НА-1 И МУЛЬТИ-СЕТКА ДЛЯ ГРУПП) */
+            <div
+              style={{
+                flex: 1,
+                display: 'grid',
+                gridTemplateColumns:
+                  activeParticipants.length <= 1
+                    ? 'repeat(2, minmax(0, 1fr))'
+                    : activeParticipants.length <= 3
+                    ? 'repeat(2, minmax(0, 1fr))'
+                    : 'repeat(3, minmax(0, 1fr))',
+                gridAutoRows: '1fr',
+                gap: 12,
+                width: '100%',
+                height: '100%',
+                boxSizing: 'border-box',
+              }}
+            >
               <MeetParticipantTile
-                key={p.userId}
-                name={p.username}
-                avatarPath={p.avatarPath || (p as any).avatar}
-                stream={remoteCameraStreams.get(Number(p.userId)) || null}
-                isVideoOn={Boolean(p.isVideoOn)}
-                isMuted={Boolean(p.isMuted)}
-                isScreenSharing={Boolean(p.isScreenSharing)}
-                onPin={() => setSpotlightUserId(Number(p.userId))}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ================= ПУЛЬТ УПРАВЛЕНИЯ ================= */}
-      <div
-        style={{
-          height: 74,
-          minHeight: 74,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 30,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '8px 18px',
-            borderRadius: 30,
-            background: 'rgba(26, 30, 39, 0.95)',
-            border: `1px solid ${PALETTE.windowBorder}`,
-            boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-          }}
-        >
-          {isActiveCallVisible && (
-            <>
-              <DockButton
-                title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
-                icon={isMuted ? mdiMicrophoneOff : mdiMicrophone}
-                isActive={isMuted}
-                activeBg={PALETTE.actionBtnRedBg}
-                defaultBg={PALETTE.actionBtnDarkBg}
-                onClick={toggleMute}
+                name={myDisplayName === 'Вы' ? 'Вы' : `${myDisplayName} (Вы)`}
+                avatarPath={myDisplayAvatar}
+                stream={localCameraStream}
+                isLocal={true}
+                isVideoOn={isVideoOn}
+                isMuted={isMuted}
+                isScreenSharing={isScreenSharing}
+                onPin={() => {}}
               />
 
-              <DockButton
-                title={isVideoOn ? 'Выключить камеру' : 'Включить камеру'}
-                icon={isVideoOn ? mdiVideo : mdiVideoOff}
-                isActive={isVideoOn}
-                activeBg={PALETTE.accentBlue}
-                defaultBg={PALETTE.actionBtnDarkBg}
-                onClick={() => void toggleVideo()}
-              />
-
-              <DockButton
-                title={isScreenSharing ? 'Остановить экран' : 'Трансляция экрана'}
-                icon={isScreenSharing ? mdiMonitorOff : mdiMonitorShare}
-                isActive={isScreenSharing}
-                activeBg={PALETTE.accentPurple}
-                defaultBg={PALETTE.actionBtnDarkBg}
-                onClick={() => void toggleScreenShare()}
-              />
-
-              <button
-                onClick={() => void endCall()}
-                title="Завершить звонок"
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 23,
-                  backgroundColor: PALETTE.actionBtnRedBg,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 4px 15px rgba(229, 57, 53, 0.4)',
-                }}
-              >
-                <MdiIcon path={mdiPhoneHangup} size={24} color="#FFFFFF" />
-              </button>
-            </>
-          )}
-
-          {isIncomingCallVisible && (
-            <>
-              <button
-                onClick={() => void acceptCall()}
-                title="Принять"
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 24,
-                  backgroundColor: PALETTE.activeIndicator,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <MdiIcon path={mdiPhone} size={24} color="#FFFFFF" />
-              </button>
-              <button
-                onClick={() => void endCall()}
-                title="Отклонить"
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 24,
-                  backgroundColor: PALETTE.actionBtnRedBg,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <MdiIcon path={mdiPhoneHangup} size={24} color="#FFFFFF" />
-              </button>
-            </>
+              {activeParticipants.map((p) => (
+                <MeetParticipantTile
+                  key={p.userId}
+                  name={p.username}
+                  avatarPath={p.avatarPath || (p as any).avatar}
+                  userId={p.userId}
+                  stream={remoteCameraStreams.get(Number(p.userId)) || null}
+                  isVideoOn={Boolean(p.isVideoOn)}
+                  isMuted={Boolean(p.isMuted)}
+                  isScreenSharing={Boolean(p.isScreenSharing)}
+                        isPinned={spotlightUserId === Number(p.userId)}
+                  onPin={() => setSpotlightUserId(Number(p.userId))}
+                />
+              ))}
+            </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* ПУЛЬТ УПРАВЛЕНИЯ */}
+      {isActiveCallVisible && (
+        <div
+          style={{
+            height: 74,
+            minHeight: 74,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 30,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '8px 18px',
+              borderRadius: 30,
+              background: 'rgba(26, 30, 39, 0.95)',
+              border: `1px solid ${PALETTE.windowBorder}`,
+              boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+            }}
+          >
+            <DockButton
+              title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
+              icon={isMuted ? mdiMicrophoneOff : mdiMicrophone}
+              isActive={isMuted}
+              activeBg={PALETTE.actionBtnRedBg}
+              defaultBg={PALETTE.actionBtnDarkBg}
+              onClick={toggleMute}
+            />
+
+            <DockButton
+              title={isVideoOn ? 'Выключить камеру' : 'Включить камеру'}
+              icon={isVideoOn ? mdiVideo : mdiVideoOff}
+              isActive={isVideoOn}
+              activeBg={PALETTE.accentBlue}
+              defaultBg={PALETTE.actionBtnDarkBg}
+              onClick={() => void toggleVideo()}
+            />
+
+            <DockButton
+              title={isScreenSharing ? 'Остановить экран' : 'Трансляция экрана'}
+              icon={isScreenSharing ? mdiMonitorOff : mdiMonitorShare}
+              isActive={isScreenSharing}
+              activeBg={PALETTE.accentPurple}
+              defaultBg={PALETTE.actionBtnDarkBg}
+              onClick={() => void toggleScreenShare()}
+            />
+
+            <button
+            className="call-action" data-tone="danger"
+              onClick={() => void endCall()}
+              title="Завершить звонок"
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 23,
+                backgroundColor: PALETTE.actionBtnRedBg,
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 15px rgba(229, 57, 53, 0.4)',
+              }}
+            >
+              <MdiIcon path={mdiPhoneHangup} size={24} color="#FFFFFF" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -752,15 +826,17 @@ export const CallWindow: React.FC = () => {
 const MeetParticipantTile: React.FC<{
   name: string;
   avatarPath?: string | null;
+  userId?: number;
   stream: MediaStream | null;
   isLocal?: boolean;
   isVideoOn: boolean;
   isMuted: boolean;
   isScreenSharing?: boolean;
+  isPinned?: boolean;
   onPin: () => void;
-}> = ({ name, avatarPath, stream, isLocal = false, isVideoOn, isMuted, isScreenSharing = false, onPin }) => {
+}> = ({ name, avatarPath, userId, stream, isLocal = false, isVideoOn, isMuted, isScreenSharing = false, isPinned = false, onPin }) => {
   const hasVideo = isVideoOn && Boolean(stream && stream.getVideoTracks().some((t) => t.readyState === 'live' && t.enabled));
-  const avatarSrc = safeAvatarUrl(avatarPath);
+  const avatarSrc = safeAvatarUrl(avatarPath, userId);
   const firstLetter = (name || 'U').charAt(0).toUpperCase();
   const shouldMirror = isLocal && isVideoOn;
 
@@ -803,6 +879,7 @@ const MeetParticipantTile: React.FC<{
           <span>{firstLetter}</span>
           {avatarSrc && (
             <img
+              key={avatarSrc}
               src={avatarSrc}
               alt=""
               onError={(e) => (e.currentTarget.style.display = 'none')}
@@ -839,7 +916,6 @@ const MeetParticipantTile: React.FC<{
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
       </div>
 
-      {/* Индикатор демонстрации экрана */}
       {isScreenSharing && (
         <div
           title="Демонстрирует экран"
@@ -860,13 +936,15 @@ const MeetParticipantTile: React.FC<{
 
       {!isLocal && (
         <button
+            className="call-action"
           onClick={onPin}
-          title="Закрепить"
+          title={isPinned ? 'Снять закрепление' : 'Закрепить камеру'}
+          aria-pressed={isPinned}
           style={{
             position: 'absolute',
             top: 10,
             right: 10,
-            background: 'rgba(0,0,0,0.5)',
+            background: isPinned ? PALETTE.accentBlue : 'rgba(0,0,0,0.5)',
             border: 'none',
             borderRadius: 6,
             padding: 5,
@@ -874,7 +952,7 @@ const MeetParticipantTile: React.FC<{
             color: '#FFFFFF',
           }}
         >
-          <MdiIcon path={mdiPin} size={14} />
+          <span key={String(isPinned)} className="call-icon-switch"><MdiIcon path={isPinned ? mdiPinOff : mdiPin} size={14} /></span>
         </button>
       )}
     </div>
@@ -889,23 +967,11 @@ const DockButton: React.FC<{
   defaultBg: string;
   onClick: () => void;
 }> = ({ title, icon, isActive, activeBg, defaultBg, onClick }) => (
-  <button
-    onClick={onClick}
-    title={title}
-    style={{
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      backgroundColor: isActive ? activeBg : defaultBg,
-      border: 'none',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      transition: 'background-color 0.2s ease',
-    }}
-  >
-    <MdiIcon path={icon} size={22} color="#FFFFFF" />
+  <button className="call-action" onClick={onClick} title={title} aria-label={title} aria-pressed={isActive}
+    style={{ '--call-accent': activeBg, width: 44, height: 44, borderRadius: 22,
+      backgroundColor: isActive ? activeBg : defaultBg, border: '1px solid rgba(255,255,255,.08)',
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' } as React.CSSProperties}>
+    <span key={icon} className="call-icon-switch"><MdiIcon path={icon} size={22} color="#FFFFFF" /></span>
   </button>
 );
 

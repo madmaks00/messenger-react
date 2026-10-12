@@ -1,3 +1,5 @@
+import { CALL_SECRET_PREFIX } from '../utils/messagePreviewHelper';
+import { normalizeCallAvatar } from '../utils/callAvatar';
 import { create } from 'zustand';
 import { signalRService } from '../services/signalr.service';
 import { eventBus } from '../services/eventBus';
@@ -27,45 +29,52 @@ export interface ScreenPresentationSource {
 export type WindowVisualState = 'normal' | 'maximized' | 'minimized';
 
 export function getLocalUserProfile(): { id: number; name: string; avatar: string | null } {
+  const uid = Number(userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0);
+
+  let cachedAvatar = uid > 0 ? userService.getCachedUserAvatar(uid) : null;
+  let cachedName = uid > 0 ? userService.getCachedUserName(uid) : '';
+
   try {
     const chatState = useChatStore.getState();
-    if (chatState.currentUserName && chatState.currentUserName !== 'Me' && chatState.currentUserName !== 'User' && chatState.currentUserName !== 'Вы') {
-      return {
-        id: Number(userSession.userId || 0),
-        name: chatState.currentUserName,
-        avatar: chatState.currentUserAvatar || null,
-      };
+    if (chatState.currentUserAvatar) {
+      cachedAvatar = chatState.currentUserAvatar;
+    }
+    if (chatState.currentUserName && chatState.currentUserName !== 'Вы' && chatState.currentUserName !== 'User') {
+      cachedName = chatState.currentUserName;
     }
   } catch {}
 
   const anySession = userSession as any;
-  if (anySession?.nickName || anySession?.username) {
-    return {
-      id: Number(userSession.userId || 0),
-      name: anySession.nickName || anySession.username,
-      avatar: anySession.avatarPath || anySession.avatar || null,
-    };
+  if (!cachedAvatar && (anySession?.avatar || anySession?.avatarPath)) {
+    cachedAvatar = anySession.avatar || anySession.avatarPath;
+  }
+  if (!cachedName && (anySession?.nickName || anySession?.username)) {
+    cachedName = anySession.nickName || anySession.username;
   }
 
-  for (const key of ['user_session_data', 'current_user', 'user', 'auth_user', 'profile']) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const name = parsed.nickName || parsed.nickname || parsed.username || parsed.name;
-        const avatar = parsed.avatarPath || parsed.avatar || null;
-        const id = Number(parsed.userId || parsed.id || userSession.userId || 0);
-        if (name && name !== 'Вы') {
-          return { id, name, avatar };
+  // 🟢 Глубокий поиск во всех структурах localStorage
+  if (!cachedAvatar || !cachedName) {
+    for (const key of ['user_session_data', 'current_user', 'user', 'auth_user', 'profile', 'userData']) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const u = parsed.user || parsed.currentUser || parsed.profile || parsed;
+          if (!cachedName) {
+            cachedName = u.nickName || u.nickname || u.username || u.userName || u.name || '';
+          }
+          if (!cachedAvatar) {
+            cachedAvatar = u.avatarPath || u.avatar || u.avatarUrl || null;
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
   }
 
   return {
-    id: Number(userSession.userId || 0),
-    name: '',
-    avatar: null,
+    id: uid,
+    name: cachedName || 'GOD BLESS MAX',
+    avatar: cachedAvatar || null,
   };
 }
 
@@ -128,9 +137,9 @@ let callLogSent: boolean = false;
 webRtcCallService.sendSignalingData = (targetUserId: number, data: string) => {
   const { isGroupCall, currentGroupId, currentCallUserId } = useCallsStore.getState();
   if (isGroupCall) {
-    signalRService.sendGroupCallWebRTCDataAsync(currentGroupId, targetUserId, data).catch(() => {});
+    return signalRService.sendGroupCallWebRTCDataAsync(currentGroupId, targetUserId, data);
   } else if (currentCallUserId !== 0) {
-    signalRService.sendWebRTCDataAsync(currentCallUserId, data).catch(() => {});
+    return signalRService.sendWebRTCDataAsync(targetUserId, data);
   }
 };
 
@@ -169,10 +178,10 @@ export const useCallsStore = create<CallsState>((set, get) => ({
   isGroupCall: false,
   currentGroupId: 0,
 
-  // 🟢 Переключение экрана: логируем и гарантируем сохранение выбора
   selectScreenSource: (id) => {
     console.log(`%c[CallsStore 🖥️] Выбран экран ID=${id}`, 'color: #38BDF8; font-weight: bold;');
-    set({ selectedScreenSourceId: id });
+    if (id !== null && !get().availableScreenSources.some(source => String(source.id) === String(id))) return;
+    set({ selectedScreenSourceId: id, spotlightUserId: null });
   },
 
   refreshLocalProfile: () => {
@@ -212,7 +221,7 @@ export const useCallsStore = create<CallsState>((set, get) => ({
   },
 
   setSpotlightUserId: (userId) => {
-    set({ spotlightUserId: userId });
+    set({ spotlightUserId: get().spotlightUserId === userId ? null : userId });
   },
 
   toggleMute: () => {
@@ -346,6 +355,16 @@ export const useCallsStore = create<CallsState>((set, get) => ({
         isActiveCallVisible: false,
         isOutgoingCallVisible: true,
         callDurationText: '00:00',
+        activeParticipants: [
+          {
+            userId: targetId,
+            username: targetUser.nickName || targetUser.username || 'User',
+            avatarPath: targetUser.avatarPath || targetUser.avatar || null,
+            isVideoOn: false,
+            isMuted: false,
+            isScreenSharing: false,
+          },
+        ],
       });
 
       get().showCallWindow();
@@ -377,8 +396,8 @@ export const useCallsStore = create<CallsState>((set, get) => ({
         startTimer(set);
         await signalRService.joinGroupCallAsync(currentGroupId);
       } else {
-        await signalRService.answerCallAsync(currentCallUserId, true);
         await webRtcCallService.initializeWebRTCAsync();
+        await signalRService.answerCallAsync(currentCallUserId, true);
         startTimer(set);
       }
     } catch {}
@@ -460,12 +479,21 @@ webRtcCallService.onLocalStreamsUpdated = (cameraStream, screenStream) => {
     return {
       localCameraStream: cameraStream,
       localScreenStream: screenStream,
+      isVideoOn: Boolean(cameraStream?.getVideoTracks().some(t => t.readyState === 'live')),
+      isScreenSharing: Boolean(screenStream?.getVideoTracks().some(t => t.readyState === 'live')),
       availableScreenSources: nextSources,
       selectedScreenSourceId: screenStream 
         ? (currentSelected || 'local') 
         : (isLocalSelected ? (nextSources[0]?.id || null) : currentSelected),
     };
   });
+};
+
+webRtcCallService.onRemoteMediaState = (userId, isMuted, isVideoOn, isScreenSharing) => {
+  const state = useCallsStore.getState();
+  if (!state.isActiveCallVisible) return;
+  useCallsStore.setState({ activeParticipants: state.activeParticipants.map(p =>
+    p.userId === userId ? { ...p, isMuted, isVideoOn, isScreenSharing } : p) });
 };
 
 webRtcCallService.onRemoteStreamsUpdated = (cameras, screens) => {
@@ -491,7 +519,6 @@ webRtcCallService.onRemoteStreamsUpdated = (cameras, screens) => {
     const localSource = state.availableScreenSources.find((s) => s.isLocal);
     const combined = localSource ? [localSource, ...remoteSources] : remoteSources;
 
-    // 🟢 БЕЗОПАСНАЯ ПРОВЕРКА: сравниваем строковые представления, исключая несовпадение number/string
     let selectedId = state.selectedScreenSourceId;
     const hasCurrent = combined.some((s) => String(s.id) === String(selectedId));
 
@@ -552,7 +579,7 @@ async function sendCallLogAsync(state: CallsState): Promise<void> {
 
   const totalSeconds = wasAnswered ? Math.max(0, callSeconds) : 0;
   const status = !wasAnswered ? 'CANCELED' : 'SUCCESS';
-  const messageText = `CALL:${status}:${totalSeconds}`;
+  const messageText = `${CALL_SECRET_PREFIX}${status}:${totalSeconds}`;
 
   try {
     await signalRService.sendMessageAsync(state.currentCallUserId, null, null, messageText);
@@ -592,24 +619,56 @@ eventBus.on('StartGroupCallMessage' as any, (data: any) => {
   if (target) useCallsStore.getState().startCall(target);
 });
 
-eventBus.on('IncomingCallMessage' as any, (data: { callerId: number; callerName: string; callerAvatar: string | null }) => {
+async function hydrateCallAvatar(userId: number): Promise<void> {
+  try {
+    const profile = await userService.getUserProfileAsync(userId);
+    const avatar = normalizeCallAvatar(profile?.avatarPath || profile?.avatar);
+    if (!avatar) return;
+    useCallsStore.setState(state => {
+      if (state.isGroupCall || state.currentCallUserId !== userId) return {};
+      return {
+        currentCallUserAvatar: state.currentCallUserAvatar || avatar,
+        activeParticipants: state.activeParticipants.map(p => p.userId === userId ? { ...p, avatarPath: p.avatarPath || avatar } : p),
+      };
+    });
+  } catch (error) { console.warn('[Calls] Could not load caller avatar', error); }
+}
+
+eventBus.on('IncomingCallMessage' as any, (data: { callerId: number; callerName: string; callerAvatar: unknown }) => {
+  const state = useCallsStore.getState();
+  if (state.isIncomingCallVisible || state.isOutgoingCallVisible || state.isActiveCallVisible) {
+    if (state.isGroupCall || state.currentCallUserId !== data.callerId)
+      void signalRService.answerCallAsync(data.callerId, false);
+    return;
+  }
   webRtcCallService.setCallContext(false, 0, data.callerId);
 
   useCallsStore.setState({
     isGroupCall: false,
     currentCallUserId: data.callerId,
     currentCallUserName: data.callerName,
-    currentCallUserAvatar: data.callerAvatar || null,
+    currentCallUserAvatar: normalizeCallAvatar(data.callerAvatar) || normalizeCallAvatar(userService.getCachedUserAvatar(data.callerId)),
     isIncomingCallVisible: true,
     isOutgoingCallVisible: false,
     isActiveCallVisible: false,
+    activeParticipants: [
+      {
+        userId: data.callerId,
+        username: data.callerName,
+        avatarPath: normalizeCallAvatar(data.callerAvatar) || normalizeCallAvatar(userService.getCachedUserAvatar(data.callerId)),
+        isVideoOn: false,
+        isMuted: false,
+        isScreenSharing: false,
+      },
+    ],
   });
   useCallsStore.getState().showCallWindow();
+  void hydrateCallAvatar(data.callerId);
 });
 
-eventBus.on('IncomingGroupCallMessage' as any, (data: { groupId: number; groupName: string; callerId: number; callerName: string; callerAvatar: string | null }) => {
+eventBus.on('IncomingGroupCallMessage' as any, (data: { groupId: number; groupName: string; callerId: number; callerName: string; callerAvatar: unknown }) => {
   const state = useCallsStore.getState();
-  if (state.isGroupCall && state.currentGroupId === data.groupId && state.isActiveCallVisible) {
+  if (state.isIncomingCallVisible || state.isOutgoingCallVisible || state.isActiveCallVisible) {
     return;
   }
 
@@ -620,7 +679,7 @@ eventBus.on('IncomingGroupCallMessage' as any, (data: { groupId: number; groupNa
     currentGroupId: data.groupId,
     currentCallUserId: data.groupId,
     currentCallUserName: `Группа: ${data.groupName}`,
-    currentCallUserAvatar: data.callerAvatar || null,
+    currentCallUserAvatar: normalizeCallAvatar(data.callerAvatar) || normalizeCallAvatar(userService.getCachedUserAvatar(data.callerId)),
     isIncomingCallVisible: true,
     isOutgoingCallVisible: false,
     isActiveCallVisible: false,
@@ -630,6 +689,8 @@ eventBus.on('IncomingGroupCallMessage' as any, (data: { groupId: number; groupNa
 });
 
 eventBus.on('CallResponseMessage' as any, async (data: { receiverId?: number; accepted: boolean }) => {
+  const state = useCallsStore.getState();
+  if (state.isGroupCall || !state.isOutgoingCallVisible || (data.receiverId && data.receiverId !== state.currentCallUserId)) return;
   if (data.accepted) {
     wasAnswered = true;
     useCallsStore.setState({
@@ -655,26 +716,23 @@ eventBus.on('CallResponseMessage' as any, async (data: { receiverId?: number; ac
 
 eventBus.on('WebRTCDataMessage' as any, async (data: { senderId: number; data: string }) => {
   const state = useCallsStore.getState();
-  if (state.isOutgoingCallVisible) {
-    useCallsStore.setState({
-      isOutgoingCallVisible: false,
-      isActiveCallVisible: true,
-    });
-    startTimer(useCallsStore.setState);
-  }
-
+  if (state.isGroupCall || data.senderId !== state.currentCallUserId || (!state.isActiveCallVisible && !state.isOutgoingCallVisible)) return;
   try {
-    await webRtcCallService.processSignalingData(data.data);
+    await webRtcCallService.processSignalingDataFromPeer(data.senderId, data.data);
   } catch {}
 });
 
 eventBus.on('GroupCallWebRTCDataMessage' as any, async (data: { groupId: number; senderId: number; data: string }) => {
+  const state = useCallsStore.getState();
+  if (!state.isGroupCall || state.currentGroupId !== data.groupId || !state.isActiveCallVisible) return;
   try {
     await webRtcCallService.processSignalingDataFromPeer(data.senderId, data.data);
   } catch {}
 });
 
 eventBus.on('GroupCallJoinedMessage' as any, async (data: { groupId: number; participants: any[] }) => {
+  const state = useCallsStore.getState();
+  if (!state.isGroupCall || state.currentGroupId !== data.groupId) return;
   const myUserId = getLocalUserProfile().id;
 
   const mappedParticipants: GroupCallParticipant[] = (data.participants || [])
@@ -734,6 +792,8 @@ eventBus.on('GroupCallJoinedMessage' as any, async (data: { groupId: number; par
 });
 
 eventBus.on('UserJoinedGroupCallMessage' as any, (data: { groupId: number; participant: any }) => {
+  const state = useCallsStore.getState();
+  if (!state.isGroupCall || state.currentGroupId !== data.groupId || !state.isActiveCallVisible) return;
   const myUserId = getLocalUserProfile().id;
   const pRaw = data.participant;
   const pUserId = Number(pRaw.userId ?? pRaw.UserId);
@@ -767,14 +827,11 @@ eventBus.on('UserJoinedGroupCallMessage' as any, (data: { groupId: number; parti
     webRtcCallService.startCallWithPeerAsync(pUserId).catch(() => {});
   }
 
-  if (useCallsStore.getState().isScreenSharing && webRtcCallService.localScreenTrack) {
-    setTimeout(() => {
-      webRtcCallService.startScreenCallWithPeerAsync(pUserId).catch(() => {});
-    }, 300);
-  }
 });
 
 eventBus.on('UserLeftGroupCallMessage' as any, (data: { groupId: number; userId: number }) => {
+  const state = useCallsStore.getState();
+  if (!state.isGroupCall || state.currentGroupId !== data.groupId) return;
   const current = useCallsStore.getState().activeParticipants;
   useCallsStore.setState({
     activeParticipants: current.filter((p) => p.userId !== data.userId),
@@ -783,9 +840,11 @@ eventBus.on('UserLeftGroupCallMessage' as any, (data: { groupId: number; userId:
 });
 
 eventBus.on('UserMediaStateChangedMessage' as any, (data: { groupId: number; userId: number; isMuted: boolean; isVideoOn: boolean; isScreenSharing: boolean }) => {
+  const state = useCallsStore.getState();
+  if (state.isGroupCall ? data.groupId !== state.currentGroupId : (data.groupId !== 0 || data.userId !== state.currentCallUserId)) return;
+  if (!state.isActiveCallVisible && !state.isOutgoingCallVisible) return;
   const current = useCallsStore.getState().activeParticipants;
   const myUserId = getLocalUserProfile().id;
-  const oldParticipant = current.find((p) => Number(p.userId) === Number(data.userId));
 
   useCallsStore.setState({
     activeParticipants: current.map((p) =>
@@ -795,13 +854,14 @@ eventBus.on('UserMediaStateChangedMessage' as any, (data: { groupId: number; use
     ),
   });
 
-  if (oldParticipant && oldParticipant.isScreenSharing && !data.isScreenSharing && Number(data.userId) !== myUserId) {
+  if (!data.isScreenSharing && Number(data.userId) !== myUserId) {
     webRtcCallService.removeScreenPeer(Number(data.userId));
   }
 });
 
-eventBus.on('CallEndedMessage' as any, async () => {
-  if (useCallsStore.getState().isGroupCall) return;
+eventBus.on('CallEndedMessage' as any, async (data: { targetId: number }) => {
+  const state = useCallsStore.getState();
+  if (state.isGroupCall || data.targetId !== state.currentCallUserId) return;
 
   await sendCallLogAsync(useCallsStore.getState());
 

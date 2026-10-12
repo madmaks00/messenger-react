@@ -1,3 +1,5 @@
+import { mdiAccountMultipleOutline, mdiShieldAccountOutline, mdiAccountCancelOutline, mdiLockOutline } from '@mdi/js';
+import { normalizeCallAvatar } from '../../utils/callAvatar';
 import React, { useState, useRef, useEffect } from 'react';
 import { IUser } from '../../types/models';
 import {
@@ -69,11 +71,15 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
   }, [displayedUser?.id]);
 
   const rawAvatar = isGroupProfile
-    ? groupDetails?.avatar
+    ? (groupDetails?.avatar || displayedUser.avatar || displayedUser.avatarPath)
     : (displayedUser.avatar || displayedUser.avatarPath);
-  const avatarSrc = normalizeImageSrc(rawAvatar);
+  const avatarSrc = normalizeCallAvatar(rawAvatar);
+  useEffect(() => setAvatarLoadError(false), [displayedUser.id, avatarSrc]);
+  const inviteIsActive = Boolean(groupDetails?.groupLink && groupDetails?.isLinkActive && (!groupDetails.inviteLinkExpiration || new Date(groupDetails.inviteLinkExpiration).getTime() > Date.now()));
+  const inviteMinutes = groupDetails?.inviteLinkExpiration ? Math.max(0, Math.floor((new Date(groupDetails.inviteLinkExpiration).getTime() - Date.now()) / 60000)) : null;
   const hasAvatar = Boolean(!avatarLoadError && avatarSrc);
 
+  const profileInfoRowStyle = isGroupProfile ? { ...infoRowGridStyle, marginLeft: 25, marginRight: 25 } : infoRowGridStyle;
   const isStoriesActive = activeRightContainer === 'stories';
   const isSharedTabActive = (type: string) =>
     activeRightContainer === 'sharedMedia' && selectedSharedMediaType === type;
@@ -194,7 +200,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
             height: 110,
             borderRadius: 55,
             margin: '0 auto 12px',
-            backgroundColor: getAvatarColor(isGroupProfile ? groupDetails?.id : displayedUser.id),
+            backgroundColor: getAvatarColor(displayedUser.id),
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -208,7 +214,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
 
           {hasAvatar && (
             <img
-              src={avatarSrc}
+              src={avatarSrc || undefined}
               alt=""
               onError={() => setAvatarLoadError(true)}
               style={{
@@ -243,7 +249,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
         )}
 
         {/* ВЕРХНИЕ КНОПКИ ДЕЙСТВИЯ (ЧУЖОЙ ПРОФИЛЬ: CHAT, MUTE, CALL) */}
-        {!isOwnProfile && !isGroupProfile && (
+        {!isOwnProfile && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 10 }}>
             {/* 1. Chat */}
             <ActionSquareButton onClick={() => onStartChat(displayedUser.id)} title="Chat">
@@ -266,7 +272,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
             {/* 3. Call: 1:1 с WPF (всегда активно, проверяет блокировку при нажатии) */}
             <ActionSquareButton
               onClick={() => {
-                if (isBlockedByMe || isBlockedByThem) return;
+                if (!isGroupProfile && (isBlockedByMe || isBlockedByThem)) return;
                 onCallUser(displayedUser);
               }}
               title={isBlockedByMe || isBlockedByThem ? 'User is blocked' : 'Call'}
@@ -319,12 +325,12 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           minHeight: 0,
           overflowY: 'auto',
           overflowX: 'hidden',
-          padding: '15px 20px 15px 25px',
+          padding: isGroupProfile ? '15px 0' : '15px 20px 15px 25px',
         }}
       >
         {/* Full name */}
         {!isGroupProfile && (isOwnProfile || displayedUser.firstName || displayedUser.lastName) && (
-          <div style={infoRowGridStyle}>
+          <div style={profileInfoRowStyle}>
             <div style={infoIconWrapperStyle}>
               <Icons.AccountOutline size={22} color={Theme.ProfileInfoIconName} />
             </div>
@@ -342,7 +348,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
         )}
 
         {/* About me / Description */}
-        <div style={infoRowGridStyle}>
+        <div style={profileInfoRowStyle}>
           <div style={{ ...infoIconWrapperStyle, alignSelf: 'start', marginTop: 4 }}>
             <Icons.InformationOutline size={22} color={Theme.ProfileInfoIconAbout} />
           </div>
@@ -360,9 +366,9 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
 
         {/* Group Link & Type */}
         {isGroupProfile && (
-          <div style={infoRowGridStyle}>
+          <div style={profileInfoRowStyle}>
             <div style={infoIconWrapperStyle}>
-              <Icons.LinkVariant size={22} color={Theme.AppAccent} />
+              {groupDetails?.isPublic ? <Icons.LinkVariant size={22} color={Theme.AppAccent} /> : <ProfileIcon path={mdiLockOutline} size="22px" color={Theme.AppAccent} />}
             </div>
             <div>
               {groupDetails?.isPublic ? (
@@ -373,11 +379,11 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
               ) : groupDetails?.isAdmin || groupDetails?.isOwner ? (
                 <>
                   <div style={labelStyle}>Invite Link (Private)</div>
-                  {groupDetails?.groupLink ? (
+                  {inviteIsActive ? (
                     <div>
                       {renderCopyButton(groupDetails.groupLink, 'inviteLink', 'invite link', true, false)}
                       <div style={{ fontSize: 12, color: Theme.ProfileSectionLabel, marginTop: 2 }}>
-                        {groupDetails.inviteLinkExpirationDisplay || 'Active invite link'}
+                        {inviteMinutes === null ? 'Active invite link' : `Expires in ${Math.floor(inviteMinutes / 60)}h ${inviteMinutes % 60}m`}
                       </div>
                       <button
                         onClick={() => onRevokeInviteLink(displayedUser.id)}
@@ -410,7 +416,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
 
         {/* Phone Number */}
         {!isGroupProfile && (isOwnProfile || displayedUser.phone) && (
-          <div style={infoRowGridStyle}>
+          <div style={profileInfoRowStyle}>
             <div style={infoIconWrapperStyle}>
               <Icons.PhoneSectionOutline size={22} color={Theme.ProfileInfoIconPhone} />
             </div>
@@ -427,7 +433,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
 
         {/* Email Address */}
         {!isGroupProfile && (isOwnProfile || displayedUser.email) && (
-          <div style={infoRowGridStyle}>
+          <div style={profileInfoRowStyle}>
             <div style={infoIconWrapperStyle}>
               <Icons.EmailOutline size={22} color={Theme.ProfileInfoIconEmail} />
             </div>
@@ -444,7 +450,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
 
         {/* Gender */}
         {!isGroupProfile && (isOwnProfile || (displayedUser.gender !== null && displayedUser.gender !== undefined)) && (
-          <div style={infoRowGridStyle}>
+          <div style={profileInfoRowStyle}>
             <div style={infoIconWrapperStyle}>
               <Icons.GenderMaleFemale size={22} color={Theme.ProfileInfoIconGender} />
             </div>
@@ -463,7 +469,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
 
         {/* Date of Birth */}
         {!isGroupProfile && (isOwnProfile || displayedUser.birthday) && (
-          <div style={infoRowGridStyle}>
+          <div style={profileInfoRowStyle}>
             <div style={infoIconWrapperStyle}>
               <Icons.CakeVariantOutline size={22} color={Theme.ProfileInfoIconBirthday} />
             </div>
@@ -670,50 +676,44 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           </div>
         )}
 
-        {/* ПУНКТЫ УПРАВЛЕНИЯ ГРУППОЙ */}
+        {isGroupProfile && <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginInline: 10 }}>
+          <div role="separator" data-profile-divider="info-media" style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '6px 10px 14px' }} />
+          {([
+            ['Stories', 'Stories', Icons.PlayCircleOutline],
+            ['Pinned', 'Pinned Messages', Icons.PinOutline], ['Photos', 'Photos', Icons.ImageOutline],
+            ['Videos', 'Videos', Icons.VideoOutline], ['GIFs', 'GIFs', Icons.FileGifBox],
+            ['Audios', 'Audio files', Icons.MusicNoteOutline], ['Voice', 'Voice messages', Icons.MicrophoneOutline],
+            ['Documents', 'Documents', Icons.FileDocumentOutline], ['Links', 'Shared Links', Icons.LinkVariant],
+          ] as const).map(([type, label, MediaIcon]) => <MenuTabButton key={type} style={{ padding: '10px 8px', margin: '2px 0' }} onClick={() => type === 'Stories' ? handleOpenStoriesMenu() : loadSharedMedia(type)} isActive={type === 'Stories' ? isStoriesActive : isSharedTabActive(type)}>
+            <div style={groupMenuContentStyle}><MediaIcon size={20} color={Theme.OtherProfileSharedMediaIcon} /><span>{label}</span></div>
+            <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
+          </MenuTabButton>)}
+        </div>}
+
+        {/* Group menu uses the same icons, spacing and role visibility as WPF. */}
         {isGroupProfile && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <div style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '10px 0' }} />
-            <MenuTabButton
-              onClick={() => handleShowMembers('members')}
-              isActive={isMembersTabActive('members')}
-            >
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
-                Members ({membersCount})
-              </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginInline: 10 }}>
+            <div style={{ height: 1, backgroundColor: Theme.ProfileLeftPanelBorder, margin: '5px 10px 15px' }} />
+            <MenuTabButton style={{ padding: '10px 8px', margin: '2px 0' }} onClick={() => handleShowMembers('members')} isActive={isMembersTabActive('members')}>
+              <div style={groupMenuContentStyle}><ProfileIcon path={mdiAccountMultipleOutline} size="20px" color={Theme.OtherProfileSharedMediaIcon} />
+                <span>Members <span style={{ color: Theme.ProfileSectionLabel }}>({membersCount})</span></span></div>
               <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
             </MenuTabButton>
-            <MenuTabButton
-              onClick={() => handleShowMembers('admins')}
-              isActive={isMembersTabActive('admins')}
-            >
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
-                Administrators ({adminsCount})
-              </span>
+            <MenuTabButton style={{ padding: '10px 8px', margin: '2px 0' }} onClick={() => handleShowMembers('admins')} isActive={isMembersTabActive('administrators')}>
+              <div style={groupMenuContentStyle}><ProfileIcon path={mdiShieldAccountOutline} size="20px" color={Theme.OtherProfileSharedMediaIcon} />
+                <span>Administrators <span style={{ color: Theme.ProfileSectionLabel }}>({adminsCount})</span></span></div>
               <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
             </MenuTabButton>
-            {(groupDetails?.isAdmin || groupDetails?.isOwner) && (
-              <MenuTabButton
-                onClick={() => handleShowMembers('blacklist')}
-                isActive={isMembersTabActive('blacklist')}
-              >
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: Theme.MainWindowText }}>
-                  Blacklist ({blackListCount})
-                </span>
+            {(groupDetails?.isAdmin || groupDetails?.isOwner) && <>
+              <MenuTabButton style={{ padding: '10px 8px', margin: '2px 0' }} onClick={() => handleShowMembers('blacklist')} isActive={isMembersTabActive('blacklist')}>
+                <div style={groupMenuContentStyle}><ProfileIcon path={mdiAccountCancelOutline} size="20px" color={Theme.MainWindowText} /><span>Blacklist ({blackListCount})</span></div>
                 <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
               </MenuTabButton>
-            )}
-            {(groupDetails?.isAdmin || groupDetails?.isOwner) && (
-              <MenuTabButton
-                onClick={() => expandRightPanel('editGroup')}
-                isActive={isEditGroupActive}
-                style={{ color: Theme.AppAccent }}
-                hoverBg="rgba(30, 155, 235, 0.12)"
-              >
-                <span style={{ fontSize: 13.5, fontWeight: 'bold' }}>Manage Group</span>
-                <Icons.ChevronRight size={18} color={Theme.AppAccent} />
+              <MenuTabButton style={{ padding: '10px 8px', margin: '2px 0' }} onClick={() => expandRightPanel('editGroup')} isActive={isEditGroupActive} hoverBg="rgba(30, 155, 235, 0.12)">
+                <div style={groupMenuContentStyle}><Icons.CogOutline size={20} color={Theme.AppAccent} /><span style={{ fontWeight: 'bold' }}>Manage Group</span></div>
+                <Icons.ChevronRight size={18} color={Theme.MainWindowText} />
               </MenuTabButton>
-            )}
+            </>}
           </div>
         )}
       </div>
@@ -854,3 +854,8 @@ const valueStyle: React.CSSProperties = {
 const notSetStyle: React.CSSProperties = {
   color: Theme.ProfileSectionLabel,
 };
+const groupMenuContentStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, fontSize: 13.5, fontWeight: 600 };
+
+function ProfileIcon({ path, size, color }: { path: string; size: string; color: string }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}><path d={path} fill={color} /></svg>;
+}

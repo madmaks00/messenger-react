@@ -42,7 +42,7 @@ import { userSession } from '../../services/userSession';
 import { chatService } from '../../services/chat.service';
 import { eventBus } from '../../services/eventBus';
 import { IAttachment, AttachmentHelper, IChatListItem } from '../../types/models';
-import { AttachmentType } from '../../types/enums';
+import { AttachmentType, LastMessageType } from '../../types/enums';
 
 const PALETTE = {
   bgChat: '#11141B',
@@ -177,6 +177,7 @@ export const ChatWorkspaceView: React.FC = () => {
         folderIds: [],
         isLastAttachmentGif: false,
         isLastMessageDeletedForMe: false,
+        lastMessageType: LastMessageType.None, lastMessageTime: '', unreadCount: 0,
       };
     }
 
@@ -224,6 +225,7 @@ export const ChatWorkspaceView: React.FC = () => {
       folderIds: [],
       isLastAttachmentGif: false,
       isLastMessageDeletedForMe: false,
+      lastMessageType: LastMessageType.None, lastMessageTime: '',
     };
   }, [allChats, selectedChatUser, isBlockedByMe]);
 
@@ -762,8 +764,8 @@ export const ChatWorkspaceView: React.FC = () => {
         const mLocalId = Number(m.id || 0);
         const mServerId = Number(m.serverId || 0);
 
-        if (pServerId > 0 && mServerId > 0 && mServerId === pServerId) return true;
-        if (pLocalId > 0 && mLocalId > 0 && mLocalId === pLocalId) return true;
+        if (pServerId > 0) return mServerId === pServerId;
+        if (pLocalId > 0) return mLocalId === pLocalId;
         if (msgId > 0 && (mLocalId === msgId || (mServerId > 0 && mServerId === msgId))) return true;
 
         if (pText && m.text === pText && pTime > 0) {
@@ -790,6 +792,18 @@ export const ChatWorkspaceView: React.FC = () => {
       const targetLocalId = Number(targetMsg.id);
       const targetServerId = Number(targetMsg.serverId);
 
+      // The store update can arrive before React has rendered the new virtual layout.
+      const chatAtRequest = useChatStore.getState().selectedChatUser;
+      const sameChat = () => {
+        const current = useChatStore.getState().selectedChatUser;
+        return current?.id === chatAtRequest?.id && Boolean(current?.isGroup) === Boolean(chatAtRequest?.isGroup);
+      };
+      for (let frame = 0; frame < 30; frame++) {
+        if (!sameChat()) return;
+        if ((layoutItemsRef.current || []).some((item: any) => Number(item.id) === targetLocalId || (targetServerId > 0 && Number(item.serverId) === targetServerId))) break;
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      }
+      if (!sameChat()) return;
       const currentLayout = layoutItemsRef.current || layoutItems || [];
       let targetLayout = currentLayout[msgIndex] || null;
 
@@ -798,7 +812,7 @@ export const ChatWorkspaceView: React.FC = () => {
           Number(item.id) === targetLocalId ||
           (targetServerId > 0 && Number(item.serverId) === targetServerId) ||
           (item.sourceMessage && (Number(item.sourceMessage.id) === targetLocalId || Number(item.sourceMessage.serverId) === targetServerId))
-        ) || currentLayout[msgIndex];
+        ) || null;
       }
 
       if (!targetLayout || !scrollRef.current) return;
@@ -1459,7 +1473,7 @@ export const ChatWorkspaceView: React.FC = () => {
 
               return (
                 <MessageItem
-                  key={`msg_${item.id || 0}_${item.serverId || 0}_${item.timestamp}_${idx}`}
+                  key={`msg_${userSession.userId}_${selectedChatUser?.secretChatId || `${selectedChatUser?.isGroup ? 'g' : 'u'}_${selectedChatUser?.id}`}_${item.serverId > 0 ? `s_${item.serverId}` : `l_${item.id}`}`}
                   model={item}
                   isHighlighted={isMsgHighlighted}
                   isSelectionMode={isSelectionMode}

@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { audioPlayerService } from '../../services/audioPlayer.service';
+import { AudioConverterHelper } from '../../utils/audioConverters';
 import { AttachmentType } from '../../types/enums';
 import { IAttachment, IMessage, MessageHelper } from '../../types/models';
 import { formatDate, formatDateTime, isGifAttachment, normalizeImageSrc } from './profileView.utils';
@@ -12,6 +14,7 @@ interface ProfileRightSharedMediaProps {
   onClose: () => void;
   onForwardMessages: (messages: IMessage[]) => void;
   onDeleteMessage: (message: IMessage) => void;
+  onDeleteMessages: (messages: IMessage[]) => void;
   onOpenFile: (attachment: IAttachment) => void;
 }
 
@@ -20,6 +23,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
   onClose,
   onForwardMessages,
   onDeleteMessage,
+  onDeleteMessages,
   onOpenFile,
 }) => {
   const {
@@ -32,18 +36,21 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
     selectedCount,
     handleCancelSelection,
     handleSharedItemClick,
+    playSharedAudio,
     getSelectedMessagesList,
     collapseRightPanel,
     setActiveContextMenu,
   } = vm;
 
+  const [, playbackChanged] = useState(0);
+  useEffect(() => audioPlayerService.subscribe(() => playbackChanged(value => value + 1)), []);
   const totalItemsCount =
     selectedSharedMediaType === 'Pinned' || selectedSharedMediaType === 'Links'
       ? sharedPinnedGroups.reduce((acc, g) => acc + g.items.length, 0)
       : sharedAttachmentGroups.reduce((acc, g) => acc + g.items.length, 0);
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div role="region" aria-label="Общие медиа" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Шапка панели общих медиа */}
       <div style={rightHeaderStyle}>
         {!isSelectionMode ? (
@@ -76,7 +83,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
               </button>
               <button
                 onClick={() => {
-                  getSelectedMessagesList().forEach((m) => onDeleteMessage(m));
+                  onDeleteMessages(getSelectedMessagesList());
                   handleCancelSelection();
                 }}
                 style={deleteBtnStyle}
@@ -207,6 +214,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                 {group.items.map((att) => (
                   <div
                     key={att.id}
+                    data-profile-message-id={(att as any).message?.serverId || att.messageId}
                     onClick={() => handleSharedItemClick(att)}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -214,8 +222,10 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                     }}
                     style={mediaRowCardStyle}
                   >
-                    <div
-                      style={{
+                    <button
+                      type="button" onClick={(event) => { event.stopPropagation(); playSharedAudio(att); }}
+                      aria-label={audioPlayerService.isPlaying && AudioConverterHelper.isSameAttachment(att, audioPlayerService.currentAttachment) ? 'Pause' : 'Play'}
+                      style={{ border: 0, padding: 0, cursor: 'pointer',
                         width: 40,
                         height: 40,
                         borderRadius: 20,
@@ -227,14 +237,16 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                         flexShrink: 0,
                       }}
                     >
-                      ▶
-                    </div>
+                      <span>
+                        {audioPlayerService.isPlaying && AudioConverterHelper.isSameAttachment(att, audioPlayerService.currentAttachment) ? '❚❚' : '▶'}
+                      </span>
+                    </button>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ color: Theme.MainWindowText, fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {att.fileName || (selectedSharedMediaType === 'Voice' ? 'Voice message' : 'Audio Track')}
                       </div>
                       <div style={{ color: Theme.ProfileSectionLabel, fontSize: 12, marginTop: 2 }}>
-                        {att.fileSizeStr || 'Audio file'}
+                        {(att as any).message?.senderName} · {att.fileSizeStr || 'Audio file'}
                       </div>
                     </div>
                     {!isSelectionMode && (
@@ -259,6 +271,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                 {group.items.map((att) => (
                   <div
                     key={att.id}
+                    data-profile-message-id={(att as any).message?.serverId || att.messageId}
                     onClick={() => handleSharedItemClick(att)}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -318,6 +331,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                 {group.items.map((msg) => (
                   <div
                     key={msg.id}
+                    data-profile-message-id={msg.serverId || msg.id}
                     onClick={() => handleSharedItemClick(msg)}
                     onContextMenu={(e) => {
                       e.preventDefault();
