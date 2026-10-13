@@ -1,3 +1,7 @@
+import { mediaCacheService } from '../../services/mediaCache.service';
+import { UrlHelper } from '../../utils/helpers';
+import { AttachmentType } from '../../types/enums';
+import { apiClient } from '../../services/apiClient';
 import React, { useState, useEffect } from 'react';
 import { IMessageLayoutModel } from '../../types/layout';
 import { IMessage, IAttachment } from '../../types/models';
@@ -323,6 +327,51 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onScrollToMessage,
   onMediaClick,
 }) => {
+  const [contextPhoto, setContextPhoto] = useState<IAttachment | null>(null);
+  const [contextImage, setContextImage] = useState<HTMLImageElement | null>(null);
+  const [copyImageError, setCopyImageError] = useState('');
+  const copyPhoto = () => {
+    const photo = contextPhoto || model.sourceMessage.attachments?.find(a => a.type === AttachmentType.Photo);
+    if (!photo || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+      setCopyImageError('Браузер не разрешает копирование изображения.'); return;
+    }
+    setCopyImageError('');
+    let preparationError: unknown;
+    const png = (async () => {
+      const toPng = async (source: ImageBitmapSource) => {
+        const bitmap = await createImageBitmap(source);
+        try {
+          const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
+          canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+          return await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Не удалось подготовить изображение.')), 'image/png'));
+        } finally { bitmap.close(); }
+      };
+      // The displayed image uses the decoded, full-resolution media-cache source.
+      // Its bitmap avoids a second request to a stale or unavailable attachment URL.
+      if (contextImage?.complete && contextImage.naturalWidth > 0) {
+        try { return await toPng(contextImage); } catch { /* Fall back to the original cached blob. */ }
+      }
+      const raw = (photo as any).rawFile;
+      if (raw instanceof Blob) return await toPng(raw);
+      const original = UrlHelper.normalize(photo.localImagePath || photo.url, apiClient.defaults.baseURL);
+      const cached = await mediaCacheService.getCachedMediaUrl(original);
+      const url = new URL(cached || original, apiClient.defaults.baseURL);
+      let blob: Blob;
+      if (url.origin === new URL(apiClient.defaults.baseURL!).origin && /^https?:$/.test(url.protocol))
+        blob = (await apiClient.get(url.href, { responseType: 'blob' })).data as Blob;
+      else { const response = await fetch(url.href); if (!response.ok) throw new Error('Не удалось загрузить изображение.'); blob = await response.blob(); }
+      return await toPng(blob);
+    })().catch(error => { preparationError = error; throw error; });
+    void navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+      .then(() => setContextMenuPos(null))
+      .catch(error => {
+        console.warn('[CopyPhoto]', { stage: preparationError ? 'image' : 'clipboard', name: (preparationError as any)?.name || error?.name });
+        if (preparationError) setCopyImageError('Не удалось прочитать изображение для копирования. Попробуйте ещё раз.');
+        else if (!document.hasFocus()) setCopyImageError('Вернитесь во вкладку мессенджера и повторите копирование.');
+        else if (error?.name === 'NotAllowedError') setCopyImageError('Браузер отклонил запись в буфер обмена. Проверьте разрешение сайта.');
+        else setCopyImageError('Не удалось записать изображение в буфер обмена. Попробуйте ещё раз.');
+      });
+  };
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
 
   const currentUserId = Number(userSession.userId);
@@ -384,6 +433,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     e.preventDefault();
     e.stopPropagation();
 
+    const photos = model.sourceMessage.attachments?.filter(a => a.type === AttachmentType.Photo) || [];
+    const clicked = (e.target as HTMLElement).closest('img');
+    const match = clicked ? photos.find(a => [a.url, a.displayImageUrl, a.localImagePath].some(url => url && (url === clicked.src || new URL(url, apiClient.defaults.baseURL).href === clicked.src))) : null;
+    setContextPhoto(match || photos[0] || null); setContextImage(clicked); setCopyImageError('');
     window.dispatchEvent(new CustomEvent('CloseAllMessageContextMenus'));
     setContextMenuPos({ x: e.clientX, y: e.clientY });
   };
@@ -401,7 +454,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     if (model.isChannel) return model.isEdited ? '0px 130px 12px 12px' : '0px 85px 12px 12px';
 
     if (model.isForwarded) {
-      return isMy ? '1px 70px 6px 7px' : '1px 50px 6px 7px';
+      return isMy ? '1px 70px 6px 12px' : '1px 50px 6px 12px';
     }
 
     if (isMy) {
@@ -992,6 +1045,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               }}
             />
           )}
+
+          {!model.isDeletedForMe && model.sourceMessage.attachments?.some(a => a.type === AttachmentType.Photo) && (
+            <ContextMenuItem icon={ICONS.copy} text="Копировать изображение" onClick={copyPhoto} />
+          )}
+          {copyImageError && <div role="alert" style={{ color: '#FF6B6B', fontSize: 12, padding: '6px 14px', maxWidth: 250 }}>{copyImageError}</div>}
 
           {model.text && !isCall && !model.isDeletedForMe && (
             <ContextMenuItem

@@ -1,10 +1,13 @@
+import { DialogFrame } from './DialogFrame';
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { normalizeAvatarUrl } from '../../utils/helpers';
+import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 
 export interface ConfirmDialogProps {
   isOpen: boolean;
   targetTitle?: string;
+  targetId?: number;
+  targetAvatarColor?: string;
   targetAvatar?: string | null;
   avatar?: string | null;
   targetIcon?: string;
@@ -22,6 +25,8 @@ export interface ConfirmDialogProps {
 export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
   isOpen,
   targetTitle,
+  targetId,
+  targetAvatarColor,
   targetAvatar,
   avatar,
   targetIcon,
@@ -38,18 +43,19 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
   const [isChecked, setIsChecked] = useState(false);
   const [isRendered, setIsRendered] = useState(isOpen);
   const [isActive, setIsActive] = useState(false); // 🟢 Управляет фазой анимации (появление / исчезновение)
-  const [avatarLoaded, setAvatarLoaded] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
 
   const rawAvatar = targetAvatar || avatar || null;
   const resolvedAvatar = normalizeAvatarUrl(rawAvatar);
-  const resolvedIcon = targetIcon || icon || null;
+  const resolvedIcon = resolvedAvatar ? null : targetIcon || icon || null;
   const resolvedIconColor = targetIconColor || iconColor || '#1E9BEB';
   const resolvedMessage = dialogMessage || message || '';
 
   // 🟢 Замораживаем данные, чтобы при исчезновении модалка не дергалась
   const cachedData = useRef({
     title: targetTitle,
+    id: targetId,
+    avatarColor: targetAvatarColor,
     avatar: resolvedAvatar,
     icon: resolvedIcon,
     iconColor: resolvedIconColor,
@@ -61,6 +67,8 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
   if (isOpen) {
     cachedData.current = {
       title: targetTitle,
+    id: targetId,
+    avatarColor: targetAvatarColor,
       avatar: resolvedAvatar,
       icon: resolvedIcon,
       iconColor: resolvedIconColor,
@@ -76,7 +84,6 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
     if (isOpen) {
       setIsChecked(false);
       setIsRendered(true);
-      setAvatarLoaded(false);
       setAvatarError(false);
 
       // Запуск плавной анимации появления в следующем кадре отрисовки
@@ -90,7 +97,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
       setIsActive(false);
       timer = setTimeout(() => {
         setIsRendered(false);
-      }, 160);
+      }, 100);
     }
 
     return () => clearTimeout(timer);
@@ -120,6 +127,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
   const hasValidAvatar = Boolean(currentData.avatar && !avatarError);
 
   const content = (
+    <DialogFrame isOpen={isOpen} kind="confirm">
     <div
       onClick={onCancel}
       style={{
@@ -142,7 +150,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
       }}
     >
       <style>{`
-        .btn-close-modal {
+        .app-dialog-confirm .btn-close-modal {
           width: 28px !important;
           height: 28px !important;
           padding: 0 !important;
@@ -157,12 +165,12 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           outline: none !important;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-close-modal:hover {
+        .app-dialog-confirm .btn-close-modal:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
 
-        .btn-cancel-modal {
+        .app-dialog-confirm .btn-cancel-modal {
           height: 36px;
           padding: 0 16px;
           background-color: transparent !important;
@@ -175,12 +183,12 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           outline: none;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-cancel-modal:hover {
+        .app-dialog-confirm .btn-cancel-modal:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
 
-        .btn-primary-modal {
+        .app-dialog-confirm .btn-primary-modal {
           height: 36px;
           padding: 0 22px;
           background-color: #1E9BEB !important;
@@ -193,11 +201,11 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           outline: none;
           transition: opacity 0.15s ease !important;
         }
-        .btn-primary-modal:hover {
+        .app-dialog-confirm .btn-primary-modal:hover {
           opacity: 0.9 !important;
         }
 
-        .btn-danger-modal {
+        .app-dialog-confirm .btn-danger-modal {
           height: 36px;
           padding: 0 22px;
           background-color: #E74C3C !important;
@@ -210,7 +218,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           outline: none;
           transition: opacity 0.15s ease !important;
         }
-        .btn-danger-modal:hover {
+        .app-dialog-confirm .btn-danger-modal:hover {
           opacity: 0.9 !important;
         }
       `}</style>
@@ -246,29 +254,24 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            {/* Аватарка */}
-            {hasValidAvatar && (
-              <img
-                src={currentData.avatar!}
-                alt=""
-                onLoad={() => setAvatarLoaded(true)}
-                onError={() => {
-                  setAvatarError(true);
-                  setAvatarLoaded(false);
-                }}
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 13,
-                  objectFit: 'cover',
-                  flexShrink: 0,
-                  display: avatarLoaded ? 'block' : 'none',
-                }}
-              />
+            {/* Keep the avatar space stable while the image loads or is unavailable. */}
+            {(currentData.avatar || !currentData.icon) && (
+              <div style={{ width: 46, height: 46, borderRadius: 23, flexShrink: 0,
+                background: currentData.avatarColor || getAvatarColor(currentData.id), position: 'relative', overflow: 'hidden',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#FFFFFF', fontSize: 20, fontWeight: 500 }}>
+                <span>{(currentData.title || 'Chat').charAt(0).toUpperCase()}</span>
+                {hasValidAvatar && (
+                  <img key={currentData.avatar} src={currentData.avatar!} alt=""
+                    onError={() => setAvatarError(true)}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
+                      objectFit: 'cover', display: 'block' }} />
+                )}
+              </div>
             )}
 
             {/* Иконка действия (веник / урна) */}
-            {(!hasValidAvatar || !avatarLoaded) && currentData.icon && (
+            {!currentData.avatar && currentData.icon && (
               <svg
                 width="22"
                 height="22"
@@ -355,6 +358,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
         </div>
       </div>
     </div>
+    </DialogFrame>
   );
 
   return typeof document !== 'undefined' ? ReactDOM.createPortal(content, document.body) : content;

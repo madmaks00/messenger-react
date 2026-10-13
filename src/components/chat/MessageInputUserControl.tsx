@@ -1,3 +1,5 @@
+import { AttachmentMediaEditorView } from '../media/AttachmentMediaEditorView';
+import { apiClient } from '../../services/apiClient';
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import {
   mdiPencil,
@@ -13,7 +15,6 @@ import {
   mdiSend,
   mdiCheck,
 } from '@mdi/js';
-import { mediaDimensionsCache } from '../../utils/mediaDimensionsCache';
 import { useMessageInputStore } from '../../stores/messageInputStore';
 import { useChatStore, getMessageReplyText } from '../../stores/chatStore';
 import { useEmojiStore } from '../../stores/emojiStore';
@@ -83,6 +84,25 @@ export const MessageInputUserControl: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputTextBoxRef = useRef<HTMLTextAreaElement>(null);
+
+  const [mediaEditor, setMediaEditor] = useState<{ attachment: any; file: File } | null>(null);
+  const [attachmentError, setAttachmentError] = useState('');
+  const draftKey = `${selectedChatUser?.isGroup ? 'g' : selectedChatUser?.isSecretChat ? 's' : 'u'}:${selectedChatUser?.secretChatId || selectedChatUser?.id || 0}`;
+  useEffect(() => { setMediaEditor(null); setAttachmentError(''); }, [draftKey]);
+  const editorRequest = useRef(0);
+  useEffect(() => { ++editorRequest.current; }, [draftKey]);
+  const openMediaEditor = async (attachment: any) => {
+    if (!canWriteMessages || !(attachment.type === AttachmentType.Photo || attachment.type === AttachmentType.Video)) return;
+    const request = ++editorRequest.current;
+    try {
+      let file = attachment.rawFile as File | undefined;
+      if (!file) {
+        const response = await apiClient.get(attachment.url, { responseType: 'blob' });
+        file = new File([response.data], attachment.fileName || 'media', { type: response.data.type });
+      }
+      if (request === editorRequest.current && useMessageInputStore.getState().pendingAttachments.includes(attachment)) setMediaEditor({ attachment, file });
+    } catch { setAttachmentError('Не удалось открыть вложение для редактирования.'); }
+  };
 
   const [isClipHovered, setIsClipHovered] = useState(false);
   const [isEmojiHovered, setIsEmojiHovered] = useState(false);
@@ -185,28 +205,7 @@ export const MessageInputUserControl: React.FC = () => {
       const fileList = Array.from(e.target.files);
       e.target.value = '';
 
-      for (const file of fileList) {
-        if (file.type.startsWith('image/')) {
-          await new Promise<void>((resolve) => {
-            const img = new Image();
-            const objectUrl = URL.createObjectURL(file);
-            img.onload = () => {
-              (file as any).width = img.naturalWidth;
-              (file as any).height = img.naturalHeight;
-
-              mediaDimensionsCache.set(file.name, { width: img.naturalWidth, height: img.naturalHeight });
-              mediaDimensionsCache.set(objectUrl, { width: img.naturalWidth, height: img.naturalHeight });
-              resolve();
-            };
-            img.onerror = () => {
-              resolve();
-            };
-            img.src = objectUrl;
-          });
-        }
-      }
-
-      void addPendingAttachments(fileList);
+      void addPendingAttachments(fileList).catch(() => setAttachmentError('Не удалось прикрепить файлы.'));
       focusInputField();
     }
   };
@@ -449,7 +448,10 @@ export const MessageInputUserControl: React.FC = () => {
                   return (
                     <div
                       key={att.id || idx}
+                      onClick={() => void openMediaEditor(att)}
+                      title={att.type === AttachmentType.Photo || att.type === AttachmentType.Video ? 'Редактировать вложение' : att.fileName}
                       style={{
+                        cursor: att.type === AttachmentType.Photo || att.type === AttachmentType.Video ? 'pointer' : 'default',
                         width: 60,
                         height: 60,
                         borderRadius: 8,
@@ -492,7 +494,8 @@ export const MessageInputUserControl: React.FC = () => {
                       )}
 
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           removePendingAttachment(idx);
                           focusInputField();
                         }}
@@ -580,6 +583,15 @@ export const MessageInputUserControl: React.FC = () => {
                   rows={1}
                   value={newMessageText}
                   onChange={(e) => setNewMessageText(e.target.value)}
+                  onPaste={e => {
+                    let files = Array.from(e.clipboardData.files);
+                    if (!files.length) files = Array.from(e.clipboardData.items)
+                      .filter(item => item.kind === 'file').map(item => item.getAsFile())
+                      .filter((file): file is File => file !== null);
+                    if (!files.length) return;
+                    e.preventDefault();
+                    if (canWriteMessages) void addPendingAttachments(files).catch(() => setAttachmentError('Не удалось вставить файлы.'));
+                  }}
                   onKeyDown={handleKeyDown}
                   placeholder={hintText || 'Message...'}
                   style={{
@@ -732,6 +744,10 @@ export const MessageInputUserControl: React.FC = () => {
           </div>
         )}
       </div>
+      {attachmentError && <div role="alert" style={{ color: '#FF6B6B', padding: 6 }}>{attachmentError}</div>}
+      {mediaEditor && <AttachmentMediaEditorView key={mediaEditor.attachment.id} file={mediaEditor.file}
+        onClose={() => setMediaEditor(null)}
+        onDone={file => addPendingAttachments([file], mediaEditor.attachment)} />}
     </div>
   );
 };

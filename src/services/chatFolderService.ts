@@ -11,7 +11,8 @@ export interface IChatFolderService {
   toggleChatInFolderAsync(
     folderId: number,
     targetUserId?: number | null,
-    targetGroupId?: number | null
+    targetGroupId?: number | null,
+    targetSecretChatId?: string | null
   ): Promise<boolean | null>;
 }
 
@@ -75,16 +76,23 @@ export class ChatFolderService implements IChatFolderService {
     }
   }
 
+  public async getSecretFolderItemsAsync(): Promise<Record<string, number[]>> {
+    const response = await apiClient.get('api/ChatFolders/secret-items');
+    return response.data || {};
+  }
+
   public async toggleChatInFolderAsync(
     folderId: number,
     targetUserId?: number | null,
-    targetGroupId?: number | null
+    targetGroupId?: number | null,
+    targetSecretChatId?: string | null
   ): Promise<boolean | null> {
     try {
       const payload = {
         FolderId: folderId,
         TargetUserId: targetUserId ?? null,
         TargetGroupId: targetGroupId ?? null,
+        TargetSecretChatId: targetSecretChatId ?? null,
       };
 
       const response = await apiClient.post('api/ChatFolders/toggle-chat', payload);

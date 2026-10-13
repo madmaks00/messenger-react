@@ -6,6 +6,7 @@ import { eventBus } from '../services/eventBus';
 import { userSession } from '../services/userSession';
 import { signalRService } from '../services/signalr.service';
 import { chatService } from '../services/chat.service';
+import { chatFolderService } from '../services/chatFolderService';
 import { userService } from '../services/user.service';
 import { MessagePreviewHelper } from '../utils/messagePreviewHelper';
 import { useChatStore } from './chatStore';
@@ -22,7 +23,7 @@ interface SidebarChatsState {
   loadChats: (forceReload?: boolean) => Promise<void>;
   openChat: (target: IUserSearchResult | IChatListItem, userService?: any) => void;
   selectFolder: (folderId: number | null, isSystem: boolean) => void;
-  updateChatFolderIds: (chatId: number, isGroup: boolean, folderId: number, isAdded: boolean) => void;
+  updateChatFolderIds: (chatId: number, isGroup: boolean, folderId: number, isAdded: boolean, secretChatId?: string | null) => void;
   updateSidebar: (
     userId?: number | null,
     groupId?: number | null,
@@ -131,13 +132,15 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     });
   },
 
-  updateChatFolderIds: (chatId: number, isGroup: boolean, folderId: number, isAdded: boolean) => {
+  updateChatFolderIds: (chatId: number, isGroup: boolean, folderId: number, isAdded: boolean, secretChatId: string | null = null) => {
     const { allChats, selectedFolderId, isSystemFolder } = get();
 
     const updated = allChats.map((c) => {
       if (Boolean(c.isGroup) !== Boolean(isGroup)) return c;
       const targetId = isGroup ? Number(c.groupId ?? c.id) : Number(c.userId ?? c.id);
-      if (targetId !== chatId) return c;
+      if (secretChatId) {
+        if (!c.isSecretChat || c.secretChatId !== secretChatId) return c;
+      } else if (c.isSecretChat || targetId !== chatId) return c;
 
       const currentIds = new Set(c.folderIds || []);
       if (isAdded) {
@@ -183,6 +186,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
     const presenceTicket = userPresenceState.capture();
     try {
       const fetchedChats: IChatListItem[] = await chatService.getChatsAsync();
+      const secretFolderItems = await chatFolderService.getSecretFolderItemsAsync().catch(() => ({} as Record<string, number[]>));
       const cachedSecrets: any[] = (await chatService.getCachedSecretChatsAsync?.()) || [];
       const merged: IChatListItem[] = [];
 
@@ -302,7 +306,7 @@ export const useSidebarChatsStore = create<SidebarChatsState>((set, get) => ({
           groupDescription: '',
           isPublic: false,
           groupLink: '',
-          folderIds: [],
+          folderIds: secretFolderItems[sc.secretChatId] || [],
           isLastAttachmentGif: false,
           isLastMessageDeletedForMe: false,
         });

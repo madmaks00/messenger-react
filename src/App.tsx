@@ -171,7 +171,9 @@ export const App: React.FC = () => {
       setConfirmDialog({
         isOpen: true,
         targetTitle: data.title,
-        targetAvatar: data.avatar,
+        targetAvatar: data.targetAvatar || data.avatar || null,
+        targetId: data.targetId,
+        targetAvatarColor: data.targetAvatarColor,
         targetIcon: data.icon,
         targetIconColor: data.iconColor,
         dialogMessage: data.message,
@@ -438,6 +440,8 @@ export const App: React.FC = () => {
         isOpen={confirmDialog.isOpen}
         targetTitle={confirmDialog.targetTitle}
         targetAvatar={confirmDialog.targetAvatar}
+        targetId={confirmDialog.targetId}
+        targetAvatarColor={confirmDialog.targetAvatarColor}
         targetIcon={confirmDialog.targetIcon}
         targetIconColor={confirmDialog.targetIconColor}
         dialogMessage={confirmDialog.dialogMessage}

@@ -650,7 +650,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       for (const msg of targets) {
         const isMy = msg.isMyMessage || Number(msg.senderId) === currentUserId;
 
-        if ((isMy && deleteForAll) || !isMy) {
+        if ((isMy && deleteForAll) || !isMy || (Boolean(msg.forwardedFromName) && !deleteForAll)) {
           updated = updated.filter(
             (m) =>
               !(
@@ -2536,7 +2536,7 @@ eventBus.on('MessageDeletedMessage' as any, ({ serverId, isForAll }: { serverId:
   useChatStore.setState((state) => {
     const updatedChatMessages = (isForAll
       ? state.currentChatMessages.filter((m) => m.serverId !== serverId && m.id !== serverId)
-      : state.currentChatMessages.map((m) =>
+      : state.currentChatMessages.filter((m) => !(m.forwardedFromName && m.serverId === serverId)).map((m) =>
           m.serverId === serverId
             ? { ...m, isDeletedForMe: true, text: 'This message was deleted' }
             : m

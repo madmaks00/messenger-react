@@ -1,0 +1,50 @@
+/* Values from WPF's default dark dialog resources. Profile selectors are excluded. */
+@keyframes app-dialog-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes app-dialog-exit { from { opacity: 1; } to { opacity: 0; } }
+.app-dialog { position: fixed; inset: 0; z-index: 20000; font-family: 'Segoe UI', sans-serif; }
+.app-dialog.is-open { animation: app-dialog-enter 120ms cubic-bezier(.25,.46,.45,.94) both; }
+.app-dialog.is-closing { animation: app-dialog-exit 100ms linear both; pointer-events: none; }
+.app-dialog:not(.app-dialog-media) > div { background: rgba(0,0,0,.5) !important; backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important; opacity: 1 !important; transition: none !important;
+  padding: 16px !important; box-sizing: border-box; }
+.app-dialog:not(.app-dialog-media) > div > div:not([class]) { background-color: #161A23 !important;
+  border: 0 !important; border-radius: 12px !important; box-sizing: border-box;
+  max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px);
+  box-shadow: 0 4px 28px rgba(0,0,0,.35) !important; transform: none !important;
+  opacity: 1 !important; transition: none !important; }
+.app-dialog button { font-family: inherit; display: inline-flex; align-items: center; justify-content: center;
+  text-align: center; flex-shrink: 0; box-sizing: border-box; }
+.app-dialog :is(.btn-close,.btn-close-modal) { width: 28px !important; height: 28px !important; }
+.app-dialog :is(.btn-cancel,.btn-cancel-modal) { height: 36px !important; padding: 0 16px !important;
+  border-radius: 8px; font-size: 13.5px !important; font-weight: 500; }
+.app-dialog :is(.btn-create,.btn-primary,.btn-confirm-modal) { height: 36px !important; padding: 0 22px !important;
+  border-radius: 8px; font-size: 13.5px !important; font-weight: 600; }
+.app-dialog :is(input,textarea) { font-family: inherit; }
+.app-dialog .wpf-scroll-viewer { min-height: 0; scrollbar-width: thin; scrollbar-color: #4A505C transparent; }
+.app-dialog .wpf-scroll-viewer::-webkit-scrollbar { width: 6px; }
+.app-dialog .wpf-scroll-viewer::-webkit-scrollbar-track { background: transparent; }
+.app-dialog .wpf-scroll-viewer::-webkit-scrollbar-thumb { background: #4A505C; border-radius: 3px; }
+.app-dialog-forward > div > div { box-shadow: none !important; }
+.app-dialog-forward :is(.btn-cancel,.btn-primary) { background: transparent !important;
+  padding: 0 12px !important; font-size: 14px !important; color: #7D8494 !important; }
+.app-dialog-forward .btn-primary { color: #1E9BEB !important; }
+.app-dialog-forward .btn-primary:disabled { color: #4B5563 !important; background: transparent !important; }
+.app-dialog-forward .forward-row:hover { background: #232A3B !important; }
+.app-dialog-forward .forward-row.selected { background: #2C3344 !important; }
+.app-dialog-forward .forward-row.selected:hover { background: #323A4C !important; }
+.app-dialog-forward .forward-check { transition: transform 150ms ease-out; }
+.app-dialog-group > div > div { border-radius: 14px !important; overflow-y: auto; }
+.app-dialog-folder .wpf-color-ring { width: 40px !important; height: 40px !important; border-width: 1px; }
+.app-dialog-folder .wpf-color-dot { width: 30px !important; height: 30px !important; box-shadow: none !important; }
+.app-dialog-folder .wpf-color-cell:hover .wpf-color-dot,
+.app-dialog-folder .wpf-color-cell:hover .wpf-color-ring,
+.app-dialog-folder .wpf-icon-cell:hover { transform: none !important; }
+.app-dialog-folder .wpf-icon-cell.selected { background: #232A3B !important; }
+.app-dialog-folder .wpf-icon-cell.selected svg { fill: #7D8494 !important; }
+
+.app-dialog-media > div { opacity: 1; transition: none; }
+
+.app-dialog-group .group-access:not(.selected):hover { background: #222B38 !important; border-color: #232A3B !important; }
+.app-dialog-forward .btn-primary:hover:not(:disabled),
+.app-dialog-forward .btn-cancel:hover { background: rgba(255,255,255,.08) !important; }
+.app-dialog-join > div > div, .app-dialog-passcode > div > div { padding: 20px 24px 16px !important; }

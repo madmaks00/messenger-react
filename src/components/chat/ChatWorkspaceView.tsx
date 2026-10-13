@@ -1619,6 +1619,8 @@ export const ChatWorkspaceView: React.FC = () => {
       <ConfirmDialogView
         isOpen={isConfirmDialogOpen}
         targetTitle={confirmDialogTitle}
+        targetAvatar={selectedChatUser?.avatarPath || selectedChatUser?.avatar || null}
+        targetId={selectedChatUser?.id}
         dialogMessage={confirmDialogMessage}
         checkboxText={confirmDialogCheckboxText}
         confirmButtonText={confirmDialogButtonText}

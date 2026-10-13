@@ -13,6 +13,7 @@ import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
 import { useStoriesStore } from '../../stores/storiesStore';
 import { useNavigationStore } from '../../stores/navigationStore';
+import { userSession } from '../../services/userSession';
 import { useChatStore } from '../../stores/chatStore';
 import { useCallsStore } from '../../stores/callsStore';
 import { useSidebarChatsStore } from '../../stores/sidebarChatsStore';
@@ -35,7 +36,6 @@ export interface ProfileViewProps {
 export const ProfileView: React.FC<ProfileViewProps> = ({
   isOpen,
   user,
-  isOwnProfile,
   isGroupProfile = false,
   currentUserId = 0,
   initialTab = 'stories',
@@ -48,15 +48,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const effectiveIsOpen = navStore.isProfileOpen ?? isOpen;
   const effectiveIsGroupProfile = navStore.isProfileOpen ? navStore.isGroupProfile : isGroupProfile;
-  const rawIsOwn = navStore.isProfileOpen ? navStore.isOwnProfile : isOwnProfile;
 
-  const candidateUser = (!rawIsOwn && navStore.profileUser) ? navStore.profileUser : (user || navStore.profileUser);
+  const candidateUser = navStore.isProfileOpen ? (navStore.profileUser || user) : (user || navStore.profileUser);
+  const sessionUserId = Number(userSession.userId || currentUserId || 0);
+  const profileUserId = Number(candidateUser?.id || (candidateUser as any)?.userId || 0);
 
+  // Ownership depends on the active account, regardless of how the profile was opened.
+  // Group IDs use a separate namespace and must never grant personal profile controls.
   const effectiveIsOwnProfile = Boolean(
-    rawIsOwn &&
-    candidateUser?.id &&
-    currentUserId &&
-    Number(candidateUser.id) === Number(currentUserId)
+    !effectiveIsGroupProfile && sessionUserId > 0 && profileUserId === sessionUserId
   );
 
   const effectiveUser = candidateUser;
@@ -107,7 +107,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     effectiveUser,
     effectiveIsOwnProfile,
     effectiveIsGroupProfile,
-    currentUserId,
+    sessionUserId,
     handleAnimateClose,
     services,
     onStartChat,

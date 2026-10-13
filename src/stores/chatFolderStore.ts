@@ -308,14 +308,15 @@ export const useChatFolderStore = create<ChatFolderState>((set, get) => ({
   toggleChatInFolder: async (folderId, chat) => {
     if (!chat || folderId <= 0) return;
 
-    const targetUserId = chat.isGroup ? null : chat.userId;
+    const targetUserId = chat.isGroup || chat.isSecretChat ? null : (chat.userId ?? chat.id);
     const targetGroupId = chat.isGroup ? chat.groupId : null;
 
     try {
       const isAdded = await chatFolderService.toggleChatInFolderAsync(
         folderId,
         targetUserId,
-        targetGroupId
+        targetGroupId,
+        chat.isSecretChat ? chat.secretChatId : null
       );
 
       if (isAdded !== null) {
@@ -325,7 +326,8 @@ export const useChatFolderStore = create<ChatFolderState>((set, get) => ({
           Number(chatId),
           Boolean(chat.isGroup),
           folderId,
-          isAdded
+          isAdded,
+          chat.isSecretChat ? chat.secretChatId : null
         );
       }
     } catch (error) {

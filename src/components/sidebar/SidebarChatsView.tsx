@@ -1381,8 +1381,8 @@ export const SidebarChatsView: React.FC = () => {
                   title: chatName,
                   avatar: avatarSrc,
                   targetAvatar: avatarSrc,
-                  icon: mdiDeleteOutline,
-                  targetIcon: mdiDeleteOutline,
+                  targetId: targetChat.isGroup ? (targetChat.groupId ?? targetChat.id) : (targetChat.userId ?? targetChat.id),
+                  targetAvatarColor: getAvatarColor(targetChat.isGroup ? targetChat.groupId || 0 : Number(targetChat.userId || targetChat.id || 0)),
                   iconColor: 'var(--destructive-action)',
                   message: isGroup
                     ? 'Are you sure you want to leave and delete this group?'

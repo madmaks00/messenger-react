@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { DialogFrame, useDialogPresence } from './DialogFrame';
+import React, { useEffect, useState, useRef } from 'react';
 import { IAttachment } from '../../types/models';
 import { AttachmentType } from '../../types/enums';
 
@@ -10,11 +11,15 @@ interface PhotoVideoViewerModalProps {
 }
 
 export const PhotoVideoViewerModal: React.FC<PhotoVideoViewerModalProps> = ({
-  mediaList,
+  mediaList: sourceMediaList,
   initialIndex,
   isOpen,
   onClose,
 }) => {
+  const isRendered = useDialogPresence(isOpen);
+  const cachedMedia = useRef(sourceMediaList);
+  if (isOpen) cachedMedia.current = sourceMediaList;
+  const mediaList = isOpen ? sourceMediaList : cachedMedia.current;
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
 
   useEffect(() => {
@@ -34,7 +39,7 @@ export const PhotoVideoViewerModal: React.FC<PhotoVideoViewerModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, currentIndex, mediaList.length]);
 
-  if (!isOpen || mediaList.length === 0) return null;
+  if (!isRendered || mediaList.length === 0) return null;
 
   const currentMedia = mediaList[currentIndex] || mediaList[0];
   const isVideo = currentMedia.type === AttachmentType.Video;
@@ -57,6 +62,7 @@ export const PhotoVideoViewerModal: React.FC<PhotoVideoViewerModalProps> = ({
   };
 
   return (
+    <DialogFrame isOpen={isOpen} kind="media">
     <div style={backdropStyle} onClick={onClose}>
       {/* ВЕРХНЯЯ ПАНЕЛЬ ДЕЙСТВИЙ */}
       <div style={topBarStyle} onClick={(e) => e.stopPropagation()}>
@@ -123,6 +129,7 @@ export const PhotoVideoViewerModal: React.FC<PhotoVideoViewerModalProps> = ({
         </button>
       )}
     </div>
+    </DialogFrame>
   );
 };
 

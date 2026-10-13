@@ -950,6 +950,10 @@ this.hubConnection.on(
       });
     });
 
+    this.hubConnection.on('SecretChatFolderToggled', (folderId: number, secretChatId: string, isAdded: boolean) => {
+      useSidebarChatsStore.getState().updateChatFolderIds(0, false, Number(folderId), Boolean(isAdded), secretChatId);
+    });
+
     this.hubConnection.on('ChatFolderChatToggled', (folderId: any, targetUserId: any, targetGroupId: any, isAdded: boolean) => {
       const fId = Number(folderId);
       const tUid = targetUserId ? Number(targetUserId) : null;

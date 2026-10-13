@@ -1,3 +1,4 @@
+import { DialogFrame } from './DialogFrame';
 import React, { useState, useEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -39,7 +40,7 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
       const timer = setTimeout(() => {
         setIsRendered(false);
         setIsFadingOut(false);
-      }, 120);
+      }, 100);
       return () => clearTimeout(timer);
     }
   }, [isDialogOpen]);
@@ -59,6 +60,7 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
   if (!isRendered) return null;
 
   return (
+    <DialogFrame isOpen={isDialogOpen} kind="pin">
     <div
       onClick={cancelPin}
       style={{
@@ -79,7 +81,7 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
       }}
     >
       <style>{`
-        .btn-close {
+        .app-dialog-pin .btn-close {
           width: 26px !important;
           height: 26px !important;
           padding: 0 !important;
@@ -94,15 +96,15 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
           outline: none !important;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-close:hover {
+        .app-dialog-pin .btn-close:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-close:active {
+        .app-dialog-pin .btn-close:active {
           background-color: rgba(255, 255, 255, 0.16) !important;
         }
 
-        .btn-cancel {
+        .app-dialog-pin .btn-cancel {
           height: 34px;
           padding: 0 14px;
           background-color: transparent !important;
@@ -115,15 +117,15 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
           outline: none;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-cancel:hover {
+        .app-dialog-pin .btn-cancel:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-cancel:active {
+        .app-dialog-pin .btn-cancel:active {
           background-color: rgba(255, 255, 255, 0.14) !important;
         }
 
-        .btn-primary {
+        .app-dialog-pin .btn-primary {
           height: 34px;
           padding: 0 18px;
           background-color: #1E9BEB !important;
@@ -136,10 +138,10 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
           outline: none;
           transition: opacity 0.15s ease !important;
         }
-        .btn-primary:hover {
+        .app-dialog-pin .btn-primary:hover {
           opacity: 0.9 !important;
         }
-        .btn-primary:active {
+        .app-dialog-pin .btn-primary:active {
           opacity: 0.8 !important;
         }
       `}</style>
@@ -149,7 +151,7 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
         style={{
           width: 340,
           maxWidth: '92vw',
-          backgroundColor: '#161B26',
+          backgroundColor: '#161A23',
           borderRadius: 12,
           padding: '16px 18px 14px 18px',
           boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
@@ -231,6 +233,7 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
         </div>
       </div>
     </div>
+    </DialogFrame>
   );
 };
 

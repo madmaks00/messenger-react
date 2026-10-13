@@ -1,3 +1,4 @@
+import { DialogFrame } from './DialogFrame';
 import React, { useState, useEffect } from 'react';
 
 export interface JoinGroupPreviewData {
@@ -39,7 +40,7 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
         setIsRendered(false);
         setIsFadingOut(false);
         setCachedData(null);
-      }, 120);
+      }, 100);
       return () => clearTimeout(timer);
     }
   }, [isOpen, data]);
@@ -60,6 +61,7 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
   if (!isRendered || !activeData) return null;
 
   return (
+    <DialogFrame isOpen={isOpen} kind="join">
     <div
       onClick={onCancel}
       style={{
@@ -142,7 +144,7 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
 
         {/* Описание */}
         {activeData.description && (
-          <div style={{ backgroundColor: '#161B26', borderRadius: 10, padding: '12px 10px', marginBottom: 14, maxHeight: 80, overflowY: 'auto', fontSize: 13, color: '#94A3B8' }}>
+          <div style={{ backgroundColor: '#161A23', borderRadius: 10, padding: '12px 10px', marginBottom: 14, maxHeight: 80, overflowY: 'auto', fontSize: 13, color: '#94A3B8' }}>
             {activeData.description}
           </div>
         )}
@@ -181,6 +183,7 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
         </div>
       </div>
     </div>
+    </DialogFrame>
   );
 };
 

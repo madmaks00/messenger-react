@@ -1,3 +1,4 @@
+import { DialogFrame } from './DialogFrame';
 import React, { useState, useEffect } from 'react';
 import {
   mdiFolderOutline,
@@ -130,7 +131,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
         setTargetList(null);
         setTargetNote(null);
         setMode('Folder');
-      }, 120);
+      }, 100);
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
@@ -276,6 +277,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
   };
 
   return (
+    <DialogFrame isOpen={isOpen} kind="folder">
     <div
       onClick={handleClose}
       style={{
@@ -295,7 +297,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
       }}
     >
       <style>{`
-        .btn-close {
+        .app-dialog-folder .btn-close {
           width: 28px !important;
           height: 28px !important;
           padding: 0 !important;
@@ -310,15 +312,15 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           outline: none !important;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-close:hover {
+        .app-dialog-folder .btn-close:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-close:active {
+        .app-dialog-folder .btn-close:active {
           background-color: rgba(255, 255, 255, 0.16) !important;
         }
 
-        .btn-cancel {
+        .app-dialog-folder .btn-cancel {
           height: 36px;
           padding: 0 16px;
           background-color: transparent !important;
@@ -331,15 +333,15 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           outline: none;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-cancel:hover {
+        .app-dialog-folder .btn-cancel:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-cancel:active {
+        .app-dialog-folder .btn-cancel:active {
           background-color: rgba(255, 255, 255, 0.14) !important;
         }
 
-        .btn-create {
+        .app-dialog-folder .btn-create {
           height: 36px;
           padding: 0 22px;
           background-color: #1E9BEB !important;
@@ -352,14 +354,14 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           outline: none;
           transition: opacity 0.15s ease !important;
         }
-        .btn-create:hover {
+        .app-dialog-folder .btn-create:hover {
           opacity: 0.9 !important;
         }
-        .btn-create:active {
+        .app-dialog-folder .btn-create:active {
           opacity: 0.8 !important;
         }
 
-        .wpf-color-cell {
+        .app-dialog .wpf-color-cell {
           width: 40px;
           height: 40px;
           display: flex;
@@ -369,11 +371,11 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           position: relative;
           transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
-        .wpf-color-cell:active {
+        .app-dialog .wpf-color-cell:active {
           transform: scale(0.92);
         }
 
-        .wpf-color-ring {
+        .app-dialog .wpf-color-ring {
           position: absolute;
           width: 38px;
           height: 38px;
@@ -386,21 +388,21 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           pointer-events: none;
         }
 
-        .wpf-color-cell:hover:not(.selected) .wpf-color-ring {
+        .app-dialog .wpf-color-cell:hover:not(.selected) .wpf-color-ring {
           opacity: 0.75;
           transform: scale(1.05);
         }
-        .wpf-color-cell:hover:not(.selected) .wpf-color-dot {
+        .app-dialog .wpf-color-cell:hover:not(.selected) .wpf-color-dot {
           transform: scale(1.12);
         }
 
-        .wpf-color-cell.selected .wpf-color-ring {
+        .app-dialog .wpf-color-cell.selected .wpf-color-ring {
           border: 2px solid #FFFFFF !important;
           opacity: 1 !important;
           transform: scale(1) !important;
         }
 
-        .wpf-color-dot {
+        .app-dialog .wpf-color-dot {
           width: 28px;
           height: 28px;
           border-radius: 50%;
@@ -409,7 +411,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
         }
 
-        .wpf-icon-cell {
+        .app-dialog .wpf-icon-cell {
           width: 40px;
           height: 40px;
           border-radius: 8px;
@@ -421,23 +423,23 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           transition: background-color 0.15s ease, transform 0.12s ease;
           box-sizing: border-box;
         }
-        .wpf-icon-cell:active {
+        .app-dialog .wpf-icon-cell:active {
           transform: scale(0.92);
         }
-        .wpf-icon-cell:hover:not(.selected) {
+        .app-dialog .wpf-icon-cell:hover:not(.selected) {
           background-color: rgba(255, 255, 255, 0.08) !important;
           transform: scale(1.08);
         }
-        .wpf-icon-cell:hover:not(.selected) svg {
+        .app-dialog .wpf-icon-cell:hover:not(.selected) svg {
           fill: #FFFFFF !important;
         }
-        .wpf-icon-cell.selected {
+        .app-dialog .wpf-icon-cell.selected {
           background-color: #222D3D !important;
         }
-        .wpf-icon-cell.selected svg {
+        .app-dialog .wpf-icon-cell.selected svg {
           fill: #FFFFFF !important;
         }
-        .wpf-icon-cell svg {
+        .app-dialog .wpf-icon-cell svg {
           transition: fill 0.15s ease;
         }
       `}</style>
@@ -447,11 +449,11 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
         style={{
           width: 380,
           maxHeight: '92vh',
-          backgroundColor: '#161B26',
+          backgroundColor: '#161A23',
           borderRadius: 12,
           padding: '20px 24px 16px 24px',
           boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
-          border: '1px solid #2A3342',
+          border: 'none',
           display: 'flex',
           flexDirection: 'column',
           boxSizing: 'border-box',
@@ -497,16 +499,21 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
               flex: 1,
               overflowY: 'auto',
               overflowX: 'hidden',
-              margin: '0 -10px 12px 0',
+              margin: '0 -10px 15px 0',
               padding: '0 10px 0 0',
               boxSizing: 'border-box',
             }}
           >
-            <div style={{ position: 'relative', marginBottom: 20 }}>
+            <div style={{ position: 'relative', marginBottom: 20, paddingTop: 8 }}>
+              <label htmlFor="folder-name" style={{ position: 'absolute', left: 0,
+                top: isInputFocused || currentName ? -4 : 16,
+                fontSize: isInputFocused || currentName ? 11 : 15, color: '#7D8494',
+                pointerEvents: 'none', transition: 'top 120ms ease-out, font-size 120ms ease-out' }}>Folder Name</label>
               <input
                 type="text"
                 maxLength={maxLength}
-                placeholder="Folder Name"
+                id="folder-name"
+                aria-label="Folder Name"
                 required
                 autoFocus
                 value={currentName}
@@ -528,11 +535,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
                   transition: 'border-color 0.2s ease',
                 }}
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-                <span style={{ fontSize: 11, color: '#7D8494', fontWeight: 500 }}>
-                  {currentName.length} / {maxLength}
-                </span>
-              </div>
+
             </div>
 
             <div style={{ fontSize: 13, fontWeight: 600, color: '#7D8494', marginBottom: 8 }}>Color</div>
@@ -613,6 +616,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
         </form>
       </div>
     </div>
+    </DialogFrame>
   );
 };
 

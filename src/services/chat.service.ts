@@ -1083,14 +1083,14 @@ export class ChatService implements IChatService {
 
     if (groupId && groupId > 0) {
       list = await db.messages
-        .filter((m) => m.groupId === groupId && (!m.isDeletedForMe || m.senderId === currentUserId))
+        .filter((m) => m.groupId === groupId && (!m.isDeletedForMe || (m.senderId === currentUserId && !m.forwardedFromName)))
         .toArray();
     } else if (userId && userId > 0) {
       list = await db.messages
         .filter(
           (m) =>
             !m.groupId &&
-            (!m.isDeletedForMe || m.senderId === currentUserId) &&
+            (!m.isDeletedForMe || (m.senderId === currentUserId && !m.forwardedFromName)) &&
             ((m.senderId === currentUserId && m.receiverId === userId) ||
               (m.senderId === userId && m.receiverId === currentUserId))
         )

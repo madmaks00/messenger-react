@@ -31,7 +31,7 @@ interface MessageInputState {
   cancelEdit: () => void;
   addReplyMessage: (msg: IMessage) => void;
   cancelReply: (msg?: IMessage) => void;
-  addPendingAttachments: (files: File[]) => Promise<void>;
+  addPendingAttachments: (files: File[], replacing?: IAttachment) => Promise<void>;
   removePendingAttachment: (index: number) => void;
   startVoiceRecording: () => Promise<void>;
   cancelVoiceRecording: () => void;
@@ -49,6 +49,8 @@ interface MessageInputState {
     canWriteMessages: boolean;
   }) => void;
 }
+
+let draftGeneration = 0;
 
 let recordingTimer: ReturnType<typeof setInterval> | null = null;
 let recordingStartTime = 0;
@@ -78,6 +80,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
   },
 
   setEditMessage: (msg) => {
+    draftGeneration++;
     set({
       editingMessage: msg,
       newMessageText: msg.text || '',
@@ -87,6 +90,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
   },
 
   cancelEdit: () => {
+    draftGeneration++;
     set({
       editingMessage: null,
       newMessageText: '',
@@ -112,9 +116,10 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
-  addPendingAttachments: async (files: File[]) => {
+  addPendingAttachments: async (files: File[], replacing?: IAttachment) => {
+    const generation = draftGeneration;
     const state = get();
-    if (state.isGroup && !state.isAdmin && !state.canSendMedia) return;
+    if (!state.canWriteMessages || !state.canSendMedia) return;
 
     const maxFileSize = 500 * 1024 * 1024;
     const newAtts: IAttachment[] = [];
@@ -176,12 +181,21 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
           });
 
           displayImageUrl = videoMeta.thumbUrl;
-          if (videoMeta.width > 0 && width === 0) width = videoMeta.width;
-          if (videoMeta.height > 0 && height === 0) height = videoMeta.height;
+          if (videoMeta.width > 0) width = videoMeta.width;
+          if (videoMeta.height > 0) height = videoMeta.height;
         } catch {}
       } else if (['jpg', 'jpeg', 'png', 'webp', 'bmp'].includes(ext) || file.type.startsWith('image/')) {
         type = AttachmentType.Photo;
         displayImageUrl = objectUrl;
+        const dimensions = await new Promise<{ width: number; height: number }>(resolve => {
+          const image = new Image();
+          const timer = setTimeout(() => resolve({ width: 0, height: 0 }), 10000);
+          image.onload = () => { clearTimeout(timer); resolve({ width: image.naturalWidth, height: image.naturalHeight }); };
+          image.onerror = () => { clearTimeout(timer); resolve({ width: 0, height: 0 }); };
+          image.src = objectUrl;
+        });
+        if (dimensions.width) { width = dimensions.width; height = dimensions.height; }
+
       } else if (isVideoExt) {
         type = AttachmentType.Video;
 
@@ -238,8 +252,8 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
           hasAudio = videoMeta.hasAudio;
           durationSeconds = videoMeta.duration;
           displayImageUrl = videoMeta.thumbUrl;
-          if (videoMeta.width > 0 && width === 0) width = videoMeta.width;
-          if (videoMeta.height > 0 && height === 0) height = videoMeta.height;
+          if (videoMeta.width > 0) width = videoMeta.width;
+          if (videoMeta.height > 0) height = videoMeta.height;
         } catch {
           hasAudio = true;
         }
@@ -327,7 +341,17 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       });
     }
 
-    set({ pendingAttachments: [...get().pendingAttachments, ...newAtts] });
+    if (generation !== draftGeneration || !get().canWriteMessages || !get().canSendMedia) {
+      newAtts.forEach(a => { if (a.url?.startsWith('blob:')) URL.revokeObjectURL(a.url); });
+      return;
+    }
+    if (replacing) {
+      const index = get().pendingAttachments.indexOf(replacing);
+      if (index < 0 || !newAtts.length) return;
+      const updated = [...get().pendingAttachments];
+      updated.splice(index, 1, ...newAtts);
+      set({ pendingAttachments: updated });
+    } else set({ pendingAttachments: [...get().pendingAttachments, ...newAtts] });
     eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
@@ -405,6 +429,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
   },
 
   reset: () => {
+    draftGeneration++;
     if (recordingTimer) {
       clearInterval(recordingTimer);
       recordingTimer = null;

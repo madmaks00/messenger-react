@@ -1,3 +1,4 @@
+import { DialogFrame, useDialogPresence } from '../modals/DialogFrame';
 import React, { useState, useRef, useEffect } from 'react';
 import { SecurityService } from '../../services/security.service';
 import { Theme } from '../profile/profile.theme';
@@ -13,6 +14,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const isRendered = useDialogPresence(isOpen);
   const [passcode, setPasscode] = useState('');
   const [repeatPasscode, setRepeatPasscode] = useState('');
 
@@ -30,7 +32,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isRendered) return null;
 
   // 1:1 CancelPasscodeSetup_Click
   const handleCancel = () => {
@@ -57,6 +59,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
   };
 
   return (
+    <DialogFrame isOpen={isOpen} kind="passcode">
     <div
       onClick={handleCancel}
       style={{
@@ -265,6 +268,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
         </div>
       </div>
     </div>
+    </DialogFrame>
   );
 };
 

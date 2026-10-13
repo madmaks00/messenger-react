@@ -1,3 +1,4 @@
+import { DialogFrame } from './DialogFrame';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { groupService } from '../../services/group.service';
 import { userSession } from '../../services/userSession';
@@ -71,7 +72,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
         setIsRendered(false);
         setIsFadingOut(false);
         resetGroupCreation();
-      }, 120); // 0:0:0.12 в WPF DialogOverlayFadeOutStoryboard
+      }, 100); // 0:0:0.12 в WPF DialogOverlayFadeOutStoryboard
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
@@ -239,6 +240,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
   if (!isRendered) return null;
 
   return (
+    <DialogFrame isOpen={isOpen} kind="group">
     <div
       id="CreateGroupOverlay"
       onClick={onClose}
@@ -249,7 +251,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
       }}
     >
       <style>{`
-        .btn-close {
+        .app-dialog-group .btn-close {
           width: 28px !important;
           height: 28px !important;
           padding: 0 !important;
@@ -264,15 +266,15 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           outline: none !important;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-close:hover {
+        .app-dialog-group .btn-close:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-close:active {
+        .app-dialog-group .btn-close:active {
           background-color: rgba(255, 255, 255, 0.16) !important;
         }
 
-        .btn-cancel {
+        .app-dialog-group .btn-cancel {
           height: 36px;
           padding: 0 16px;
           background-color: transparent !important;
@@ -285,15 +287,15 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           outline: none;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-cancel:hover {
+        .app-dialog-group .btn-cancel:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-cancel:active {
+        .app-dialog-group .btn-cancel:active {
           background-color: rgba(255, 255, 255, 0.14) !important;
         }
 
-        .btn-create {
+        .app-dialog-group .btn-create {
           height: 36px;
           padding: 0 22px;
           background-color: #1E9BEB !important;
@@ -306,10 +308,10 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           outline: none;
           transition: opacity 0.15s ease !important;
         }
-        .btn-create:hover {
+        .app-dialog-group .btn-create:hover {
           opacity: 0.9 !important;
         }
-        .btn-create:active {
+        .app-dialog-group .btn-create:active {
           opacity: 0.8 !important;
         }
       `}</style>
@@ -432,6 +434,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
               <div style={styles.accessCardsGrid}>
                 <div
                   onClick={() => setIsPublicGroup(false)}
+                  className={`group-access ${!isPublicGroup ? 'selected' : ''}`}
                   style={{
                     ...styles.accessCard,
                     borderColor: !isPublicGroup ? '#1E9BEB' : '#333E4A',
@@ -458,6 +461,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
 
                 <div
                   onClick={() => setIsPublicGroup(true)}
+                  className={`group-access ${isPublicGroup ? 'selected' : ''}`}
                   style={{
                     ...styles.accessCard,
                     borderColor: isPublicGroup ? '#1E9BEB' : '#333E4A',
@@ -586,6 +590,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
         )}
       </div>
     </div>
+    </DialogFrame>
   );
 };
 
@@ -609,9 +614,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: 410,
     maxWidth: '95vw',
     maxHeight: '92vh',
-    backgroundColor: '#161B26', // Точный цвет фона как в CreateFolderDialog
-    borderRadius: 12,
-    padding: '20px 24px 18px 24px',
+    backgroundColor: '#161A23', // Точный цвет фона как в CreateFolderDialog
+    borderRadius: 14,
+    padding: '20px 22px',
     boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)', // Глубокая тень окна
     border: '1px solid #2A3342', // Контрастная граница окна
     boxSizing: 'border-box',
@@ -628,14 +633,14 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 15,
+    marginBottom: 14,
     flexShrink: 0,
   },
   headerTitle: {
     margin: 0,
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: 600,
   },
   closeButton: {
     // Стили переопределены через .btn-close

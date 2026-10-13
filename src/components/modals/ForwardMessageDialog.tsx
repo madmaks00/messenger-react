@@ -1,3 +1,4 @@
+import { DialogFrame } from './DialogFrame';
 import React, { useState, useEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
@@ -43,7 +44,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
       const timer = setTimeout(() => {
         setIsRendered(false);
         setIsFadingOut(false);
-      }, 120);
+      }, 100);
       return () => clearTimeout(timer);
     }
   }, [isDialogOpen]);
@@ -62,10 +63,11 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
 
   if (!isRendered) return null;
 
-  const displayList = forwardChatList.length > 0 ? forwardChatList : cachedList;
+  const displayList = isDialogOpen ? forwardChatList : cachedList;
   const hasSelected = displayList.some((c) => c.isSelected);
 
   return (
+    <DialogFrame isOpen={isDialogOpen} kind="forward">
     <div
       onClick={cancelForward}
       style={{
@@ -86,7 +88,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
       }}
     >
       <style>{`
-        .btn-close {
+        .app-dialog-forward .btn-close {
           width: 26px !important;
           height: 26px !important;
           padding: 0 !important;
@@ -101,15 +103,15 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           outline: none !important;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-close:hover {
+        .app-dialog-forward .btn-close:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-close:active {
+        .app-dialog-forward .btn-close:active {
           background-color: rgba(255, 255, 255, 0.16) !important;
         }
 
-        .btn-cancel {
+        .app-dialog-forward .btn-cancel {
           height: 34px;
           padding: 0 14px;
           background-color: transparent !important;
@@ -122,15 +124,15 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           outline: none;
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
-        .btn-cancel:hover {
+        .app-dialog-forward .btn-cancel:hover {
           background-color: rgba(255, 255, 255, 0.08) !important;
           color: #FFFFFF !important;
         }
-        .btn-cancel:active {
+        .app-dialog-forward .btn-cancel:active {
           background-color: rgba(255, 255, 255, 0.14) !important;
         }
 
-        .btn-primary {
+        .app-dialog-forward .btn-primary {
           height: 34px;
           padding: 0 18px;
           background-color: #1E9BEB !important;
@@ -143,13 +145,13 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           outline: none;
           transition: opacity 0.15s ease, background-color 0.15s ease !important;
         }
-        .btn-primary:hover:not(:disabled) {
+        .app-dialog-forward .btn-primary:hover:not(:disabled) {
           opacity: 0.9 !important;
         }
-        .btn-primary:active:not(:disabled) {
+        .app-dialog-forward .btn-primary:active:not(:disabled) {
           opacity: 0.8 !important;
         }
-        .btn-primary:disabled {
+        .app-dialog-forward .btn-primary:disabled {
           background-color: #232A3B !important;
           color: #4B5563 !important;
           cursor: default !important;
@@ -162,9 +164,9 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
         style={{
           width: 340,
           maxWidth: '92vw',
-          backgroundColor: '#161B26',
+          backgroundColor: '#161A23',
           borderRadius: 12,
-          padding: '16px 18px 14px 18px',
+          padding: '10px 0',
           boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
           border: '1px solid #2A3342',
           display: 'flex',
@@ -179,24 +181,15 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: 12,
+            margin: '5px 20px 15px',
             flexShrink: 0,
           }}
         >
-          <span style={{ fontSize: 17, fontWeight: 600, color: '#FFFFFF' }}>
+          <span style={{ fontSize: 18, fontWeight: 600, color: '#FFFFFF' }}>
             Forward to...
           </span>
 
-          <button
-            type="button"
-            onClick={cancelForward}
-            className="btn-close"
-            title="Close"
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-            </svg>
-          </button>
+
         </div>
 
         <div
@@ -204,9 +197,9 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           style={{
             flex: 1,
             overflowY: 'auto',
-            maxHeight: 280,
-            margin: '0 -8px 14px 0',
-            padding: '0 8px 0 0',
+            maxHeight: 300,
+            margin: '0 0 10px',
+            padding: 0,
             boxSizing: 'border-box',
           }}
         >
@@ -230,17 +223,18 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
 
               return (
                 <div
+                  className={`forward-row ${isSelected ? 'selected' : ''}`}
                   key={uniqueKey}
                   onClick={() => toggleSelectForwardChat(uniqueKey)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    padding: '7px 10px',
+                    padding: '10px 15px',
                     borderRadius: 8,
                     cursor: 'pointer',
                     backgroundColor: isSelected ? 'rgba(30, 155, 235, 0.12)' : 'transparent',
-                    border: `1px solid ${isSelected ? 'rgba(30, 155, 235, 0.3)' : 'transparent'}`,
-                    marginBottom: 3,
+                    border: 'none',
+                    marginBottom: 2,
                     transition: 'background-color 0.12s ease, border-color 0.12s ease',
                     boxSizing: 'border-box',
                   }}
@@ -251,12 +245,12 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                     if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
-                  <div style={{ position: 'relative', width: 36, height: 36, marginRight: 10, flexShrink: 0 }}>
+                  <div style={{ position: 'relative', width: 40, height: 40, marginRight: 12, flexShrink: 0 }}>
                     <div
                       style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
+                        width: 38,
+                        height: 38,
+                        borderRadius: 19,
                         backgroundColor: getAvatarColor(chat.isGroup ? (chat.groupId || 0) : Number(chat.userId || chat.id || 0)),
                         display: 'flex',
                         alignItems: 'center',
@@ -279,8 +273,9 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                       )}
                     </div>
 
-                    {isSelected && (
+                    {(
                       <div
+                        className="forward-check"
                         style={{
                           position: 'absolute',
                           bottom: -2,
@@ -296,7 +291,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          transform: 'scale(1)',
+                          transform: isSelected ? 'scale(1)' : 'scale(0)',
                         }}
                       >
                         ✓
@@ -307,8 +302,8 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        color: isSelected ? '#1E9BEB' : '#FFFFFF',
-                        fontSize: 14,
+                        color: '#FFFFFF',
+                        fontSize: 15,
                         fontWeight: 600,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
@@ -318,7 +313,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                     >
                       {displayName}
                     </div>
-                    <div style={{ color: '#7D8494', fontSize: 11.5, marginTop: 1 }}>{chatType}</div>
+                    <div style={{ color: '#7D8494', fontSize: 12, marginTop: 2 }}>{chatType}</div>
                   </div>
                 </div>
               );
@@ -326,7 +321,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginRight: 10 }}>
           <button
             type="button"
             onClick={cancelForward}
@@ -345,6 +340,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
         </div>
       </div>
     </div>
+    </DialogFrame>
   );
 };
 
