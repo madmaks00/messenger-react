@@ -2,7 +2,7 @@
 import { userSession } from './userSession';
 import { eventBus } from './eventBus';
 
-const SERVER_URL = 'https://localhost:7214';
+const SERVER_URL = (import.meta.env.VITE_API_URL?.trim() || 'https://localhost:7214').replace(/\/+$/, '');
 const DEVICE_ID_KEY = 'messenger_browser_device_id';
 const browserDeviceId = localStorage.getItem(DEVICE_ID_KEY) || crypto.randomUUID();
 localStorage.setItem(DEVICE_ID_KEY, browserDeviceId);
