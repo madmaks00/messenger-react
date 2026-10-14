@@ -2,6 +2,7 @@
 import { userSession } from './userSession';
 import { AuthResult, AuthResponseDto } from '../types/dtos';
 import { IUser } from '../types/models';
+import { createRegistrationPayload, getAuthErrorMessage } from './auth-contract';
 
 export interface IAuthService {
   loginAsync(username: string, password: string): Promise<AuthResult>;
@@ -21,9 +22,7 @@ export class AuthService implements IAuthService {
 
       return this.handleAuthResponse(response.data);
     } catch (ex: any) {
-      console.error('[AuthService ERROR] Ошибка при входе:', ex);
-      const errMsg = ex.response?.data?.message || ex.response?.data || ex.message || 'Ошибка авторизации';
-      return { isSuccess: false, message: String(errMsg) };
+      return { isSuccess: false, message: getAuthErrorMessage(ex, 'Ошибка авторизации') };
     }
   }
 
@@ -39,39 +38,22 @@ export class AuthService implements IAuthService {
       if (response.status >= 200 && response.status < 300) {
         return { isSuccess: true, message: '' };
       }
-      return { isSuccess: false, message: String(response.data) };
+      return { isSuccess: false, message: getAuthErrorMessage(response.data, 'Не удалось отправить проверочный код') };
     } catch (ex: any) {
-      console.error('[HTTP_AUTH ERROR] Исключение при запросе кода:', ex);
-      const err = ex.response?.data || ex.message || 'Не удалось отправить проверочный код';
-      return { isSuccess: false, message: String(err) };
+      return { isSuccess: false, message: getAuthErrorMessage(ex, 'Не удалось отправить проверочный код') };
     }
   }
 
   public async registerAsync(user: Partial<IUser>, verificationCode: string): Promise<AuthResult> {
     try {
-      const payload = {
-        username: user.username,
-        password: user.password,
-        email: user.email,
-        verificationCode,
-        nickName: user.nickName,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        description: user.description,
-        phone: user.phone,
-        avatar: user.avatar,
-        gender: user.gender,
-        birthday: user.birthday,
-      };
+      const payload = createRegistrationPayload(user, verificationCode);
 
       console.info(`[HTTP_AUTH] POST api/Auth/register для User='${user.username}', Email='${user.email}'`);
       const response = await apiClient.post<AuthResponseDto>('api/Auth/register', payload);
 
       return this.handleAuthResponse(response.data);
     } catch (ex: any) {
-      console.error('[HTTP_AUTH ERROR] Исключение при вызове register:', ex);
-      const err = ex.response?.data?.message || ex.response?.data || ex.message || 'Ошибка регистрации';
-      return { isSuccess: false, message: String(err) };
+      return { isSuccess: false, message: getAuthErrorMessage(ex, 'Ошибка регистрации') };
     }
   }
 
