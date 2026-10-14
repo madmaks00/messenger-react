@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Messenger Storage — подключение Google Диска для хранения файлов мессенджера Messenger.">
+  <title>Messenger Storage — о приложении</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #10141c; color: #e8edf7; }
+    body { margin: 0; line-height: 1.7; }
+    main { max-width: 760px; padding: 56px 24px; margin: auto; }
+    h1 { font-size: clamp(2rem, 7vw, 3rem); line-height: 1.15; margin: 12px 0 24px; }
+    h2 { margin-top: 36px; line-height: 1.3; }
+    p, li { color: #bdc9dc; }
+    a { color: #74c6ff; text-underline-offset: 4px; }
+    code { overflow-wrap: anywhere; }
+    .label { color: #74c6ff; font-weight: 650; }
+    .actions { display: flex; flex-wrap: wrap; gap: 16px; margin: 32px 0; }
+    .button { padding: 10px 18px; border: 1px solid #375270; border-radius: 10px; text-decoration: none; }
+    footer { border-top: 1px solid #2a3546; margin-top: 40px; padding-top: 24px; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="label">Messenger · Google Drive integration</div>
+  <h1>Messenger Storage</h1>
+  <p>Messenger Storage — интеграция Google Диска с мессенджером Messenger.
+    Она предназначена для хранения фотографий, видео, документов, голосовых сообщений
+    и превью, которые пользователи отправляют в мессенджере.</p>
+  <div class="actions">
+    <a class="button" href="./">Открыть Messenger</a>
+    <a class="button" href="storage-privacy.html">Политика конфиденциальности</a>
+  </div>
+  <h2>Для чего нужен Google Диск</h2>
+  <p>Владелец хранилища подключает свой Google-аккаунт, чтобы приложение могло
+    сохранять и получать файлы мессенджера. Учётные записи, сообщения и связи между
+    сообщениями и файлами обрабатываются сервером Messenger отдельно от файлового хранилища.</p>
+  <h2>Какой доступ запрашивается</h2>
+  <p>Интеграция запрашивает разрешение Google Drive <code>drive.file</code>:
+    работа с файлами, созданными приложением, и файлами, которые владелец явно открыл
+    через него. Разрешение используется для загрузки, получения и управления этими файлами.</p>
+  <h2>Поддержка</h2>
+  <p>Вопросы об интеграции и обработке данных:
+    <a href="mailto:makc.messenger.auth@gmail.com">makc.messenger.auth@gmail.com</a>.</p>
+  <footer>
+    <a href="storage-privacy.html">Конфиденциальность и удаление данных</a>
+    <p>Messenger Storage — Google Drive file storage integration for Messenger.
+      The storage owner authorizes access to app-created or explicitly selected files.</p>
+  </footer>
+</main>
+</body>
+</html>
