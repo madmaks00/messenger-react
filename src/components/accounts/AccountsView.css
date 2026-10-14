@@ -1,0 +1,23 @@
+.account-action {
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: #E74C3C;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+.account-action:hover:not(:disabled), .account-action:focus-visible {
+  background: rgba(231, 76, 60, 0.15);
+}
+.account-action:active:not(:disabled) { background: rgba(231, 76, 60, 0.25); }
+.account-action:focus-visible { outline: 1px solid rgba(231, 76, 60, 0.5); outline-offset: 2px; }
+.account-action:disabled { opacity: 0.4; cursor: default; }
+.saved-account-remove { opacity: 0; pointer-events: none; }
+.saved-account-card:hover .saved-account-remove, .saved-account-card:focus-within .saved-account-remove {
+  opacity: 1;
+  pointer-events: auto;
+}

@@ -8,11 +8,13 @@ import { mediaDimensionsCache } from '../utils/mediaDimensionsCache';
 import { AudioMetadataHelper } from '../types/audio.types';
 
 interface MessageInputState {
+  standaloneSend: ((text: string, attachments: IAttachment[]) => Promise<void>) | null;
   newMessageText: string;
   editingMessage: IMessage | null;
   replyingToMessages: IMessage[];
   pendingAttachments: IAttachment[];
   isRecordingVoice: boolean;
+  isPreparingAttachments: boolean;
   recordingTimeStr: string;
   hintText: string;
 
@@ -51,16 +53,19 @@ interface MessageInputState {
 }
 
 let draftGeneration = 0;
+const attachmentImports = new Map<number, number>();
 
 let recordingTimer: ReturnType<typeof setInterval> | null = null;
 let recordingStartTime = 0;
 
 export const useMessageInputStore = create<MessageInputState>((set, get) => ({
+  standaloneSend: null,
   newMessageText: '',
   editingMessage: null,
   replyingToMessages: [],
   pendingAttachments: [],
   isRecordingVoice: false,
+  isPreparingAttachments: false,
   recordingTimeStr: '00:00',
   hintText: 'Message...',
 
@@ -76,11 +81,12 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
 
   setNewMessageText: (text) => {
     set({ newMessageText: text });
-    useChatStore.getState().sendTyping(text);
+    if (!get().standaloneSend) useChatStore.getState().sendTyping(text);
   },
 
   setEditMessage: (msg) => {
     draftGeneration++;
+    set({ isPreparingAttachments: false });
     set({
       editingMessage: msg,
       newMessageText: msg.text || '',
@@ -91,6 +97,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
 
   cancelEdit: () => {
     draftGeneration++;
+    set({ isPreparingAttachments: false });
     set({
       editingMessage: null,
       newMessageText: '',
@@ -118,6 +125,9 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
 
   addPendingAttachments: async (files: File[], replacing?: IAttachment) => {
     const generation = draftGeneration;
+    attachmentImports.set(generation, (attachmentImports.get(generation) || 0) + 1);
+    set({ isPreparingAttachments: true });
+    try {
     const state = get();
     if (!state.canWriteMessages || !state.canSendMedia) return;
 
@@ -353,6 +363,12 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       set({ pendingAttachments: updated });
     } else set({ pendingAttachments: [...get().pendingAttachments, ...newAtts] });
     eventBus.emit('FocusMessageInputMessage' as any, undefined);
+    } finally {
+      const remaining = (attachmentImports.get(generation) || 1) - 1;
+      if (remaining) attachmentImports.set(generation, remaining);
+      else attachmentImports.delete(generation);
+      if (generation === draftGeneration) set({ isPreparingAttachments: remaining > 0 });
+    }
   },
 
   removePendingAttachment: (index) => {
@@ -366,7 +382,9 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     const state = get();
     if (state.isRecordingVoice || !state.canWriteMessages) return;
 
+    const generation = draftGeneration;
     await voiceRecordingService.startRecording();
+    if (generation !== draftGeneration) { voiceRecordingService.cancelRecording(); return; }
     recordingStartTime = Date.now();
 
     if (recordingTimer) clearInterval(recordingTimer);
@@ -396,7 +414,10 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       clearInterval(recordingTimer);
       recordingTimer = null;
     }
+    const generation = draftGeneration;
+    const send = get().standaloneSend;
     const result = await voiceRecordingService.stopRecording();
+    if (generation !== draftGeneration) return;
     set({ isRecordingVoice: false, recordingTimeStr: '00:00' });
 
     if (!result) return;
@@ -424,12 +445,15 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
       height: 0,
     };
 
-    await useChatStore.getState().sendMessage('', [voiceAtt], null, []);
+    if (send) await send('', [voiceAtt]);
+    else await useChatStore.getState().sendMessage('', [voiceAtt], null, []);
     eventBus.emit('FocusMessageInputMessage' as any, undefined);
   },
 
   reset: () => {
+    if (get().isRecordingVoice || voiceRecordingService.isRecording) voiceRecordingService.cancelRecording();
     draftGeneration++;
+    set({ isPreparingAttachments: false });
     if (recordingTimer) {
       clearInterval(recordingTimer);
       recordingTimer = null;
@@ -444,7 +468,7 @@ export const useMessageInputStore = create<MessageInputState>((set, get) => ({
     });
   },
 
-  syncChatPermissions: (perms) => set(perms),
+  syncChatPermissions: (perms) => { if (!get().standaloneSend) set(perms); },
 }));
 
 eventBus.on('EmojiPickedMessage' as any, (data: any) => {

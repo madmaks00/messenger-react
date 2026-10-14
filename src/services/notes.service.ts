@@ -1,8 +1,8 @@
-import { apiClient, BASE_SERVER_URL } from './apiClient';
+import { chatService } from './chat.service';
+import { apiClient } from './apiClient';
 import { getLocalDatabase } from '../db/localDb';
 import { INote, IMessage } from '../types/models';
 import { AttachmentDto } from '../types/dtos';
-import { userSession } from './userSession';
 
 export class NotesService {
   public static async getRemoteNotesAsync(): Promise<INote[]> {
@@ -87,51 +87,8 @@ export class NotesService {
     }
   }
 
-  // 🟢 ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ЗАГРУЗКИ ФАЙЛА
   public static async uploadAttachmentAsync(file: File | Blob, fileName: string): Promise<AttachmentDto[] | null> {
-    console.log(
-      `%c[NOTES DEBUG 🔍] 1. Старт uploadAttachmentAsync для файла: "${fileName}" (Размер: ${file.size} байт, тип: ${file.type})`,
-      'color: #00AFF4; font-weight: bold;'
-    );
-
-    try {
-      const formData = new FormData();
-      formData.append('files', file, fileName);
-
-      const token = userSession.token || localStorage.getItem('jwt_token') || localStorage.getItem('auth_token') || '';
-      const cleanToken = token.replace(/^Bearer\s+/i, '').trim();
-      const base = (BASE_SERVER_URL || 'https://localhost:7214').replace(/\/+$/, '');
-      const uploadUrl = `${base}/api/Messages/upload-attachments`;
-
-      console.log(`%c[NOTES DEBUG 🔍] 2. Отправка POST ${uploadUrl} (Токен: ${cleanToken ? 'Присутствует' : 'ОТСУТСТВУЕТ!'})`, 'color: #00AFF4;');
-
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          ...(cleanToken ? { Authorization: `Bearer ${cleanToken}` } : {}),
-        },
-        body: formData,
-      });
-
-      console.log(
-        `%c[NOTES DEBUG 🔍] 3. Ответ сервера на загрузку файла: HTTP ${response.status} ${response.statusText}`,
-        response.ok ? 'color: #4CAF50; font-weight: bold;' : 'color: #F44336; font-weight: bold;'
-      );
-
-      const responseText = await response.text();
-      console.log(`%c[NOTES DEBUG 🔍] 4. Сырое тело ответа сервера:`, 'color: #9C27B0;', responseText);
-
-      if (response.ok) {
-        const dtos: AttachmentDto[] = JSON.parse(responseText);
-        console.log(`%c[NOTES DEBUG ✅] 5. Файл успешно принят сервером! Получены DTO:`, 'color: #4CAF50; font-weight: bold;', dtos);
-        return dtos;
-      } else {
-        console.error(`[NOTES DEBUG ❌] Сервер отклонил файл! Код: ${response.status}. Ответ:`, responseText);
-        return null;
-      }
-    } catch (err: any) {
-      console.error('[NOTES DEBUG ❌] Сетевое исключение в uploadAttachmentAsync:', err);
-      return null;
-    }
+    return chatService.uploadAttachmentsAsync([file instanceof File && file.name === fileName ? file : new File([file], fileName, { type: file.type })]);
   }
 }
+

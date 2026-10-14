@@ -9,6 +9,8 @@ interface AuthState {
   loginUser: Partial<IUser>;
   registerUser: Partial<IUser>;
   currentUser: IUser | null;
+  isLoggingOut: boolean;
+  isChangingSession: boolean;
   confirmPassword: string;
   isAddingNewAccount: boolean;
   savedAccounts: IUser[];
@@ -31,6 +33,7 @@ interface AuthState {
   requestCodeAndGoToVerification: (authService: any) => Promise<boolean>;
   switchAccount: (targetAccount: IUser, authService: any, userService?: any) => Promise<void>;
   logOut: (authService?: any) => Promise<void>;
+  removeSavedAccount: (accountId: number) => void;
   initializeSession: (authResult: { token: string; user: IUser }, userService?: any) => Promise<void>;
 }
 
@@ -101,6 +104,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     gender: null,
   },
   currentUser: null,
+  isLoggingOut: false,
+  isChangingSession: false,
   confirmPassword: '',
   isAddingNewAccount: false,
   savedAccounts: loadAccountsFromStorage(),
@@ -179,6 +184,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   login: async (authService) => {
+    if (get().isLoggingOut || get().isChangingSession) return false;
+    set({ isChangingSession: true });
     const { loginUser, initializeSession } = get();
     set({ loginErrorMessage: '' });
 
@@ -195,6 +202,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       set({ loginErrorMessage: 'An error occurred during login. Please try again.' });
       return false;
+    } finally {
+      set({ isChangingSession: false });
     }
   },
 
@@ -299,16 +308,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return true;
       }
 
+      const cached = get().savedAccounts.find(a => a.id === userId);
+      if (cached) {
+        set({ currentUser: cached });
+        getLocalDatabase(userId);
+        void signalRService.initAsync(token);
+        return true;
+      }
       eventBus.emit('AuthFailedMessage', undefined);
       return false;
     } catch (ex) {
-      console.error('[AuthStore] Ошибка checkAuth:', ex);
-      eventBus.emit('AuthFailedMessage', undefined);
+      console.warn('[AuthStore] Temporary session validation failure:', ex);
+      const cached = get().savedAccounts.find(a => a.id === userId);
+      if (cached) {
+        set({ currentUser: cached });
+        getLocalDatabase(userId);
+        void signalRService.initAsync(token);
+        return true;
+      }
       return false;
     }
   },
 
   switchAccount: async (targetAccount, authService) => {
+    if (get().isLoggingOut || get().isChangingSession) return;
     const current = get().currentUser;
     if (!targetAccount || targetAccount.id === current?.id) return;
 
@@ -319,26 +342,40 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
 
+    set({ isChangingSession: true });
+    const previousToken = userSession.token;
+    const previousUserId = userSession.userId;
+    const restoreSession = () => {
+      userSession.setSession(previousUserId, previousToken);
+      if (previousToken) localStorage.setItem('jwt_token', previousToken);
+      else localStorage.removeItem('jwt_token');
+    };
     try {
       userSession.setSession(targetAccount.id, targetAccount.token);
-      localStorage.setItem('jwt_token', targetAccount.token);
 
       const isValid = await authService.validateTokenAsync();
       if (!isValid) {
+        restoreSession();
         set({ switchAccountErrorMessage: 'Session expired for this account.' });
         return;
       }
 
+      await signalRService.stopAsync();
+      localStorage.setItem('jwt_token', targetAccount.token);
       eventBus.emit('BeforeAccountSwitchMessage', undefined);
       closeLocalDatabase();
 
       set({ currentUser: targetAccount, isAddingNewAccount: false });
       getLocalDatabase(targetAccount.id);
 
+      void signalRService.initAsync(targetAccount.token);
       eventBus.emit('UserProfileUpdatedMessage', { user: targetAccount });
       eventBus.emit('AccountSwitchedMessage', { nickName: targetAccount.nickName });
     } catch {
+      restoreSession();
       set({ switchAccountErrorMessage: 'Error switching account.' });
+    } finally {
+      set({ isChangingSession: false });
     }
   },
 
@@ -359,22 +396,70 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ currentUser: user, savedAccounts: updated });
     saveAccountsToStorage(updated);
 
+    await signalRService.stopAsync();
+    void signalRService.initAsync(token);
     eventBus.emit('UserProfileUpdatedMessage', { user });
     eventBus.emit('RegistrationSuccessMessage', undefined);
     eventBus.emit('AccountSwitchedMessage', {nickName:user.nickName});
   },
 
-  logOut: async (authService) => {
+  removeSavedAccount: (accountId) => {
+    const state = get();
+    if (state.isLoggingOut || state.isChangingSession || state.currentUser?.id === accountId || userSession.userId === accountId) return;
+    const remaining = state.savedAccounts.filter(account => account.id !== accountId);
+    saveAccountsToStorage(remaining);
+    set({ savedAccounts: remaining });
+  },
+
+  logOut: async (service) => {
+    if (get().isLoggingOut || get().isChangingSession) return;
+    set({ isLoggingOut: true });
+    const accountId = userSession.userId || get().currentUser?.id;
     try {
-      if (userSession.isAuthenticated && authService) {
-        await authService.logoutAsync();
+      const { useCallsStore } = await import('./callsStore');
+      const calls = useCallsStore.getState();
+      if (calls.isIncomingCallVisible || calls.isOutgoingCallVisible || calls.isActiveCallVisible) await calls.endCall();
+      const { webRtcCallService } = await import('../services/webRtcCallService');
+      await webRtcCallService.cleanup();
+      if (userSession.isAuthenticated) {
+        const auth = service || (await import('../services/auth.service')).authService;
+        await auth.logoutAsync();
       }
-    } catch {} finally {
+    } catch (error) {
+      console.warn('[AuthStore] Logout cleanup failed:', error);
+    } finally {
+      try { await signalRService.stopAsync(); } catch {}
+      eventBus.emit('BeforeAccountSwitchMessage', undefined);
+      const { useChatStore } = await import('./chatStore');
+      const { useMessageInputStore } = await import('./messageInputStore');
+      const { useMusicPlayerStore } = await import('./musicPlayerStore');
+      await useChatStore.getState().selectChatUser(null);
+      useMessageInputStore.getState().reset();
+      useMusicPlayerStore.getState().closePlayer();
       closeLocalDatabase();
       userSession.clear();
       localStorage.removeItem('jwt_token');
-      set({ currentUser: null });
+      localStorage.removeItem('auth_token');
+      const remaining = get().savedAccounts.filter(account => account.id !== accountId);
+      saveAccountsToStorage(remaining);
+      set({ currentUser: null, savedAccounts: remaining, isLoggingOut: false,
+        loginUser: { username: '', password: '' }, isAddingNewAccount: false,
+        isVerificationStep: false, loginErrorMessage: '', switchAccountErrorMessage: '' });
       eventBus.emit('AuthFailedMessage', undefined);
     }
   },
 }));
+
+// Tabs share persisted credentials; close an old session when another tab logs out.
+window.addEventListener('storage', (event) => {
+  if (event.storageArea !== localStorage) return;
+  if (event.key === 'saved_accounts') {
+    useAuthStore.setState({ savedAccounts: loadAccountsFromStorage() });
+  }
+  if (event.key !== 'jwt_token' || event.newValue === userSession.token) return;
+  if (event.newValue) {
+    window.location.reload();
+  } else if (userSession.isAuthenticated) {
+    void useAuthStore.getState().logOut({ logoutAsync: async () => true });
+  }
+});

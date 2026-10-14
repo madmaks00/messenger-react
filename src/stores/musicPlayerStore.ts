@@ -1,3 +1,5 @@
+import { useNotesStore } from './notesStore';
+import { useNavigationStore } from './navigationStore';
 import { create } from 'zustand';
 import { IAudioTrackModel, PlayPlaylistMessage } from '../types/audio.types';
 import { audioPlayerService } from '../services/audioPlayer.service';
@@ -302,6 +304,19 @@ export const useMusicPlayerStore = create<MusicPlayerState>((set, get) => {
     goToSourceChat: () => {
       const track = get().currentTrack;
       if (!track) return;
+      if (track.noteId) {
+        void (async () => {
+          const store = useNotesStore.getState();
+          let note = store.myNotes.find(n => n.id === track.noteId);
+          if (!note) { await store.initialize(true); note = useNotesStore.getState().myNotes.find(n => n.id === track.noteId); }
+          if (!note) return;
+          useNavigationStore.getState().switchTab('Notes' as any);
+          await useNotesStore.getState().selectNote(note);
+          requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector(`[data-note-message-id="${track.messageId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })));
+        })();
+        return;
+      }
+
 
       const activeChat = useChatStore.getState().selectedChatUser;
       const isTargetChatOpen =

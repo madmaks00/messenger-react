@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
+import { LoginView } from './components/auth/LoginView';
 import './theme/theme.css';
+import './services/mediaUrlRenewal';
 
 import { NavigationRail } from './components/layout/NavigationRail';
 import { SidebarChatsView } from './components/sidebar/SidebarChatsView';
@@ -238,6 +240,8 @@ export const App: React.FC = () => {
       window.removeEventListener('OpenPasscodeSetupModal', unbindPasscodeSetup);
     };
   }, []);
+
+  if (!currentUser && !localStorage.getItem('jwt_token')) return <LoginView />;
 
   return (
     <div

@@ -91,14 +91,7 @@ export const NavigationRail: React.FC = () => {
 
   // 🟢 Открытие профиля сразу со вкладки настроек (клик по шестерёнке, 1:1 WPF SelectSettingsTab)
   const handleOpenSettings = () => {
-    useNavigationStore.setState({
-      isProfileOpen: true,
-      isOwnProfile: true,
-      isGroupProfile: false,
-      profileTab: 'settings',
-      profileUser: currentUser,
-    } as any);
-    openProfile();
+    void useNavigationStore.getState().openOwnProfile('settings');
     eventBus.emit('SelectProfileTab' as any, { tab: 'settings' });
   };
 

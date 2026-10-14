@@ -1277,6 +1277,7 @@ export const SidebarChatsView: React.FC = () => {
               }}
             />
 
+            {customFolders.length > 0 && (
             <div
               style={{ position: 'relative' }}
               onMouseEnter={() => setIsFolderSubmenuOpen(true)}
@@ -1322,6 +1323,7 @@ export const SidebarChatsView: React.FC = () => {
                 </div>
               )}
             </div>
+            )}
 
             {!chatContextMenu.chat.isGroup && (
               <ContextRow

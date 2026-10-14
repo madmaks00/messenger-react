@@ -1,4 +1,4 @@
-import { apiClient } from './apiClient';
+﻿import { apiClient } from './apiClient';
 import { userSession } from './userSession';
 import { AuthResult, AuthResponseDto } from '../types/dtos';
 import { IUser } from '../types/models';
@@ -105,9 +105,10 @@ export class AuthService implements IAuthService {
     try {
       const response = await apiClient.get('api/Test/secret');
       return response.status >= 200 && response.status < 300;
-    } catch (ex) {
-      console.error('[AuthService ERROR] Сбой проверки валидности токена:', ex);
-      return false;
+    } catch (ex: any) {
+      const status = ex.response?.status;
+      if (status === 401 || status === 403) return false;
+      throw ex;
     }
   }
 

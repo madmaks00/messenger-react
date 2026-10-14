@@ -1,8 +1,9 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { TodoService } from '../services/todo.service';
 import { ITodoList, ITodoTask, ISelectableItem } from '../types/models';
 import { TaskCategory, TaskPriority, TaskStatus } from '../types/enums';
 import { eventBus } from '../services/eventBus';
+import { userSession } from '../services/userSession';
 
 export interface TodoState {
   listSearchText: string;
@@ -71,12 +72,13 @@ let nextDeadlineTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 export const useTodoStore = create<TodoState>((set, get) => {
   const initCore = async () => {
+    const userId = userSession.userId;
     try {
       const { lists, tasks } = await TodoService.syncFromServerAsync();
-      set({
-        myTaskLists: lists,
-        allTasks: tasks,
-      });
+      if (userSession.userId !== userId) return;
+      const selected = get().selectedTaskList;
+      set({ myTaskLists: lists, allTasks: tasks,
+        selectedTaskList: selected ? lists.find(l => (selected.serverId && l.serverId === selected.serverId) || l.localId === TodoService.resolveListId(selected)) || selected : null });
 
       await get().refreshAllBadgeCountsAsync();
 
@@ -742,4 +744,10 @@ eventBus.on('TaskListDeleted', ({ listId }) => {
 
   useTodoStore.getState().refreshTasksUIAsync();
   useTodoStore.getState().refreshAllBadgeCountsAsync();
+});
+window.addEventListener("online", () => { void useTodoStore.getState().initialize(); });
+eventBus.on("SignalRConnectedMessage" as any, () => { void useTodoStore.getState().initialize(); });
+
+eventBus.on('TodoOutboxFlushedMessage' as any, ({ userId }) => {
+  if (userId === userSession.userId) void useTodoStore.getState().initialize();
 });

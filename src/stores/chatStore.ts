@@ -1,3 +1,5 @@
+import { beginMessageSend } from '../services/messageSendCoordinator';
+import { isMessageTextTooLong } from '../utils/messageTextLimit';
 import { userPresenceState, parsePresence } from '../services/userPresenceState';
 import { create } from 'zustand';
 import {
@@ -529,7 +531,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               fileName: a.fileName,
               fileSizeStr: a.fileSizeStr,
               url: a.url,
-              thumbnailUrl: a.thumbnailUrl || a.url,
+              thumbnailUrl: a.thumbnailUrl === a.url ? null : a.thumbnailUrl,
               fileHash: a.fileHash,
               hasAudio: Boolean(a.hasAudio),
               width: a.width || 0,
@@ -550,7 +552,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               attachmentDtos.length > 0 ? (attachmentDtos as any) : null
             );
 
-            if (realId && realId > 0) {
+        if (realId && realId > 0) {
               set((state) => ({
                 currentChatMessages: state.currentChatMessages.map((m) =>
                   m.id === localTempId ? { ...m, serverId: realId, isSentToServer: true } : m
@@ -924,7 +926,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const count = await chatService.syncDeltaAsync(currentUserId);
-      if (count > 0) {
+      const sentCount = await chatService.syncUnsentMessagesAsync(signalRService);
+      if (Number(userSession.userId) !== currentUserId) return;
+      if (count > 0 || sentCount > 0) {
         const { selectedChatUser, currentChatMessages, currentUserName, currentUserAvatar } = get();
         if (selectedChatUser) {
           const targetUserId = selectedChatUser.isGroup ? null : selectedChatUser.id;
@@ -1426,6 +1430,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (text, attachments, editingMessage, replies) => {
+    if (isMessageTextTooLong(text)) return;
     const { selectedChatUser, currentUserName, currentUserAvatar } = get();
     if (!selectedChatUser) return;
 
@@ -1647,7 +1652,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     });
 
-    chatService.saveMessageLocallyAsync(newMsg).catch(() => {});
 
     const [sidebarPreviewText, sidebarMessageType] = resolveMessagePreview(
       newMsg,
@@ -1665,7 +1669,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     );
 
     (async () => {
+      const token = userSession.token;
+      const release = beginMessageSend(currentUserId, localTempId);
+      if (!release) return;
       try {
+        await chatService.saveMessageLocallyAsync(newMsg);
         let finalAttachments = [...initialAttachments];
 
         const filesToUpload: File[] = [];
@@ -1680,7 +1688,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (filesToUpload.length > 0) {
           const uploadedResults = await chatService.uploadAttachmentsAsync(filesToUpload);
 
-          if (uploadedResults && uploadedResults.length > 0) {
+          if (!uploadedResults || uploadedResults.length !== filesToUpload.length) {
+            throw new Error('Attachment upload did not complete; message remains pending.');
+          }
+          if (uploadedResults.length > 0) {
             uploadedResults.forEach((upDto, i) => {
               const targetIdx = fileIndices[i];
               if (targetIdx !== undefined && finalAttachments[targetIdx]) {
@@ -1696,6 +1707,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   mediaCacheService.cacheMediaFile(fullServerUrl, rawFile);
                 }
 
+                targetAtt.fileName = upDto.fileName;
                 targetAtt.url = fullServerUrl;
                 targetAtt.thumbnailUrl = fullThumbUrl;
                 targetAtt.fileHash = upDto.fileHash;
@@ -1731,12 +1743,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
             try {
               const db = getLocalDatabase(userSession.userId);
-              db.messages
+              await db.messages
                 .update(localTempId, {
-                  attachments: finalAttachments.map((a) => {
-                    const { rawFile, ...rest } = a;
-                    return rest;
-                  }),
+                  // Keep the original files until a server acknowledgement is received.
+                  attachments: finalAttachments.map(a => ({ ...a })),
                 })
                 .catch(() => {});
             } catch {}
@@ -1757,6 +1767,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           waveform: a.waveform || '',
         }));
 
+        if (userSession.userId !== currentUserId || userSession.token !== token) return;
         const realId = await signalRService.sendMessageAsync(
           newMsg.receiverId ?? null,
           newMsg.groupId ?? null,
@@ -1769,6 +1780,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           uploadedDtos.length > 0 ? (uploadedDtos as any) : null
         );
 
+        if (realId <= 0) {
+          const failure = await chatService.recordSendFailureAsync(localTempId, realId);
+          set((state) => ({ currentChatMessages: state.currentChatMessages.map(m => m.id === localTempId ? { ...m, ...failure } : m) }));
+          return;
+        }
         if (realId && realId > 0) {
           set((state) => ({
             currentChatMessages: state.currentChatMessages.map((m) =>
@@ -1783,29 +1799,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ),
           }));
 
-          void chatService.markAsSentAsync(localTempId, realId, finalAttachments as any, text);
+          await chatService.markAsSentAsync(localTempId, realId, finalAttachments as any, text);
 
-          try {
-            const db = getLocalDatabase(userSession.userId);
-            db.messages
-              .update(localTempId, {
-                serverId: realId,
-                isSentToServer: true,
-                attachments: finalAttachments.map((a) => {
-                  const { rawFile, ...rest } = a;
-                  return rest;
-                }),
-              })
-              .catch(() => {});
-          } catch {}
         }
       } catch (err) {
+        if (userSession.userId === currentUserId && userSession.token === token) {
+          const failure = await chatService.recordSendFailureAsync(localTempId, 0);
+          set((state) => ({ currentChatMessages: state.currentChatMessages.map(m => m.id === localTempId ? { ...m, ...failure } : m) }));
+        }
         console.error('[ChatStore ERROR] Ошибка отправки:', err);
-      }
+      } finally { release(); }
     })();
   },
 
   editMessage: async (localId, serverId, text) => {
+    if (isMessageTextTooLong(text)) return;
     await chatService.updateMessageLocallyAsync(localId, serverId, text);
     set((state) => ({
       currentChatMessages: state.currentChatMessages.map((m) =>

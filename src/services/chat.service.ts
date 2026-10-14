@@ -1,3 +1,5 @@
+import { beginMessageSend } from './messageSendCoordinator';
+import { canAutoSend, sendFailure, resetSendFailure } from './messageSendPolicy';
 import { apiClient, BASE_SERVER_URL } from './apiClient';
 import { getLocalDatabase } from '../db/localDb';
 import { userSession } from './userSession';
@@ -77,6 +79,7 @@ export interface IChatService {
 }
 
 export class ChatService implements IChatService {
+  private unsentSyncTasks = new Map<number, Promise<number>>();
   public async uploadAttachmentsAsync(files: File[]): Promise<AttachmentDto[] | null> {
     if (!files || files.length === 0) return null;
 
@@ -86,9 +89,8 @@ export class ChatService implements IChatService {
       for (const file of files) {
         console.log(`[ChatService] Обработка файла: "${file.name}", размер: ${file.size} байт (${(file.size / 1024).toFixed(1)} КБ)`);
         const dto = await this.uploadSingleFileChunkedAsync(file);
-        if (dto) {
-          resultDtos.push(dto);
-        }
+        if (!dto) return null;
+        resultDtos.push(dto);
       }
       return resultDtos;
     } catch (ex: any) {
@@ -133,6 +135,8 @@ export class ChatService implements IChatService {
       console.warn('[ChatService] Статус загрузки не получен, продолжаем загрузку с 0 чанка:', statusErr);
     }
 
+    // Older servers can report all chunks while assembly has not completed.
+    if (alreadyUploaded.size === totalChunks) alreadyUploaded.delete(totalChunks - 1);
     let finalAttachment: AttachmentDto | null = null;
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
@@ -353,18 +357,74 @@ export class ChatService implements IChatService {
 
   public async syncUnsentMessagesAsync(signalRHub: any): Promise<number> {
     const userId = userSession.userId;
-    if (userId <= 0 || !signalRHub?.isConnected) return 0;
+    if (userId <= 0 || !signalRHub) return 0;
+    if (!signalRHub.isConnected && !await signalRHub.ensureConnectedAsync?.()) return 0;
+    if (userSession.userId !== userId) return 0;
 
+    let sent = 0;
+    // A message may enter the queue after an already running pass took its snapshot.
+    // Wait for that pass, then inspect the queue once more; retries remain bounded.
+    for (let pass = 0; pass < 2; pass++) {
+      const existing = this.unsentSyncTasks.get(userId);
+      if (existing) { sent += await existing; continue; }
+      const task = this.sendUnsentMessagesAsync(userId, signalRHub);
+      this.unsentSyncTasks.set(userId, task);
+      try { return sent + await task; }
+      finally { if (this.unsentSyncTasks.get(userId) === task) this.unsentSyncTasks.delete(userId); }
+    }
+    return sent;
+  }
+
+  private async sendUnsentMessagesAsync(userId: number, signalRHub: any): Promise<number> {
+    const token = userSession.token;
+    const sameSession = () => userSession.userId === userId && userSession.token === token;
     const db = getLocalDatabase(userId);
     const unsent = await db.messages
-      .filter((m) => !m.isSentToServer && m.isMyMessage)
+      .filter((m) => !m.isSentToServer && m.isMyMessage && !m.isDeleted && !m.isDeletedForMe && !m.secretChatId && canAutoSend(m))
       .toArray();
 
     if (unsent.length === 0) return 0;
     let sentCount = 0;
 
     for (const msg of unsent) {
+      if (!sameSession()) break;
+      const release = beginMessageSend(userId, msg.id);
+      if (!release) continue;
       try {
+        const latest = await db.messages.get(msg.id);
+        if (!latest || latest.isSentToServer || latest.isDeleted || latest.isDeletedForMe || !canAutoSend(latest)) continue;
+        Object.assign(msg, latest);
+        // Recover originals from old drafts, then renew ownership even for previously uploaded files.
+        for (const attachment of msg.attachments || []) {
+          if (attachment.rawFile || !attachment.url) continue;
+          try {
+            let blob: Blob | undefined;
+            if (/^(blob:|data:)/.test(attachment.url)) {
+              const response = await fetch(attachment.url);
+              if (response.ok) blob = await response.blob();
+            } else if ('caches' in window) {
+              const cache = await caches.open('messenger-media-cache-v1');
+              const response = await cache.match(UrlHelper.normalize(attachment.url, BASE_SERVER_URL));
+              if (response) blob = await response.blob();
+            }
+            if (blob?.size) attachment.rawFile = new File([blob], attachment.fileName || 'attachment', { type: blob.type });
+          } catch { /* A revoked object URL cannot be restored; retain the queued message. */ }
+        }
+        const pendingFiles = (msg.attachments || []).filter(a => a.rawFile);
+        if (pendingFiles.length) {
+          const uploaded = await this.uploadAttachmentsAsync(pendingFiles.map(a => a.rawFile!));
+          if (!sameSession()) break;
+          if (!uploaded || uploaded.length !== pendingFiles.length) throw new Error('Attachment upload failed');
+          pendingFiles.forEach((attachment, index) => {
+            const dto = uploaded[index];
+            attachment.fileName = dto.fileName;
+            attachment.url = UrlHelper.normalize(dto.url, BASE_SERVER_URL);
+            attachment.thumbnailUrl = dto.thumbnailUrl ? UrlHelper.normalize(dto.thumbnailUrl, BASE_SERVER_URL) : undefined;
+            attachment.fileHash = dto.fileHash;
+          });
+          await db.messages.put(msg);
+        }
+        if ((msg.attachments || []).some(a => !a.url || /^(blob:|data:)/.test(a.url))) throw new Error('Original attachment is unavailable');
         const attachmentDtos: AttachmentDto[] = (msg.attachments || []).map((a) => ({
           type: a.type,
           fileName: a.fileName,
@@ -379,6 +439,7 @@ export class ChatService implements IChatService {
           waveform: a.waveform,
         }));
 
+        if (!sameSession()) break;
         const realId = await signalRHub.sendMessageAsync(
           msg.receiverId,
           msg.groupId,
@@ -392,16 +453,37 @@ export class ChatService implements IChatService {
         );
 
         if (realId > 0 && msg.id) {
-          await (db.messages.update as any)(msg.id, { serverId: realId, isSentToServer: true });
+          await this.markAsSentAsync(msg.id, realId, msg.attachments, msg.text);
           sentCount++;
+        } else if (sameSession()) {
+          await this.recordSendFailureAsync(msg.id, realId);
         }
       } catch (ex) {
+        if (sameSession()) await this.recordSendFailureAsync(msg.id, 0);
         console.error(`[UNSENT_SYNC] Ошибка отправки сообщения ${msg.id}:`, ex);
-        break;
-      }
+      } finally { release(); }
     }
 
     return sentCount;
+  }
+
+  public async recordSendFailureAsync(localId: number, code: number): Promise<Partial<IMessage>> {
+    const db = getLocalDatabase(userSession.userId);
+    let updates: Partial<IMessage> = {};
+    await db.transaction('rw', db.messages, async () => {
+      const message = await db.messages.get(localId);
+      if (!message || message.isSentToServer) return;
+      updates = sendFailure(message, code);
+      await db.messages.update(localId, updates);
+    });
+    eventBus.emit('ActiveChatRefreshRequestedMessage' as any, undefined);
+    return updates;
+  }
+
+  public async retryMessageAsync(localId: number): Promise<void> {
+    const db = getLocalDatabase(userSession.userId);
+    await db.messages.update(localId, resetSendFailure);
+    eventBus.emit('ActiveChatRefreshRequestedMessage' as any, undefined);
   }
 
   public async getChatsAsync(): Promise<IChatListItem[]> {
@@ -929,7 +1011,7 @@ export class ChatService implements IChatService {
     text?: string | null
   ): Promise<void> {
     const db = getLocalDatabase(userSession.userId);
-    const updates: Partial<IMessage> = { serverId, isSentToServer: true };
+    const updates: Partial<IMessage> = { ...resetSendFailure, serverId, isSentToServer: true };
     if (text) updates.text = text;
     if (attachments && attachments.length > 0) {
       updates.attachments = attachments.map((a) => {
@@ -938,18 +1020,18 @@ export class ChatService implements IChatService {
       });
     }
 
-    if (localId > 0) {
-      try {
-        await db.messages.update(localId, updates);
-      } catch {}
-    }
-
-    if (text) {
-      const match = await db.messages.filter((m) => (!m.serverId || m.serverId === 0) && m.text === text).first();
-      if (match && match.id) {
-        await db.messages.update(match.id, updates);
+    await db.transaction('rw', db.messages, async () => {
+      let target = localId > 0 ? await db.messages.get(localId) : undefined;
+      target ??= await db.messages.where('serverId').equals(serverId).first();
+      if (!target && text) {
+        target = await db.messages.filter(m => (!m.serverId || m.serverId === 0) && m.text === text).first();
       }
-    }
+      if (!target?.id) return;
+      // A SignalR echo may have saved the same server message before its RPC acknowledgement.
+      const duplicates = await db.messages.where('serverId').equals(serverId).filter(m => m.id !== target!.id).toArray();
+      if (duplicates.length) await db.messages.bulkDelete(duplicates.map(m => m.id));
+      await db.messages.update(target.id, updates);
+    });
   }
 
   public async getSharedMediaMessagesAsync(currentUserId: number, targetUserId: number): Promise<IMessage[]> {

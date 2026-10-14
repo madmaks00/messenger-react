@@ -1,4 +1,4 @@
-import { AttachmentType, LastMessageType } from '../types/enums';
+﻿import { AttachmentType, LastMessageType } from '../types/enums';
 import { IMessage } from '../types/models';
 import { BASE_SERVER_URL } from '../services/apiClient';
 
@@ -123,13 +123,13 @@ export class UrlHelper {
       return url;
     }
 
-    if (
+    if (!url.startsWith('/api/') && (
       url.startsWith('/9j/') ||
       url.startsWith('iVBOR') ||
       url.startsWith('R0lGOD') ||
       url.startsWith('PHN2Zy') ||
       url.length > 200
-    ) {
+    )) {
       return `data:image/jpeg;base64,${url}`;
     }
 

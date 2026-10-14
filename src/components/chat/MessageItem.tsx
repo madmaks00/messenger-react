@@ -2,6 +2,7 @@ import { mediaCacheService } from '../../services/mediaCache.service';
 import { UrlHelper } from '../../utils/helpers';
 import { AttachmentType } from '../../types/enums';
 import { apiClient } from '../../services/apiClient';
+import { chatService } from '../../services/chat.service';
 import React, { useState, useEffect } from 'react';
 import { IMessageLayoutModel } from '../../types/layout';
 import { IMessage, IAttachment } from '../../types/models';
@@ -85,10 +86,12 @@ const SvgIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
 );
 
 // 🟢 КОМПОНЕНТ ОТОБРАЖЕНИЯ МУЗЫКАЛЬНОГО ТРЕКА В БАБЛЕ
-const MessageAudioItemRow: React.FC<{
+export const MessageAudioItemRow: React.FC<{
   attachment: IAttachment;
   isSelectionMode: boolean;
-}> = ({ attachment, isSelectionMode }) => {
+  circleBackground?: string;
+  onToggleAudio?: (attachment: IAttachment) => void;
+}> = ({ attachment, isSelectionMode, onToggleAudio, circleBackground }) => {
   const [, setTick] = useState(0);
   const [duration, setDuration] = useState<number>(attachment.durationSeconds || 0);
 
@@ -143,7 +146,8 @@ const MessageAudioItemRow: React.FC<{
   const handleToggle = (e: React.MouseEvent) => {
     if (isSelectionMode) return;
     e.stopPropagation();
-    useChatStore.getState().toggleAudio(attachment);
+    if (onToggleAudio) onToggleAudio(attachment);
+    else useChatStore.getState().toggleAudio(attachment);
   };
 
   const displaySubtitle = getAudioSubtitle(attachment, duration);
@@ -167,7 +171,7 @@ const MessageAudioItemRow: React.FC<{
           width: 40,
           height: 40,
           borderRadius: 20,
-          backgroundColor: PALETTE.accent,
+          backgroundColor: circleBackground || PALETTE.accent,
           border: 'none',
           cursor: 'pointer',
           display: 'flex',
@@ -223,10 +227,12 @@ const MessageAudioItemRow: React.FC<{
 };
 
 // 🟢 КОМПОНЕНТ ОТОБРАЖЕНИЯ ГОЛОСОВОГО СООБЩЕНИЯ В БАБЛЕ
-const MessageVoiceItemRow: React.FC<{
+export const MessageVoiceItemRow: React.FC<{
   attachment: IAttachment;
   isSelectionMode: boolean;
-}> = ({ attachment, isSelectionMode }) => {
+  circleBackground?: string;
+  onToggleAudio?: (attachment: IAttachment) => void;
+}> = ({ attachment, isSelectionMode, onToggleAudio, circleBackground }) => {
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -241,7 +247,8 @@ const MessageVoiceItemRow: React.FC<{
   const handleToggle = (e: React.MouseEvent) => {
     if (isSelectionMode) return;
     e.stopPropagation();
-    useChatStore.getState().toggleAudio(attachment);
+    if (onToggleAudio) onToggleAudio(attachment);
+    else useChatStore.getState().toggleAudio(attachment);
   };
 
   const handleSeek = (sec: number) => {
@@ -267,7 +274,7 @@ const MessageVoiceItemRow: React.FC<{
           width: 38,
           height: 38,
           borderRadius: 19,
-          backgroundColor: PALETTE.accent,
+          backgroundColor: circleBackground || PALETTE.accent,
           border: 'none',
           cursor: 'pointer',
           display: 'flex',
@@ -790,6 +797,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               <div style={{ width: model.mediaWidth, height: model.mediaHeight, position: 'relative', borderRadius: 16, overflow: 'hidden' }}>
                 <MediaAlbumGrid
                   media={model.previewMedia}
+                  totalMediaCount={model.mediaCount}
                   mediaWidth={model.mediaWidth}
                   mediaHeight={model.mediaHeight}
                   onMediaClick={(att) => {
@@ -932,7 +940,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
                 {isMy && !model.isDeletedForMe && (
                   <div style={{ display: 'flex', alignItems: 'center', marginLeft: 2 }}>
-                    {!model.isSentToServer ? (
+                    {!model.isSentToServer && model.sourceMessage.sendError ? (
+                      <button
+                        type="button"
+                        title={`${model.sourceMessage.sendError} Нажмите, чтобы повторить.`}
+                        aria-label="Повторить отправку сообщения"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void chatService.retryMessageAsync(model.id).then(() => useChatStore.getState().triggerDeltaSync());
+                        }}
+                        style={{ pointerEvents: 'auto', cursor: 'pointer', color: '#FF5C5C', background: 'transparent', border: 0, padding: '0 3px', fontWeight: 700 }}
+                      >!</button>
+                    ) : !model.isSentToServer ? (
                       <SvgIcon path={ICONS.clock} size={15} color={PALETTE.tgCheckmark} />
                     ) : model.isRead ? (
                       <SvgIcon path={ICONS.checkAll} size={16} color={PALETTE.tgCheckmark} />

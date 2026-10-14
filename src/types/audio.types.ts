@@ -5,6 +5,9 @@ export interface IAudioTrackModel {
   attachment: IAttachment;
   messageId: number;
   chatId: number;
+  noteId?: number;
+  noteIconKind?: string;
+  noteIconColor?: string;
   chatName: string;
   chatAvatar: string | null;
   isGroup: boolean;

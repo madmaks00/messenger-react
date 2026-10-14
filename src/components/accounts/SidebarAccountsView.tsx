@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { mdiAccountSwitchOutline, mdiEmailOutline, mdiCheckCircle } from '@mdi/js';
+import { mdiAccountSwitchOutline, mdiEmailOutline, mdiCheckCircle, mdiLogout, mdiClose } from '@mdi/js';
 
 import { SidebarHeaderUserControl } from '../common/SidebarHeaderUserControl';
 import { useAuthStore } from '../../stores/authStore';
@@ -8,15 +8,40 @@ import { userService } from '../../services/user.service';
 import { useSmoothScroll } from '../../hooks/useSmoothScroll';
 import { normalizeAvatarUrl, getAvatarColor } from '../../utils/helpers';
 import { IUser } from '../../types/models';
+import { eventBus } from '../../services/eventBus';
+import './AccountsView.css';
 
 export const SidebarAccountsView: React.FC = () => {
-  const { savedAccounts, currentUser, switchAccount } = useAuthStore();
+  const { savedAccounts, currentUser, switchAccount, logOut, removeSavedAccount, isLoggingOut, isChangingSession } = useAuthStore();
   const [hoveredId, setHoveredId] = useState<number | null>(null);
 
   const { containerRef } = useSmoothScroll<HTMLDivElement>({ friction: 0.78, wheelMultiplier: 0.15 });
 
   const handleAccountSwitch = (account: IUser) => {
     switchAccount(account, authService, userService);
+  };
+
+  const requestLogout = () => {
+    if (!currentUser || isLoggingOut || isChangingSession) return;
+    const accountId = currentUser.id;
+    eventBus.emit('OpenConfirmDialogMessage' as any, {
+      title: currentUser.nickName || currentUser.username || 'Account', targetId: accountId,
+      targetAvatar: currentUser.avatarPath || currentUser.avatar || null,
+      message: 'Are you sure you want to log out of this account?', confirmButtonText: 'Log out',
+      onConfirmAction: async () => {
+        if (useAuthStore.getState().currentUser?.id === accountId) await logOut(authService);
+      },
+    });
+  };
+
+  const requestRemove = (account: IUser) => {
+    if (account.id === currentUser?.id || isLoggingOut || isChangingSession) return;
+    eventBus.emit('OpenConfirmDialogMessage' as any, {
+      title: account.nickName || account.username || 'Account', targetId: account.id,
+      targetAvatar: account.avatarPath || account.avatar || null,
+      message: 'Remove this account from saved accounts on this device? You can sign in again.',
+      confirmButtonText: 'Remove', onConfirmAction: () => removeSavedAccount(account.id),
+    });
   };
 
   return (
@@ -34,7 +59,14 @@ export const SidebarAccountsView: React.FC = () => {
       }}
     >
       {/* 1. ШАПКА: ЗАГОЛОВОК (WPF: IconKind="AccountSwitchOutline") */}
-      <SidebarHeaderUserControl title="Accounts" iconPath={mdiAccountSwitchOutline} />
+      <SidebarHeaderUserControl title="Accounts" iconPath={mdiAccountSwitchOutline}
+        rightContent={<button className="account-action" type="button" aria-label="Log out" title="Log out"
+          disabled={isLoggingOut || isChangingSession} onClick={requestLogout}
+          style={{ width: 40, height: 40, border: 0, borderRadius: 10,
+            color: '#E74C3C', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: isLoggingOut ? 'wait' : 'pointer', opacity: isLoggingOut ? 0.5 : 1 }}>
+          <svg viewBox="0 0 24 24" width={24} height={24} fill="currentColor"><path d={mdiLogout} /></svg>
+        </button>} />
 
       {/* 2. СПИСОК АККАУНТОВ (WPF: ScrollViewer Margin="15,0,15,20") */}
       <div
@@ -66,6 +98,7 @@ export const SidebarAccountsView: React.FC = () => {
             return (
               <div
                 key={account.id}
+                className="saved-account-card"
                 onClick={() => handleAccountSwitch(account)}
                 onDoubleClick={() => handleAccountSwitch(account)}
                 onMouseEnter={() => setHoveredId(account.id)}
@@ -204,11 +237,22 @@ export const SidebarAccountsView: React.FC = () => {
                 </div>
 
                 {/* 🟢 Иконка галочки (WPF: Kind="CheckCircle" Width="24" Height="24" VerticalAlignment="Top" Margin="0,2,0,0") */}
+                {!isActive && (
+                  <button type="button" className="account-action saved-account-remove"
+                    aria-label={`Remove saved account ${account.nickName || account.username || 'Account'}`}
+                    title="Remove from saved accounts" disabled={isLoggingOut || isChangingSession}
+                    onClick={(event) => { event.stopPropagation(); requestRemove(account); }}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    style={{ width: 36, height: 36, marginLeft: 10, marginTop: -4, flexShrink: 0 }}>
+                    <svg viewBox="0 0 24 24" width={24} height={24} fill="currentColor"><path d={mdiClose} /></svg>
+                  </button>
+                )}
                 {isActive && (
                   <div
                     style={{
+                      width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       marginLeft: 10,
-                      marginTop: 2, // WPF: Margin="0,2,0,0"
+                      marginTop: -4, // WPF: Margin="0,2,0,0"
                       flexShrink: 0,
                       alignSelf: 'flex-start',
                     }}

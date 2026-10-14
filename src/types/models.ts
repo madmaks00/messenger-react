@@ -104,6 +104,10 @@ export interface IMessage {
   groupId?: number | null;
   isMyMessage: boolean;
   isSentToServer: boolean;
+  sendError?: string | null;
+  sendErrorCode?: number | null;
+  sendAttempts?: number;
+  nextSendAttemptAt?: number;
   text: string;
   isRead: boolean;
   timestamp: string; // ISO String

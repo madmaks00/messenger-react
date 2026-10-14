@@ -8,6 +8,7 @@ import { UrlHelper } from '../../utils/helpers';
 
 interface MediaAlbumGridProps {
   media: IAttachment[];
+  totalMediaCount?: number;
   mediaWidth: number;
   mediaHeight: number;
   isSilentVideo?: boolean;
@@ -37,6 +38,7 @@ const MATERIAL_ICONS = {
 
 export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
   media,
+  totalMediaCount,
   mediaWidth,
   mediaHeight,
   isSilentVideo: forceSilent,
@@ -45,7 +47,7 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
 }) => {
   if (!media || media.length === 0) return null;
 
-  const totalCount = media.length;
+  const totalCount = Math.max(media.length, totalMediaCount ?? media.length);
   const displayItems = media.slice(0, 4);
   const extraCount = totalCount > 4 ? totalCount - 3 : 0;
 

@@ -1,239 +1,183 @@
-import { apiClient } from './apiClient';
+﻿import { apiClient } from './apiClient';
+import { userSession } from './userSession';
+import { eventBus } from './eventBus';
 import { ITodoList, ITodoTask } from '../types/models';
 import { TaskCategory, TaskPriority, TaskStatus } from '../types/enums';
 import { AiParseTaskResultDto, AiSubtaskDto } from '../types/dtos';
 
-function toPriorityInt(p: any): number {
-  if (typeof p === 'number') return p;
-  if (typeof p === 'string') {
-    const val = TaskPriority[p as keyof typeof TaskPriority];
-    return typeof val === 'number' ? val : 0;
+type Operation = { key: string; kind: 'list' | 'task'; action: 'create' | 'update' | 'delete'; entity: any };
+type Saved = { operations: Operation[]; ids: Record<string, number>; lists: ITodoList[]; tasks: ITodoTask[] };
+const keyFor = (userId: number) => `todo-outbox-v1:${userId}`;
+const read = (userId: number): Saved => {
+  const raw = localStorage.getItem(keyFor(userId));
+  return raw ? JSON.parse(raw) : { operations: [], ids: {}, lists: [], tasks: [] };
+};
+const save = (userId: number, data: Saved) => localStorage.setItem(keyFor(userId), JSON.stringify(data));
+const numberValue = (value: any, values: any) => typeof value === 'number' ? value : values[value] ?? 0;
+const listPayload = (list: ITodoList) => ({ listName: list.listName, iconKind: list.iconKind, iconColor: list.iconColor });
+const taskPayload = (task: ITodoTask, listId: number) => ({ listId, title: task.title, description: task.description || '',
+  dueDate: task.dueDate || null, isCompleted: Boolean(task.isCompleted), isImportant: Boolean(task.isImportant),
+  priority: numberValue(task.priority, TaskPriority), status: numberValue(task.status, TaskStatus), category: numberValue(task.category, TaskCategory) });
+const mapKey = (kind: string, localId: number) => `${kind}:${localId}`;
+const resolveId = (data: Saved, kind: string, entity: any) => entity.serverId || data.ids[mapKey(kind, entity.localId)] || 0;
+const flights = new Map<number, Promise<void>>();
+const retries = new Map<number, ReturnType<typeof setTimeout>>();
+const backoffs = new Map<number, number>();
+
+function enqueue(userId: number, kind: Operation['kind'], action: Operation['action'], entity: any) {
+  if (userId <= 0) throw new Error('Task session is not initialized');
+  const data = read(userId);
+  const entityId = resolveId(data, kind, entity);
+  const index = data.operations.findIndex(o => o.kind === kind && (o.entity.localId === entity.localId || (entityId > 0 && resolveId(data, kind, o.entity) === entityId)));
+  if (index >= 0) {
+    const previous = data.operations[index];
+    if (action === 'delete' && previous.action === 'create' && !flights.has(userId)) {
+      data.operations.splice(index, 1);
+      if (kind === 'list') data.operations = data.operations.filter(o => o.kind !== 'task' || o.entity.localListId !== entity.localId);
+    } else data.operations[index] = { ...previous, action: action === 'update' ? previous.action : action, entity: { ...entity } };
+  } else data.operations.push({ key: crypto.randomUUID(), kind, action, entity: { ...entity } });
+  if (kind === 'list') {
+    data.lists = data.lists.filter(l => l.localId !== entity.localId && (!entityId || resolveId(data, 'list', l) !== entityId));
+    if (action !== 'delete') data.lists.push({ ...entity });
+    else data.tasks = data.tasks.filter(t => t.localListId !== entity.localId);
+  } else {
+    data.tasks = data.tasks.filter(t => t.localId !== entity.localId && (!entityId || resolveId(data, 'task', t) !== entityId));
+    if (action !== 'delete') data.tasks.push({ ...entity });
   }
-  return 0;
+  save(userId, data);
 }
 
-function toStatusInt(s: any): number {
-  if (typeof s === 'number') return s;
-  if (typeof s === 'string') {
-    const val = TaskStatus[s as keyof typeof TaskStatus];
-    return typeof val === 'number' ? val : 0;
-  }
-  return 0;
+async function flush(userId: number): Promise<void> {
+  const active = flights.get(userId); if (active) return active;
+  const running = (async () => {
+    let changed = false;
+    while (userSession.userId === userId && navigator.onLine) {
+      const data = read(userId); const op = data.operations[0]; if (!op) {
+        backoffs.delete(userId);
+        if (changed) eventBus.emit('TodoOutboxFlushedMessage' as any, { userId });
+        return;
+      }
+      try {
+        const id = resolveId(data, op.kind, op.entity);
+        const payload = op.kind === 'list' ? listPayload(op.entity) : taskPayload(op.entity,
+          data.ids[mapKey('list', op.entity.localListId)] || op.entity.localListId);
+        if (op.action === 'delete') {
+          if (id) await apiClient.delete(`api/Tasks/${op.kind}/${id}`);
+        } else if (op.action === 'create' && !id) {
+          const result = await apiClient.post(`api/Tasks/${op.kind}`, { ...payload, clientRequestId: op.key });
+          const createdId = Number(result.data.id || result.data.Id); if (!createdId) throw new Error('Missing task acknowledgement');
+          const latest = read(userId); latest.ids[mapKey(op.kind, op.entity.localId)] = createdId; save(userId, latest);
+          // Create is replayable; PUT preserves all edits made while creation was pending.
+          if (userSession.userId !== userId) return;
+          if (op.kind === 'task') await apiClient.put(`api/Tasks/task/${createdId}`, payload);
+        } else {
+          if (!id) throw new Error('Task has no server ID');
+          await apiClient.put(`api/Tasks/${op.kind}/${id}`, payload);
+        }
+        changed = true;
+        const latest = read(userId);
+        const current = latest.operations.findIndex(o => o.key === op.key);
+        // Do not discard a newer edit that arrived while the request was running.
+        if (current >= 0 && JSON.stringify(latest.operations[current]) === JSON.stringify(op)) latest.operations.splice(current, 1);
+        save(userId, latest);
+      } catch (error: any) {
+        if (op.action === 'delete' && error.response?.status === 404) {
+          const latest = read(userId); latest.operations = latest.operations.filter(o => o.key !== op.key); save(userId, latest); continue;
+        }
+        const status = error.response?.status;
+        if ((!status || status === 429 || status >= 500) && navigator.onLine && userSession.userId === userId && !retries.has(userId)) {
+          const delay = Math.min(30000, (backoffs.get(userId) || 500) * 2);
+          backoffs.set(userId, delay);
+          retries.set(userId, setTimeout(() => {
+            retries.delete(userId);
+            if (userSession.userId === userId) void flush(userId);
+          }, delay + Math.floor(Math.random() * 300)));
+        }
+        console.warn('[TodoService] Pending operation retained for retry', status || 'offline');
+        return;
+      }
+    }
+  })();
+  flights.set(userId, running); try { await running; } finally { flights.delete(userId); }
 }
 
-function toCategoryInt(c: any): number {
-  if (typeof c === 'number') return c;
-  if (typeof c === 'string') {
-    const val = TaskCategory[c as keyof typeof TaskCategory];
-    return typeof val === 'number' ? val : 0;
+function overlay(data: Saved) {
+  let lists = data.lists.map(l => {
+    const id = resolveId(data, 'list', l); return { ...l, localId: id || l.localId, serverId: id };
+  }), tasks = data.tasks.map(t => {
+    const id = resolveId(data, 'task', t); return { ...t, localId: id || t.localId, serverId: id,
+      localListId: data.ids[mapKey('list', t.localListId)] || t.localListId };
+  });
+  lists = [...new Map(lists.map(l => [l.localId, l])).values()];
+  tasks = [...new Map(tasks.map(t => [t.localId, t])).values()];
+  for (const op of data.operations) {
+    const id = resolveId(data, op.kind, op.entity), e = { ...op.entity, localId: id || op.entity.localId, serverId: id, isSynced: false };
+    if (op.kind === 'list') {
+      lists = lists.filter(l => l.localId !== e.localId && (!id || l.serverId !== id));
+      if (op.action !== 'delete') lists.push(e);
+      else tasks = tasks.filter(t => t.localListId !== e.localId && t.localListId !== id);
+    } else {
+      tasks = tasks.filter(t => t.localId !== e.localId && (!id || t.serverId !== id));
+      if (op.action !== 'delete') tasks.push({ ...e, localListId: data.ids[mapKey('list', e.localListId)] || e.localListId });
+    }
   }
-  return 0;
+  return { lists, tasks };
 }
 
 export class TodoService {
+  public static resolveListId(list: ITodoList): number {
+    return resolveId(read(userSession.userId), 'list', list) || list.localId || 0;
+  }
   public static async syncFromServerAsync(): Promise<{ lists: ITodoList[]; tasks: ITodoTask[] }> {
+    const userId = userSession.userId; if (userId <= 0) return { lists: [], tasks: [] };
+    await flush(userId);
+    if (userSession.userId !== userId) return { lists: [], tasks: [] };
     try {
       const response = await apiClient.get<any[]>('api/Tasks/sync');
-      if (response.status === 200 && Array.isArray(response.data)) {
-        const parsedLists: ITodoList[] = [];
-        const parsedTasks: ITodoTask[] = [];
-
-        for (const sList of response.data) {
-          const listId: number = Number(sList.id || sList.serverId || Date.now());
-          const listObj: ITodoList = {
-            localId: listId,
-            serverId: sList.id || sList.serverId || 0,
-            listName: sList.listName || 'Untitled List',
-            iconKind: sList.iconKind || 'ClipboardListOutline',
-            iconColor: sList.iconColor || '#8B95A5',
-            uncompletedCount: 0,
-            priority: TaskPriority.None,
-            status: TaskStatus.Todo,
-            isSynced: true,
-            urgencyLevel: 3,
-            urgencyColor: '#6B7280',
-          };
-          parsedLists.push(listObj);
-
-          if (sList.tasks && Array.isArray(sList.tasks)) {
-            for (const sTask of sList.tasks) {
-              const taskId: number = Number(sTask.id || sTask.serverId || Date.now() + Math.random());
-              const priorityVal: TaskPriority = toPriorityInt(sTask.priority);
-              const statusVal: TaskStatus = toStatusInt(sTask.status);
-              const categoryVal: TaskCategory = toCategoryInt(sTask.category);
-
-              parsedTasks.push({
-                localId: taskId,
-                serverId: sTask.id || sTask.serverId || taskId,
-                localListId: listId,
-                title: sTask.title || 'Untitled Task',
-                description: sTask.description || '',
-                isCompleted: Boolean(sTask.isCompleted),
-                isImportant: Boolean(sTask.isImportant),
-                dueDate: sTask.dueDate || null,
-                priority: priorityVal,
-                status: statusVal,
-                category: categoryVal,
-                isSynced: true,
-              });
-            }
-          }
-        }
-
-        return { lists: parsedLists, tasks: parsedTasks };
+      if (userSession.userId !== userId) return { lists: [], tasks: [] };
+      const lists: ITodoList[] = [], tasks: ITodoTask[] = [];
+      for (const list of response.data) {
+        lists.push({ localId: list.id, serverId: list.id, listName: list.listName, iconKind: list.iconKind || 'ClipboardListOutline',
+          iconColor: list.iconColor || '#8B95A5', uncompletedCount: 0, priority: TaskPriority.None, status: TaskStatus.Todo,
+          isSynced: true, urgencyLevel: 3, urgencyColor: '#6B7280' });
+        for (const task of list.tasks || []) tasks.push({ ...task, localId: task.id, serverId: task.id, localListId: list.id, isSynced: true });
       }
-    } catch (ex) {
-      console.error('[TodoService ERROR] Сбой при синхронизации задач с сервером:', ex);
-    }
-    return { lists: [], tasks: [] };
+      const data = read(userId); data.lists = lists; data.tasks = tasks; save(userId, data);
+    } catch { /* Keep the last successful snapshot and every pending edit. */ }
+    return overlay(read(userId));
   }
 
   public static async createListAsync(name: string): Promise<ITodoList> {
-    const newList: ITodoList = {
-      localId: Date.now(),
-      serverId: 0,
-      listName: name,
-      iconKind: 'ClipboardListOutline',
-      iconColor: '#8B95A5',
-      uncompletedCount: 0,
-      priority: TaskPriority.None,
-      status: TaskStatus.Todo,
-      isSynced: false,
-      urgencyLevel: 3,
-      urgencyColor: '#6B7280',
-    };
-
-    try {
-      const response = await apiClient.post<{ id: number }>('api/Tasks/list', {
-        ListName: name,
-        IconKind: newList.iconKind,
-        IconColor: newList.iconColor,
-      });
-      const returnedId = response.data?.id || (response.data as any)?.Id;
-      if (returnedId) {
-        newList.serverId = returnedId;
-        newList.localId = returnedId;
-        newList.isSynced = true;
-      }
-    } catch (ex) {
-      console.error('[TodoService ERROR] Ошибка создания списка на сервере:', ex);
-    }
-
-    return newList;
+    const userId = userSession.userId;
+    const list: ITodoList = { localId: Date.now(), serverId: 0, listName: name, iconKind: 'ClipboardListOutline',
+      iconColor: '#8B95A5', uncompletedCount: 0, priority: TaskPriority.None, status: TaskStatus.Todo,
+      isSynced: false, urgencyLevel: 3, urgencyColor: '#6B7280' };
+    enqueue(userId, 'list', 'create', list); await flush(userId);
+    const id = resolveId(read(userId), 'list', list); if (id) { list.localId = id; list.serverId = id; list.isSynced = true; }
+    return list;
   }
-
-  public static async updateListAsync(list: ITodoList): Promise<void> {
-    const targetId = list.serverId || list.localId;
-    if (!targetId) return;
-
-    try {
-      await apiClient.put(`api/Tasks/list/${targetId}`, {
-        ListName: list.listName,
-        IconKind: list.iconKind,
-        IconColor: list.iconColor,
-      });
-    } catch (ex) {
-      console.error(`[TodoService ERROR] Ошибка обновления списка ListId=${targetId}:`, ex);
-    }
-  }
-
-  public static async deleteListAsync(list: ITodoList): Promise<void> {
-    const targetId = list.serverId || list.localId;
-    if (!targetId) return;
-
-    try {
-      await apiClient.delete(`api/Tasks/list/${targetId}`);
-    } catch (ex) {
-      console.error(`[TodoService ERROR] Ошибка удаления списка ListId=${targetId}:`, ex);
-    }
-  }
-
   public static async createTaskAsync(title: string, list: ITodoList, dueDate: string | null): Promise<ITodoTask> {
-    const targetListId = list.serverId || list.localId || 1;
-    const newTask: ITodoTask = {
-      localId: Date.now(),
-      serverId: 0,
-      localListId: list.localId!,
-      title,
-      description: '',
-      isCompleted: false,
-      isImportant: false,
-      dueDate,
-      category: TaskCategory.None,
-      priority: TaskPriority.None,
-      status: TaskStatus.Todo,
-      isSynced: false,
-    };
-
-    try {
-      const response = await apiClient.post<{ id: number }>('api/Tasks/task', {
-        ListId: targetListId,
-        listId: targetListId,
-        Title: title,
-        title: title,
-        DueDate: dueDate,
-        dueDate: dueDate,
-      });
-      const returnedId = response.data?.id || (response.data as any)?.Id || (response.data as any)?.serverId;
-      if (returnedId) {
-        newTask.serverId = returnedId;
-        newTask.localId = returnedId;
-        newTask.isSynced = true;
-      }
-    } catch (ex) {
-      console.error('[TodoService ERROR] Ошибка создания задачи на сервере:', ex);
-    }
-
-    return newTask;
+    const userId = userSession.userId;
+    const task: ITodoTask = { localId: Date.now(), serverId: 0, localListId: list.serverId || list.localId!, title, description: '',
+      isCompleted: false, isImportant: false, dueDate, category: TaskCategory.None, priority: TaskPriority.None, status: TaskStatus.Todo, isSynced: false };
+    enqueue(userId, 'task', 'create', task); await flush(userId);
+    const id = resolveId(read(userId), 'task', task); if (id) { task.localId = id; task.serverId = id; task.isSynced = true; }
+    return task;
   }
-
-  // 🟢 1 в 1 с UpdateTaskAsync из C#: правильные типы полей, id и int-значения перечислений
+  public static async updateListAsync(list: ITodoList): Promise<void> {
+    const userId = userSession.userId; enqueue(userId, 'list', 'update', list); await flush(userId);
+  }
+  public static async deleteListAsync(list: ITodoList): Promise<void> {
+    const userId = userSession.userId; enqueue(userId, 'list', 'delete', list); await flush(userId);
+  }
   public static async updateTaskAsync(task: ITodoTask): Promise<boolean> {
-    const serverId = task.serverId || (task as any).id || task.localId;
-    if (!serverId) {
-      console.warn('[TodoService] Пропуск обновления: отсутствует ServerId задачи', task);
-      return false;
-    }
-
-    try {
-      const payload = {
-        id: serverId,
-        serverId: serverId,
-        localListId: task.localListId,
-        listId: task.localListId,
-        title: task.title,
-        description: task.description || '',
-        isCompleted: Boolean(task.isCompleted),
-        isImportant: Boolean(task.isImportant),
-        dueDate: task.dueDate || null,
-        priority: toPriorityInt(task.priority),
-        status: toStatusInt(task.status),
-        category: toCategoryInt(task.category),
-      };
-
-      const response = await apiClient.put(`api/Tasks/task/${serverId}`, payload);
-      const isOk = response.status >= 200 && response.status < 300;
-      if (!isOk) {
-        console.warn(`[TodoService] Сервер вернул код ${response.status} при обновлении задачи ${serverId}`);
-      }
-      return isOk;
-    } catch (ex: any) {
-      console.error(`[TodoService ERROR] Сбой обновления задачи TaskId=${serverId}:`, ex.response?.data || ex.message);
-      return false;
-    }
+    const userId = userSession.userId; enqueue(userId, 'task', 'update', task); await flush(userId);
+    const data = read(userId); const id = resolveId(data, 'task', task); if (id) task.serverId = id;
+    return !data.operations.some(o => o.kind === 'task' && o.entity.localId === task.localId);
   }
-
   public static async deleteTaskAsync(task: ITodoTask): Promise<void> {
-    const serverId = task.serverId || (task as any).id || task.localId;
-    if (!serverId) return;
-
-    try {
-      await apiClient.delete(`api/Tasks/task/${serverId}`);
-    } catch (ex) {
-      console.error(`[TodoService ERROR] Ошибка удаления задачи TaskId=${serverId}:`, ex);
-    }
+    const userId = userSession.userId; enqueue(userId, 'task', 'delete', task); await flush(userId);
   }
-
   public static async parseTaskWithAiAsync(userInput: string): Promise<AiParseTaskResultDto | null> {
     try {
       const response = await apiClient.post<AiParseTaskResultDto>('api/Tasks/ai/parse', { text: userInput });

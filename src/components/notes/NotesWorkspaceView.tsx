@@ -1,12 +1,7 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   mdiBookmarkOutline,
   mdiNotebookEditOutline,
-  mdiAttachment,
-  mdiEmoticonOutline,
-  mdiSend,
-  mdiMicrophone,
-  mdiClose,
 } from '@mdi/js';
 import { useNotesStore } from '../../stores/notesStore';
 import { NotesCanvas } from './NotesCanvas';
@@ -14,6 +9,10 @@ import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
 import { resolveMdiIcon } from '../../utils/iconResolver';
 import { BASE_SERVER_URL } from '../../services/apiClient';
 import { IMessage } from '../../types/models';
+import { eventBus } from '../../services/eventBus';
+import { NoteDocumentAttachment } from './NoteDocumentAttachment';
+import { MessageInputUserControl } from '../chat/MessageInputUserControl';
+import { MessageAudioItemRow, MessageVoiceItemRow } from '../chat/MessageItem';
 import { AttachmentType } from '../../types/enums';
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
   path,
@@ -86,6 +85,7 @@ const NoteMessageItem: React.FC<{ msg: IMessage }> = ({ msg }) => {
 
   return (
     <div
+      data-note-message-id={msg.serverId || msg.id}
       style={{
         width: '100%',
         display: 'flex',
@@ -196,17 +196,21 @@ const NoteMessageItem: React.FC<{ msg: IMessage }> = ({ msg }) => {
                       justifyContent: 'center',
                     }}
                   >
-                    <img
-                      src={att.resolvedUrl}
-                      alt=""
-                      style={{
-                        maxWidth: '100%',
-                        maxHeight: 400,
-                        borderRadius: 10,
-                        display: 'block',
-                        objectFit: 'contain',
-                      }}
-                    />
+                    {att.type === AttachmentType.Audio ? (
+                      <MessageAudioItemRow attachment={att} isSelectionMode={false} onToggleAudio={useNotesStore.getState().toggleAudio} circleBackground="rgba(255, 255, 255, 0.2)" />
+                    ) : att.type === AttachmentType.Voice ? (
+                      <MessageVoiceItemRow attachment={att} isSelectionMode={false} onToggleAudio={useNotesStore.getState().toggleAudio} circleBackground="rgba(255, 255, 255, 0.2)" />
+                    ) : att.type === AttachmentType.Video ? (
+                      <video src={att.resolvedUrl} controls playsInline style={{ maxWidth: '100%', maxHeight: 400 }} />
+                    ) : att.type === AttachmentType.Photo ? (
+                      <img src={att.resolvedUrl} alt={att.fileName} onClick={() => {
+                        const photos = useNotesStore.getState().currentChatMessages.flatMap(m => m.attachments || []).filter(a => a.type === AttachmentType.Photo);
+                        const index = photos.findIndex(a => a.url === att.url);
+                        eventBus.emit('OpenPhotoGalleryMessage' as any, { photos, startIndex: Math.max(0, index) });
+                      }} style={{ maxWidth: '100%', maxHeight: 400, borderRadius: 10, display: 'block', objectFit: 'contain', cursor: 'pointer' }} />
+                    ) : (
+                      <NoteDocumentAttachment attachment={att} url={att.resolvedUrl} />
+                    )}
                   </div>
                 ))}
               </div>
@@ -241,39 +245,10 @@ export const NotesWorkspaceView: React.FC = () => {
     sendNoteMessage,
   } = useNotesStore();
 
-  const [inputText, setInputText] = useState('');
-  const [pendingUploadFiles, setPendingUploadFiles] = useState<{ file: File; previewUrl: string }[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
-    if (isNoteChatMode && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    if (isNoteChatMode) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentChatMessages, isNoteChatMode]);
-
-  const handleSend = () => {
-    if (!inputText.trim() && pendingUploadFiles.length === 0) return;
-    const files = pendingUploadFiles.map((p) => p.file);
-    sendNoteMessage(inputText.trim(), files);
-    setInputText('');
-    setPendingUploadFiles([]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const newFiles = Array.from(files).map((f) => ({
-      file: f,
-      previewUrl: URL.createObjectURL(f),
-    }));
-
-    setPendingUploadFiles((prev) => [...prev, ...newFiles]);
-  };
 
   if (!selectedNote) {
     return (
@@ -479,158 +454,7 @@ export const NotesWorkspaceView: React.FC = () => {
                 boxSizing: 'border-box',
               }}
             >
-              {pendingUploadFiles.length > 0 && (
-                <div
-                  style={{
-                    backgroundColor: '#1C212D',
-                    borderRadius: 10,
-                    margin: '0 0 5px 0',
-                    padding: '5px',
-                    display: 'flex',
-                    gap: 8,
-                  }}
-                >
-                  {pendingUploadFiles.map((item, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        position: 'relative',
-                        width: 50,
-                        height: 50,
-                        borderRadius: 8,
-                        overflow: 'hidden',
-                        backgroundColor: '#232A3B',
-                      }}
-                    >
-                      <img src={item.previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <button
-                        onClick={() => setPendingUploadFiles((prev) => prev.filter((_, i) => i !== idx))}
-                        style={{
-                          position: 'absolute',
-                          top: 2,
-                          right: 2,
-                          width: 18,
-                          height: 18,
-                          borderRadius: 9,
-                          backgroundColor: 'rgba(0,0,0,0.6)',
-                          border: 'none',
-                          color: '#FFF',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <MdiIcon path={mdiClose} size={12} color="#FFF" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div
-                style={{
-                  minHeight: 40,
-                  maxHeight: 200,
-                  backgroundColor: '#1C212D',
-                  border: '1.2px solid #2A303C',
-                  borderRadius: 20,
-                  padding: '1px 2px 1px 10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  boxSizing: 'border-box',
-                  width: '100%',
-                }}
-              >
-                <input
-                  type="file"
-                  multiple
-                  ref={fileInputRef}
-                  style={{ display: 'none' }}
-                  onChange={handleFileSelect}
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#7D8494',
-                    transform: 'rotate(-45deg)',
-                    padding: 0,
-                  }}
-                  title="Attach files"
-                >
-                  <MdiIcon path={mdiAttachment} size={24} color="#7D8494" />
-                </button>
-
-                <input
-                  type="text"
-                  placeholder="Write a note or comment..."
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSend();
-                  }}
-                  style={{
-                    flex: 1,
-                    background: 'transparent',
-                    border: 'none',
-                    outline: 'none',
-                    color: '#FFFFFF',
-                    fontSize: 14,
-                    padding: '8px 8px',
-                    fontFamily: "'Segoe UI', -apple-system, sans-serif",
-                  }}
-                />
-
-                <button
-                  style={{
-                    width: 36,
-                    height: 36,
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#7D8494',
-                    marginRight: 4,
-                    padding: 0,
-                  }}
-                >
-                  <MdiIcon path={mdiEmoticonOutline} size={22} color="#7D8494" />
-                </button>
-
-                <button
-                  onClick={handleSend}
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 19,
-                    backgroundColor: '#1E9BEB',
-                    border: 'none',
-                    color: '#FFFFFF',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    padding: 0,
-                  }}
-                >
-                  <MdiIcon
-                    path={inputText.trim() || pendingUploadFiles.length > 0 ? mdiSend : mdiMicrophone}
-                    size={20}
-                    color="#FFFFFF"
-                  />
-                </button>
-              </div>
+              <MessageInputUserControl noteId={selectedNote.id} onSend={sendNoteMessage} />
             </div>
           </div>
         ) : (

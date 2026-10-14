@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { signalRService } from '../services/signalr.service';
 import { webrtcAudioService } from '../services/webrtcAudio.service';
 import { eventBus } from '../services/eventBus';
@@ -181,7 +181,8 @@ eventBus.on('CallResponseMessage', async ({ accepted }) => {
   }
 });
 
-eventBus.on('CallEndedMessage', () => {
+eventBus.on('CallEndedMessage', ({ targetId }) => {
+  if (targetId !== useCallStore.getState().targetUserId) return;
   cleanup();
   useCallStore.setState({ callState: 'idle', targetUserId: 0 });
 });

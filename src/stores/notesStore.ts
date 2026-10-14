@@ -7,6 +7,9 @@ import { signalRService } from '../services/signalr.service';
 import { eventBus } from '../services/eventBus';
 import { normalizeAvatarUrl, UrlHelper } from '../utils/helpers';
 import { useAuthStore } from './authStore';
+import { audioPlayerService } from '../services/audioPlayer.service';
+import { AudioMetadataHelper } from '../types/audio.types';
+import { AudioConverterHelper } from '../utils/audioConverters';
 import { NotesService } from '../services/notes.service';
 
 export interface NotesState {
@@ -49,7 +52,8 @@ export interface NotesState {
   closeColorPicker: () => void;
 
   saveCurrentNoteInkData: (serializedJson: string, thumbnailBase64?: string) => Promise<void>;
-  sendNoteMessage: (text: string, filesToUpload?: File[]) => Promise<void>;
+  toggleAudio: (attachment: IAttachment) => void;
+  sendNoteMessage: (text: string, filesToUpload?: IAttachment[]) => Promise<void>;
 
   handleRemoteNoteUpdated: (noteId: number) => Promise<void>;
   handleRemoteNoteDeleted: (noteId: number) => void;
@@ -110,6 +114,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     set((state) => ({
       selectedNote: note,
       isNoteChatMode: true,
+      currentChatMessages: [],
       myNotes: state.myNotes.map((n) => ({ ...n, isSelected: n.id === note.id })),
     }));
 
@@ -168,7 +173,8 @@ export const useNotesStore = create<NotesState>((set, get) => ({
               fileSizeStr: att.fileSizeStr || att.FileSizeStr || '',
               fileSizeBytes: att.fileSizeBytes || att.FileSizeBytes || 0,
               url: finalUrl,
-              thumbnailUrl: finalUrl,
+              waveform: att.waveform ?? att.Waveform ?? undefined,
+              thumbnailUrl: UrlHelper.normalize(att.thumbnailUrl || att.ThumbnailUrl || '', BASE_SERVER_URL) || undefined,
               localImagePath: finalUrl,
               hasAudio: Boolean(att.hasAudio ?? att.HasAudio),
               width: att.width || att.Width || 0,
@@ -186,6 +192,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
           };
         });
 
+        if (get().selectedNote?.id !== note.id) return;
         set({ currentChatMessages: enrichedMessages });
         await signalRService?.subscribeToNoteAsync?.(note.id);
       } catch (err) {
@@ -336,6 +343,19 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     }
   },
 
+  toggleAudio: (attachment) => {
+    if (attachment.type === AttachmentType.Voice) {
+      audioPlayerService.togglePlay(attachment, BASE_SERVER_URL);
+      return;
+    }
+    const { selectedNote, currentChatMessages } = get();
+    const tracks = currentChatMessages.flatMap(message => (message.attachments || [])
+      .filter(att => att.type === AttachmentType.Audio)
+      .map(att => ({ ...AudioMetadataHelper.createAudioTrackFromAttachment(att, message, selectedNote?.title || 'Note', null, false, false), chatId: 0, noteId: selectedNote?.id, noteIconKind: selectedNote?.iconKind, noteIconColor: selectedNote?.iconColor })));
+    const selectedTrack = tracks.find(track => track.attachment === attachment || AudioConverterHelper.isSameAttachment(track.attachment, attachment));
+    if (selectedTrack) eventBus.emit('PlayPlaylistMessage' as any, { tracks, selectedTrack });
+  },
+
   sendNoteMessage: async (text, filesToUpload = []) => {
     const { selectedNote, currentChatMessages } = get();
     if (!selectedNote || !selectedNote.id) return;
@@ -346,22 +366,9 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     const myName = currentUser?.nickName || currentUser?.username || 'User';
     const myAvatar = currentUser?.avatarPath || (currentUser as any)?.avatar || null;
 
-    const tempAttachments: IAttachment[] = filesToUpload.map((f, idx) => ({
-      id: Date.now() + idx,
-      messageId: 0,
-      type: f.type.startsWith('image/') ? AttachmentType.Photo : AttachmentType.Document,
-      fileName: f.name,
-      fileSizeStr: `${(f.size / 1024).toFixed(1)} KB`,
-      fileSizeBytes: f.size,
-      url: URL.createObjectURL(f),
-      localImagePath: URL.createObjectURL(f),
-      hasAudio: false,
-      width: 0,
-      height: 0,
-      durationSeconds: 0,
-    }));
+    const tempAttachments = filesToUpload.map(att => ({ ...att }));
 
-    const tempId = Date.now();
+    const tempId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
     const newMsg: IMessage = {
       id: tempId,
       serverId: 0,
@@ -385,14 +392,19 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
     try {
       const uploadedDtos: any[] = [];
-      for (const file of filesToUpload) {
-        const dtos = await NotesService.uploadAttachmentAsync(file, file.name);
+      for (const attachment of filesToUpload) {
+        if (!attachment.rawFile) throw new Error("Missing attachment file");
+        const dtos = await NotesService.uploadAttachmentAsync(attachment.rawFile, attachment.fileName);
+        if (!dtos?.length) throw new Error("Attachment upload failed");
+        for (const dto of dtos) Object.assign(dto, { type: attachment.type, fileName: attachment.fileName, width: attachment.width || dto.width, height: attachment.height || dto.height, waveform: attachment.waveform, durationSeconds: attachment.durationSeconds || dto.durationSeconds });
         if (dtos && dtos.length > 0) {
           uploadedDtos.push(...dtos);
         }
       }
 
       const signalRAttachments = uploadedDtos.map((dto: any) => ({
+        Waveform: dto.waveform ?? dto.Waveform ?? null,
+        waveform: dto.waveform ?? dto.Waveform ?? null,
         Type: dto.type ?? dto.Type ?? 0,
         FileName: dto.fileName ?? dto.FileName ?? '',
         FileSizeStr: dto.fileSizeStr ?? dto.FileSizeStr ?? '',
@@ -421,6 +433,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         signalRAttachments as any
       );
 
+      if (serverId <= 0) throw new Error("Message was not saved on server");
       if (serverId > 0) {
         const finalAttachments: IAttachment[] = uploadedDtos.map((dto, idx) => {
           const rawUrl = dto.url || dto.Url || '';
@@ -433,7 +446,8 @@ export const useNotesStore = create<NotesState>((set, get) => ({
             fileSizeStr: dto.fileSizeStr ?? dto.FileSizeStr ?? '',
             fileSizeBytes: dto.fileSizeBytes ?? dto.FileSizeBytes ?? 0,
             url: finalUrl,
-            thumbnailUrl: finalUrl,
+            waveform: dto.waveform ?? dto.Waveform ?? undefined,
+            thumbnailUrl: UrlHelper.normalize(dto.thumbnailUrl || dto.ThumbnailUrl || '', BASE_SERVER_URL) || undefined,
             localImagePath: finalUrl,
             hasAudio: Boolean(dto.hasAudio ?? dto.HasAudio),
             width: dto.width ?? dto.Width ?? 0,
@@ -530,15 +544,13 @@ eventBus.on('NoteDeleted' as any, (noteId: number) => {
 
 // 🟢 Обработка входящих сообщений заметки
 eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
-  const { selectedNote, currentChatMessages } = useNotesStore.getState();
+  const { selectedNote } = useNotesStore.getState();
   if (incoming.noteId && selectedNote && Number(incoming.noteId) === Number(selectedNote.id)) {
     const currentUser = useAuthStore.getState().currentUser;
     const currentUserId = Number(currentUser?.id || userSession.userId || 0);
     const isMy = Number(incoming.senderId) === currentUserId;
 
-    const existingIdx = currentChatMessages.findIndex(
-      (m) => (incoming.serverId && m.serverId === incoming.serverId) || (isMy && m.serverId === 0 && m.text === incoming.text)
-    );
+
 
     let senderName = incoming.senderName;
     let senderAvatar = incoming.senderAvatar;
@@ -563,7 +575,13 @@ eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
 
       return {
         ...att,
-        id: att.id || idx + 1,
+        id: att.id || att.Id || idx + 1,
+        type: att.type ?? att.Type ?? AttachmentType.Document,
+        fileName: att.fileName || att.FileName || "",
+        fileSizeStr: att.fileSizeStr || att.FileSizeStr || "",
+        durationSeconds: att.durationSeconds ?? att.DurationSeconds ?? 0,
+        waveform: att.waveform ?? att.Waveform ?? undefined,
+        thumbnailUrl: UrlHelper.normalize(att.thumbnailUrl || att.ThumbnailUrl || "", BASE_SERVER_URL) || undefined,
         url: fullUrl,
         localImagePath: fullUrl,
       };
@@ -577,15 +595,12 @@ eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
       attachments: normalizedAttachments,
     };
 
-    if (existingIdx !== -1) {
-      const updated = [...currentChatMessages];
-      updated[existingIdx] = { ...updated[existingIdx], ...preparedMsg };
-      useNotesStore.setState({ currentChatMessages: updated });
-    } else {
-      useNotesStore.setState({
-        currentChatMessages: [...currentChatMessages, preparedMsg],
-      });
-    }
+    if (useNotesStore.getState().selectedNote?.id !== selectedNote.id) return;
+    useNotesStore.setState(state => {
+      const index = state.currentChatMessages.findIndex(m => (preparedMsg.serverId && m.serverId === preparedMsg.serverId)
+        || (isMy && m.serverId === 0 && m.text === incoming.text && JSON.stringify((m.attachments || []).map(a => a.fileName).sort()) === JSON.stringify((incoming.attachments || []).map(a => a.fileName).sort())));
+      return { currentChatMessages: index >= 0 ? state.currentChatMessages.map((m, i) => i === index ? { ...m, ...preparedMsg, id: m.id } : m) : [...state.currentChatMessages, preparedMsg] };
+    });
   }
 });
 
@@ -594,3 +609,4 @@ if (typeof window !== 'undefined') {
     useNotesStore.getState().createNewNote();
   });
 }
+

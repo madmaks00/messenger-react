@@ -2,6 +2,8 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { useMusicPlayerStore } from '../../stores/musicPlayerStore';
 import { useNavigationStore } from '../../stores/navigationStore';
 import { getAvatarColor, normalizeAvatarUrl } from '../../utils/helpers';
+import { resolveMdiIcon } from '../../utils/iconResolver';
+import { mdiBookmarkOutline } from '@mdi/js';
 import { AudioConverterHelper } from '../../utils/audioConverters';
 
 const COMPACT_HEIGHT = 54;
@@ -207,6 +209,7 @@ export const MusicPlayerView: React.FC = () => {
 
   const onOpenChatProfile = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (currentTrack?.noteId) { goToSourceChat(); return; }
     if (!currentTrack || !currentTrack.chatId) return;
 
     if (currentTrack.isGroup) {
@@ -254,7 +257,7 @@ export const MusicPlayerView: React.FC = () => {
       {/* 🔖 ЗАКЛАДКА ПЕРЕХОДА К ПРОФИЛЮ */}
       <button
         onClick={onOpenChatProfile}
-        title="Открыть профиль"
+        title={currentTrack?.noteId ? "Открыть заметку" : "Открыть профиль"}
         style={{
           position: 'absolute',
           top: -25,
@@ -277,6 +280,7 @@ export const MusicPlayerView: React.FC = () => {
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--other-bubble-bg, #1C212D)')}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-chat, #11141B)')}
       >
+          {currentTrack?.noteId ? <svg viewBox="0 0 24 24" width={16} height={16} fill={currentTrack.noteIconColor || '#1E9BEB'} style={{ marginRight: 6, flexShrink: 0 }}><path d={resolveMdiIcon(currentTrack.noteIconKind, mdiBookmarkOutline)} /></svg> : (
         <div style={{ width: 16, height: 16, marginRight: 6, position: 'relative' }}>
           <div
             style={{
@@ -306,6 +310,7 @@ export const MusicPlayerView: React.FC = () => {
           )}
         </div>
 
+          )}
         <span
           style={{
             fontSize: 11,

@@ -1,4 +1,5 @@
 import { AttachmentMediaEditorView } from '../media/AttachmentMediaEditorView';
+import { isMessageTextTooLong } from '../../utils/messageTextLimit';
 import { apiClient } from '../../services/apiClient';
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import {
@@ -20,6 +21,7 @@ import { useChatStore, getMessageReplyText } from '../../stores/chatStore';
 import { useEmojiStore } from '../../stores/emojiStore';
 import { EmojiPickerUserControl } from './EmojiPickerUserControl';
 import { AttachmentType } from '../../types/enums';
+import type { IAttachment } from '../../types/models';
 import { eventBus } from '../../services/eventBus';
 
 const COLORS = {
@@ -52,13 +54,22 @@ const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: R
   </svg>
 );
 
-export const MessageInputUserControl: React.FC = () => {
+export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text: string, attachments: IAttachment[]) => Promise<void> }> = ({ noteId, onSend }) => {
+  useEffect(() => {
+    if (!noteId || !onSend) return;
+    const previous = useMessageInputStore.getState();
+    const permissions = { canWriteMessages: previous.canWriteMessages, canSendMedia: previous.canSendMedia, canSendText: previous.canSendText, isBlockedByMe: previous.isBlockedByMe, isBlockedByThem: previous.isBlockedByThem, isGroup: previous.isGroup, isChannel: previous.isChannel, isCurrentChatJoined: previous.isCurrentChatJoined, isAdmin: previous.isAdmin, hintText: previous.hintText };
+    previous.reset();
+    useMessageInputStore.setState({ standaloneSend: onSend, canWriteMessages: true, canSendMedia: true, canSendText: true, isBlockedByMe: false, isBlockedByThem: false, isGroup: false, isChannel: false, isCurrentChatJoined: true, isAdmin: false, hintText: "Message..." });
+    return () => { useMessageInputStore.getState().reset(); useMessageInputStore.setState({ standaloneSend: null, ...permissions }); };
+  }, [noteId, onSend]);
   const {
     newMessageText,
     editingMessage,
     replyingToMessages,
     pendingAttachments,
     isRecordingVoice,
+    isPreparingAttachments,
     recordingTimeStr,
     hintText,
     canWriteMessages,
@@ -87,7 +98,7 @@ export const MessageInputUserControl: React.FC = () => {
 
   const [mediaEditor, setMediaEditor] = useState<{ attachment: any; file: File } | null>(null);
   const [attachmentError, setAttachmentError] = useState('');
-  const draftKey = `${selectedChatUser?.isGroup ? 'g' : selectedChatUser?.isSecretChat ? 's' : 'u'}:${selectedChatUser?.secretChatId || selectedChatUser?.id || 0}`;
+  const draftKey = noteId ? `note:${noteId}` : `${selectedChatUser?.isGroup ? 'g' : selectedChatUser?.isSecretChat ? 's' : 'u'}:${selectedChatUser?.secretChatId || selectedChatUser?.id || 0}`;
   useEffect(() => { setMediaEditor(null); setAttachmentError(''); }, [draftKey]);
   const editorRequest = useRef(0);
   useEffect(() => { ++editorRequest.current; }, [draftKey]);
@@ -175,7 +186,10 @@ export const MessageInputUserControl: React.FC = () => {
     }
   };
 
+  const isMessageTooLong = isMessageTextTooLong(newMessageText);
+
   const handleSendAction = () => {
+    if (isMessageTooLong || isPreparingAttachments) return;
     if (isRecordingVoice) {
       void stopAndSendVoiceRecording();
       focusInputField();
@@ -196,7 +210,8 @@ export const MessageInputUserControl: React.FC = () => {
       inputTextBoxRef.current.style.height = 'auto';
     }
 
-    void sendMessage(text, attachmentsToSend, editMsg, replies);
+    if (onSend) void onSend(text, attachmentsToSend);
+    else void sendMessage(text, attachmentsToSend, editMsg, replies);
     focusInputField();
   };
 
@@ -706,23 +721,25 @@ export const MessageInputUserControl: React.FC = () => {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isMessageTooLong || isPreparingAttachments) return;
                   if (isRecordingVoice) {
                     stopAndSendVoiceRecording();
                   } else if (hasAttachments || hasText) {
                     handleSendAction();
                   } else {
-                    startVoiceRecording();
+                    void startVoiceRecording().catch(() => setAttachmentError('Не удалось начать запись. Проверьте доступ к микрофону.'));
                   }
                 }}
-                title={isRecordingVoice ? 'Send recording' : hasAttachments || hasText ? 'Send message' : 'Record voice'}
+                disabled={isMessageTooLong || isPreparingAttachments}
+                title={isPreparingAttachments ? 'Preparing attachments...' : isMessageTooLong ? 'Максимум 4096 символов' : isRecordingVoice ? 'Send recording' : hasAttachments || hasText ? 'Send message' : 'Record voice'}
                 style={{
                   width: 38,
                   height: 38,
                   minWidth: 38,
                   borderRadius: 19,
-                  backgroundColor: COLORS.accent,
+                  backgroundColor: isMessageTooLong ? COLORS.warningBorder : COLORS.accent,
                   border: 'none',
-                  cursor: 'pointer',
+                  cursor: isPreparingAttachments ? 'wait' : isMessageTooLong ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
