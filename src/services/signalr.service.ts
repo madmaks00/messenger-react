@@ -19,6 +19,7 @@ import { useSidebarChatsStore } from '../stores/sidebarChatsStore';
 import { MessagePreviewHelper } from '../utils/messagePreviewHelper';
 import { secretChatCrypto } from './secretChatCrypto.service';
 import { userService } from './user.service';
+import { useConnectionStatusStore } from '../stores/connectionStatusStore';
 
 function getCleanToken(): string {
   let raw =
@@ -107,6 +108,7 @@ export class SignalRService {
     }
 
     const generation=++this.connectionGeneration;this.stopped=false;
+    useConnectionStatusStore.getState().setPhase('connecting');
     if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null;}
     this.connectingPromise = (async () => {
       try {
@@ -135,11 +137,14 @@ export class SignalRService {
         const connection=this.hubConnection;
 
         this.hubConnection.onreconnecting((error) => {
+          if(this.stopped || generation !== this.connectionGeneration || this.hubConnection !== connection)return;
+          useConnectionStatusStore.getState().setPhase('reconnecting');
           console.warn('[SignalR] Потеря связи с хабом. Переподключение...', error);
         });
 
         this.hubConnection.onreconnected(async (id) => {
           if(this.stopped||generation!==this.connectionGeneration||this.hubConnection!==connection)return;
+          useConnectionStatusStore.getState().setPhase('connected');
           console.info('[SignalR] Соединение восстановлено. ConnectionId:', id);
           this.startHeartbeat();
 
@@ -166,6 +171,8 @@ export class SignalRService {
         });
 
         this.hubConnection.onclose((error) => {
+          if(this.stopped || generation !== this.connectionGeneration || this.hubConnection !== connection)return;
+          useConnectionStatusStore.getState().setPhase('unavailable');
           console.warn('[SignalR] Соединение закрыто.', error);
           this.scheduleReconnect(generation);
         });
@@ -174,12 +181,13 @@ export class SignalRService {
 
         await connection.start();
         if(this.stopped||generation!==this.connectionGeneration||this.hubConnection!==connection)return false;
+        useConnectionStatusStore.getState().setPhase('connected');
         console.info('[SignalR] Соединение успешно установлено.');
         this.startHeartbeat();
         eventBus.emit('SignalRConnectedMessage' as any, undefined);
         return true;
       } catch (err: any) {
-        if(generation===this.connectionGeneration){console.error('[SignalR ERROR] Сбой подключения к хабу:', err);this.scheduleReconnect(generation);}
+        if(generation===this.connectionGeneration){useConnectionStatusStore.getState().setPhase('unavailable');console.error('[SignalR ERROR] Сбой подключения к хабу:', err);this.scheduleReconnect(generation);}
         return false;
       } finally {
         if(generation===this.connectionGeneration)this.connectingPromise = null;
@@ -191,6 +199,7 @@ export class SignalRService {
 
   public async stopAsync(): Promise<void> {
     this.stopped=true;this.connectionGeneration++;
+    useConnectionStatusStore.getState().setPhase('idle');
     if(this.reconnectTimer){clearTimeout(this.reconnectTimer);this.reconnectTimer=null;}
     if(this.heartbeatTimer){clearInterval(this.heartbeatTimer);this.heartbeatTimer=null;}
     const connection=this.hubConnection;this.hubConnection=null;this.connectingPromise=null;

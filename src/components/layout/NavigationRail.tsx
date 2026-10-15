@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useConnectionStatusStore, resolveConnectionStatus } from '../../stores/connectionStatusStore';
+import { ConnectionAvatarIndicator, connectionLabels } from './ConnectionAvatarIndicator';
 import {
   mdiSendVariant,
   mdiChatOutline,
@@ -71,6 +73,7 @@ export const NavigationRail: React.FC = () => {
   );
 
   const { currentUser } = useAuthStore();
+  const connectionStatus = useConnectionStatusStore(s => resolveConnectionStatus(s.isOnline, s.phase));
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
 
   const avatarSrc = normalizeAvatarUrl(currentUser?.avatarPath || (currentUser as any)?.avatar);
@@ -142,12 +145,12 @@ export const NavigationRail: React.FC = () => {
         <div style={{ position: 'relative', width: 54, height: 54, marginBottom: 22 }}>
           <div
             onClick={handleOpenStories}
-            title="Open Profile"
+            title={connectionStatus === 'connected' ? 'Open Profile' : connectionLabels[connectionStatus]}
             style={{
               width: 54,
               height: 54,
               borderRadius: 27,
-              border: '2px solid #1E9BEB',
+              border: connectionStatus === 'connected' ? '2px solid #1E9BEB' : '2px solid transparent',
               backgroundColor: 'transparent',
               display: 'flex',
               alignItems: 'center',
@@ -200,7 +203,7 @@ export const NavigationRail: React.FC = () => {
           </div>
 
           {/* 🟢 КНОПКА ДОБАВЛЕНИЯ ИСТОРИИ (+) */}
-          <label
+          {connectionStatus === 'connected' && <label
             title="Create Story"
             style={{
               position: 'absolute',
@@ -232,7 +235,8 @@ export const NavigationRail: React.FC = () => {
                 }
               }}
             />
-          </label>
+          </label>}
+          <ConnectionAvatarIndicator status={connectionStatus} />
         </div>
       </div>
 
