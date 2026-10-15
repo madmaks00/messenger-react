@@ -255,6 +255,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                   onChange={(e) => setEditUser({ ...editUser, birthday: e.target.value })}
                   style={{
                     ...cleanInputStyle,
+                    colorScheme: 'dark',
                     cursor: 'pointer',
                   }}
                 />
