@@ -20,7 +20,9 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
     setEditUser,
     editErrors,
     setEditErrors,
-    displayedUser,
+    resetEditProfile,
+    isProfileSaving,
+    profileSaveError,
     handleSaveEditProfile,
   } = vm;
 
@@ -76,7 +78,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
               boxSizing: 'border-box',
             }}
           >
-            <input
+            <input disabled={isProfileSaving}
               ref={fileInputRef}
               type="file"
               accept="image/*"
@@ -118,7 +120,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                 <div style={inputIconWrapperStyle}>
                   <Icons.BadgeAccountHorizontalOutline size={20} color={Theme.ProfileEditInputIcon} />
                 </div>
-                <input
+                <input disabled={isProfileSaving}
                   type="text"
                   value={editUser.nickName || ''}
                   onChange={(e) => setEditUser({ ...editUser, nickName: e.target.value })}
@@ -134,7 +136,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                 <div style={inputIconWrapperStyle}>
                   <Icons.At size={18} color={Theme.ProfileEditInputIcon} />
                 </div>
-                <input
+                <input disabled={isProfileSaving}
                   type="text"
                   value={editUser.username || ''}
                   onChange={(e) => setEditUser({ ...editUser, username: e.target.value })}
@@ -154,7 +156,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
               <div style={{ ...inputIconWrapperStyle, paddingTop: 10 }}>
                 <Icons.InformationOutline size={18} color={Theme.ProfileInfoIconAbout} />
               </div>
-              <textarea
+              <textarea disabled={isProfileSaving}
                 rows={3}
                 value={editUser.description || ''}
                 onChange={(e) => setEditUser({ ...editUser, description: e.target.value })}
@@ -175,7 +177,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
               <div style={inputIconWrapperStyle}>
                 <Icons.PhoneSectionOutline size={18} color={Theme.ProfileInfoIconPhone} />
               </div>
-              <input
+              <input disabled={isProfileSaving}
                 type="text"
                 value={editUser.phone || ''}
                 onChange={(e) => setEditUser({ ...editUser, phone: e.target.value })}
@@ -192,7 +194,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                 <div style={inputIconWrapperStyle}>
                   <Icons.AccountOutline size={18} color={Theme.ProfileInfoIconName} />
                 </div>
-                <input
+                <input disabled={isProfileSaving}
                   type="text"
                   value={editUser.firstName || ''}
                   onChange={(e) => setEditUser({ ...editUser, firstName: e.target.value })}
@@ -208,7 +210,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                 <div style={inputIconWrapperStyle}>
                   <Icons.AccountDetailsOutline size={18} color={Theme.ProfileInfoIconName} />
                 </div>
-                <input
+                <input disabled={isProfileSaving}
                   type="text"
                   value={editUser.lastName || ''}
                   onChange={(e) => setEditUser({ ...editUser, lastName: e.target.value })}
@@ -226,7 +228,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                 <div style={inputIconWrapperStyle}>
                   <Icons.GenderMaleFemale size={18} color={Theme.ProfileInfoIconGender} />
                 </div>
-                <select
+                <select disabled={isProfileSaving}
                   value={editUser.gender ?? Gender.Male}
                   onChange={(e) => setEditUser({ ...editUser, gender: Number(e.target.value) as Gender })}
                   style={{
@@ -247,7 +249,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                 <div style={inputIconWrapperStyle}>
                   <Icons.CakeVariantOutline size={18} color={Theme.ProfileInfoIconBirthday} />
                 </div>
-                <input
+                <input disabled={isProfileSaving}
                   type="date"
                   value={editUser.birthday ? editUser.birthday.substring(0, 10) : ''}
                   onChange={(e) => setEditUser({ ...editUser, birthday: e.target.value })}
@@ -261,21 +263,22 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
             </div>
           </div>
 
+          {profileSaveError && <div role="alert" style={errorStyle}>{profileSaveError}</div>}
+          {editErrors.email && <div role="alert" style={errorStyle}>{editErrors.email}</div>}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 14 }}>
             <button
-              onClick={() => {
-                setEditUser({ ...displayedUser });
-                setEditErrors({});
-              }}
+              onClick={resetEditProfile}
+              disabled={isProfileSaving}
               style={secondaryBtnStyle}
             >
               Reset
             </button>
             <button
               onClick={handleSaveEditProfile}
-              style={primaryBtnStyle}
+              disabled={isProfileSaving}
+              style={{ ...primaryBtnStyle, opacity: isProfileSaving ? 0.6 : 1 }}
             >
-              Save Changes
+              {isProfileSaving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </div>

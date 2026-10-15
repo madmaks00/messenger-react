@@ -33,6 +33,7 @@ interface AuthState {
   requestCodeAndGoToVerification: (authService: any) => Promise<boolean>;
   switchAccount: (targetAccount: IUser, authService: any, userService?: any) => Promise<void>;
   logOut: (authService?: any) => Promise<void>;
+  applyProfileUpdate: (user: IUser) => void;
   removeSavedAccount: (accountId: number) => void;
   initializeSession: (authResult: { token: string; user: IUser }, userService?: any) => Promise<void>;
 }
@@ -403,6 +404,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     eventBus.emit('AccountSwitchedMessage', {nickName:user.nickName});
   },
 
+  applyProfileUpdate: (profile) => {
+    const state = get();
+    if (!state.currentUser || state.currentUser.id !== profile.id || userSession.userId !== profile.id) return;
+    const user = { ...state.currentUser, ...profile, token: state.currentUser.token || userSession.token };
+    const savedAccounts = state.savedAccounts.map(account => account.id === user.id ? { ...account, ...user } : account);
+    set({ currentUser: user, savedAccounts });
+    saveAccountsToStorage(savedAccounts);
+  },
+
   removeSavedAccount: (accountId) => {
     const state = get();
     if (state.isLoggingOut || state.isChangingSession || state.currentUser?.id === accountId || userSession.userId === accountId) return;
@@ -463,3 +473,5 @@ window.addEventListener('storage', (event) => {
     void useAuthStore.getState().logOut({ logoutAsync: async () => true });
   }
 });
+
+eventBus.on('UserProfileUpdatedMessage', ({ user }) => useAuthStore.getState().applyProfileUpdate(user));

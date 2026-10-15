@@ -1,3 +1,5 @@
+import { createProfileUpdatePayload } from './profile-contract';
+import { getAuthErrorMessage } from './auth-contract';
 import { userPresenceState, UserPresence } from './userPresenceState';
 import { apiClient } from './apiClient';
 import { IUser, IUserSearchResult, IMessage } from '../types/models';
@@ -345,13 +347,12 @@ export class UserService implements IUserService {
 
   public async updateProfileAsync(editUser: IUser): Promise<IUser | null> {
     try {
-      const response = await apiClient.put<IUser>('api/User/update', editUser);
+      const response = await apiClient.put<IUser>('api/User/update', createProfileUpdatePayload(editUser));
       const updated = response.data || editUser;
       this.cacheUserProfile(updated);
       return updated;
     } catch (ex) {
-      console.error('[UserService ERROR] Сбой обновления профиля:', ex);
-      return null;
+      throw new Error(getAuthErrorMessage(ex, 'Не удалось сохранить профиль. Повтори попытку.'));
     }
   }
 }

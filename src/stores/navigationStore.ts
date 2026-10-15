@@ -1,3 +1,4 @@
+import { useAuthStore } from './authStore';
 import { create } from 'zustand';
 import { MainTab } from '../types/enums';
 import { IUserSearchResult } from '../types/models';
@@ -41,6 +42,8 @@ interface NavigationState {
 }
 
 function getCurrentSessionUser(): any {
+  const current = useAuthStore.getState().currentUser;
+  if (current && current.id === userSession.userId) return { ...current };
   try {
     const raw =
       localStorage.getItem('user_session_data') ||
@@ -98,7 +101,8 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     if (currentUserId > 0) {
       try {
         const freshUser = await userService.getUserProfileAsync(currentUserId);
-        if (freshUser && get().isOwnProfile) {
+        if (freshUser && get().isProfileOpen && !get().isGroupProfile && get().isOwnProfile &&
+            userSession.userId === currentUserId && get().profileUser === sessionUser) {
           set({ profileUser: freshUser });
         }
       } catch (err) {

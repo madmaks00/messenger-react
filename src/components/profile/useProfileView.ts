@@ -32,6 +32,7 @@ import {
   getHardwareDevices,
 } from './profileView.utils';
 import { userService } from '../../services/user.service';
+import { getAuthErrorMessage } from '../../services/auth-contract';
 import { groupService } from '../../services/group.service';
 import { storiesService } from '../../services/stories.service';
 import { userSession } from '../../services/userSession';
@@ -112,29 +113,16 @@ export function useProfileView(
   initialTabProp: RightContainerType = 'stories'
 ) {
   const navProfileUser = useNavigationStore((s) => s.profileUser);
-  const navIsOwnProfile = useNavigationStore((s) => s.isOwnProfile);
   const navIsGroupProfile = useNavigationStore((s) => s.isGroupProfile);
   const navIsOpen = useNavigationStore((s) => s.isProfileOpen);
   const navInitialTab = useNavigationStore((s) => s.profileInitialTab);
   const navCloseProfile = useNavigationStore((s) => s.closeProfile);
 
-  const effectiveUserId =
-    currentUserIdProp ||
-    Number((userSession as any)?.UserId || (userSession as any)?.userId || 0) ||
-    Number(JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0);
-
-  const isOpen = navIsOpen ?? isOpenProp;
-  const isGroupProfile = navIsGroupProfile ?? isGroupProfileProp;
-  const rawIsOwnProfile = navIsOwnProfile !== undefined ? navIsOwnProfile : isOwnProfileProp;
-
-  const candidateUser = (!rawIsOwnProfile && navProfileUser) ? navProfileUser : (userProp || navProfileUser);
-
-  const isOwnProfile = Boolean(
-    rawIsOwnProfile &&
-    candidateUser?.id &&
-    effectiveUserId &&
-    Number(candidateUser.id) === Number(effectiveUserId)
-  );
+  const effectiveUserId = Number(userSession.userId || currentUserIdProp || 0);
+  const isOpen = navIsOpen || isOpenProp;
+  const isGroupProfile = navIsOpen ? navIsGroupProfile : isGroupProfileProp;
+  const candidateUser = navIsOpen ? (navProfileUser || userProp) : (userProp || navProfileUser);
+  const isOwnProfile = Boolean(!isGroupProfile && effectiveUserId > 0 && Number(candidateUser?.id) === effectiveUserId);
 
   const user = candidateUser;
   const initialTab = navInitialTab || initialTabProp;
@@ -361,6 +349,25 @@ export function useProfileView(
   const [storiesFilterOpen, setStoriesFilterOpen] = useState<boolean>(false);
 
   const [editUser, setEditUser] = useState<IUser>({ ...user });
+  const editIsDirtyRef = useRef(false);
+  const profileUpdateVersionRef = useRef(0);
+  const saveInFlightRef = useRef(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [profileSaveError, setProfileSaveError] = useState('');
+  const profileIdentityRef = useRef('');
+  const profileIdentity = `${effectiveUserId}:${isGroupProfile}:${Number(user?.id || 0)}:${isOpen}`;
+  profileIdentityRef.current = profileIdentity;
+  const updateEditUser = (next: React.SetStateAction<IUser>) => {
+    editIsDirtyRef.current = true;
+    setProfileSaveError('');
+    setEditUser(next);
+  };
+  const resetEditProfile = () => {
+    editIsDirtyRef.current = false;
+    setEditUser({ ...displayedUser });
+    setEditErrors({});
+    setProfileSaveError('');
+  };
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
   const [currentSettingsSubPanel, setCurrentSettingsSubPanel] = useState<SettingsSubPanelType>('main');
@@ -614,12 +621,23 @@ export function useProfileView(
     prevUserIdRef.current = user?.id ?? null;
 
     setDisplayedUser(user);
+    if (!editIsDirtyRef.current) setEditUser({ ...user });
 
     if (isJustOpened || isDifferentUser) {
+      editIsDirtyRef.current = false;
+      setProfileSaveError('');
+      setEditErrors({});
       setEditUser({ ...user });
       setIsExpanded(isOwnProfile);
 
       if (isOwnProfile) {
+        const identity = profileIdentity;
+        const updateVersion = profileUpdateVersionRef.current;
+        void services.getUserProfile(effectiveUserId).then((profile) => {
+          if (!profile || profileIdentityRef.current !== identity || profileUpdateVersionRef.current !== updateVersion) return;
+          setDisplayedUser(profile);
+          if (!editIsDirtyRef.current) setEditUser({ ...profile });
+        }).catch(() => { /* The current session snapshot remains editable. */ });
         const targetTab = initialTab || 'stories';
         setActiveRightContainer(targetTab);
         if (targetTab === 'stories') {
@@ -644,10 +662,14 @@ export function useProfileView(
 
   useEffect(() => {
     const unbindUser = eventBus.on('UserProfileUpdatedMessage', ({ user: updatedUser }) => {
-      if (displayedUser && displayedUser.id === updatedUser.id) {
+      if (!isGroupProfile && displayedUser && displayedUser.id === updatedUser.id) {
+        profileUpdateVersionRef.current++;
         setDisplayedUser(updatedUser);
         if (isOwnProfile) {
-          setEditUser({ ...updatedUser });
+          if (!editIsDirtyRef.current) setEditUser({ ...updatedUser });
+          const navigation = useNavigationStore.getState();
+          if (navigation.isProfileOpen && !navigation.isGroupProfile && Number(navigation.profileUser?.id) === updatedUser.id)
+            useNavigationStore.setState({ profileUser: updatedUser });
         }
       }
     });
@@ -678,7 +700,7 @@ export function useProfileView(
       unbindPrivacy();
       unbindMute();
     };
-  }, [displayedUser, isOwnProfile]);
+  }, [displayedUser, isOwnProfile, isGroupProfile]);
 
   useEffect(() => {
     const unbindTab = eventBus.on('SelectProfileTab' as any, ({ tab }: any) => {
@@ -699,6 +721,10 @@ export function useProfileView(
   }, [loadOwnProfileData]);
 
   const expandRightPanel = (containerName: RightContainerType) => {
+    if (containerName === 'editProfile') {
+      if (!isOwnProfile || isGroupProfile) return;
+      resetEditProfile();
+    }
     setActiveRightContainer(containerName);
     setIsExpanded(true);
   };
@@ -938,11 +964,30 @@ export function useProfileView(
   };
 
   const handleSaveEditProfile = async () => {
-    if (!validateEditProfile(editUser)) return;
-    const res = await services.updateProfile(editUser);
-    if (res) {
-      setDisplayedUser(res);
-      setEditUser({ ...res });
+    if (saveInFlightRef.current || !isOwnProfile || isGroupProfile) return;
+    if (Number(editUser.id) !== effectiveUserId || !validateEditProfile(editUser)) return;
+    const identity = profileIdentityRef.current;
+    const accountId = effectiveUserId;
+    const draft = { ...editUser };
+    saveInFlightRef.current = true;
+    setIsProfileSaving(true);
+    setProfileSaveError('');
+    try {
+      const updated = await services.updateProfile(draft);
+      if (profileIdentityRef.current !== identity || userSession.userId !== accountId) return;
+      if (!updated || updated.id !== accountId) throw new Error('Не удалось сохранить профиль. Повтори попытку.');
+      profileUpdateVersionRef.current++;
+      editIsDirtyRef.current = false;
+      setDisplayedUser(updated);
+      setEditUser({ ...updated });
+      setEditErrors({});
+      eventBus.emit('UserProfileUpdatedMessage', { user: updated });
+    } catch (error) {
+      if (profileIdentityRef.current === identity && userSession.userId === accountId)
+        setProfileSaveError(getAuthErrorMessage(error, 'Не удалось сохранить профиль. Повтори попытку.'));
+    } finally {
+      saveInFlightRef.current = false;
+      setIsProfileSaving(false);
     }
   };
 
@@ -1226,7 +1271,10 @@ export function useProfileView(
     storiesFilterOpen,
     setStoriesFilterOpen,
     editUser,
-    setEditUser,
+    setEditUser: updateEditUser,
+    resetEditProfile,
+    isProfileSaving,
+    profileSaveError,
     editErrors,
     setEditErrors,
     currentSettingsSubPanel,
