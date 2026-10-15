@@ -1,3 +1,4 @@
+import { WorkspaceEmptyState } from '../common/WorkspaceEmptyState';
 import React, { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   mdiLock,
@@ -858,28 +859,7 @@ export const ChatWorkspaceView: React.FC = () => {
   }, [layoutItems, viewportHeight, scrollToOffsetAnimated]);
 
   if (!selectedChatUser) {
-    return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: PALETTE.bgChat }}>
-        <div
-          style={{
-            padding: '10px 20px',
-            borderRadius: 20,
-            background: PALETTE.contextMenuBg,
-            border: `1.2px solid ${PALETTE.contextMenuBorder}`,
-            color: '#FFFFFF',
-            fontSize: 15,
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            userSelect: 'none',
-          }}
-        >
-          <MdiIcon path={mdiMessageTextOutline} size={20} color={PALETTE.accent} />
-          <span>Select a chat to start messaging</span>
-        </div>
-      </div>
-    );
+    return <WorkspaceEmptyState iconPath={mdiMessageTextOutline} text="Select a chat to start messaging" background={PALETTE.bgChat} />;
   }
 
   const msgs = currentChatMessages || [];

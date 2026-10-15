@@ -1,3 +1,4 @@
+import { WorkspaceEmptyState } from '../common/WorkspaceEmptyState';
 import React from 'react';
 import { mdiGamepadVariantOutline, mdiPlusCircleOutline, mdiLogin, mdiGrid, mdiCheckerboard, mdiChessKnight, mdiFerry, mdiPalette, mdiPencil } from '@mdi/js';
 import { useGamesStore } from '../../stores/gamesStore';
@@ -24,34 +25,7 @@ export const GamesWorkspaceView: React.FC = () => {
   } = useGamesStore();
 
   if (!selectedGame) {
-    return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'var(--bg-chat, #11141B)',
-        }}
-      >
-        <div
-          style={{
-            backgroundColor: 'var(--game-tile-hover-bg, #1C212D)',
-            borderRadius: 20,
-            padding: '10px 20px',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <svg viewBox="0 0 24 24" width={20} height={20} fill="var(--app-accent, #1E9BEB)" style={{ marginRight: 10 }}>
-            <path d={mdiGamepadVariantOutline} />
-          </svg>
-          <span style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 600 }}>
-            Select a game to start playing
-          </span>
-        </div>
-      </div>
-    );
+    return <WorkspaceEmptyState iconPath={mdiGamepadVariantOutline} text="Select a game to start playing" background="var(--bg-chat, #11141B)" surface="var(--game-tile-hover-bg, #1C212D)" />;
   }
 
   const iconSvg = ICON_MAP[selectedGame.iconKind] || mdiGamepadVariantOutline;

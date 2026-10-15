@@ -1,3 +1,4 @@
+import { WorkspaceEmptyState } from '../common/WorkspaceEmptyState';
 import React, { useRef, useEffect } from 'react';
 import {
   mdiBookmarkOutline,
@@ -251,37 +252,7 @@ export const NotesWorkspaceView: React.FC = () => {
   }, [currentChatMessages, isNoteChatMode]);
 
   if (!selectedNote) {
-    return (
-      <div
-        style={{
-          flex: 1,
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#11141B',
-          userSelect: 'none',
-        }}
-      >
-        <div
-          style={{
-            padding: '10px 20px',
-            borderRadius: 20,
-            backgroundColor: '#1C212D',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <MdiIcon path={mdiNotebookEditOutline} size={20} color="#1E9BEB" />
-          <span style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 600 }}>
-            {myNotes.length === 0
-              ? 'Create your first note to save your thoughts'
-              : 'Select a note to start creating'}
-          </span>
-        </div>
-      </div>
-    );
+    return <WorkspaceEmptyState iconPath={mdiNotebookEditOutline} text={myNotes.length === 0 ? 'Create your first note to save your thoughts' : 'Select a note to start creating'} />;
   }
 
   const noteIconPath = resolveMdiIcon(selectedNote.iconKind, mdiBookmarkOutline);

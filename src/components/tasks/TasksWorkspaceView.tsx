@@ -1,3 +1,4 @@
+import { WorkspaceEmptyState } from '../common/WorkspaceEmptyState';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   mdiFormatListBulleted,
@@ -161,35 +162,7 @@ export const TasksWorkspaceView: React.FC = () => {
 
   // Заглушка, если список не выбран (1 в 1 с XAML)
   if (!selectedTaskList) {
-    return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#11141B',
-          userSelect: 'none',
-        }}
-      >
-        <div
-          style={{
-            padding: '10px 20px',
-            borderRadius: 20,
-            backgroundColor: '#1C212D',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <MdiIcon path={mdiFormatListChecks} size={20} color="#1E9BEB" style={{ marginRight: 10 }} />
-          <span style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 600 }}>
-            {myTaskLists.length === 0
-              ? 'Create your first list to start organizing tasks'
-              : 'Select a list to view tasks'}
-          </span>
-        </div>
-      </div>
-    );
+    return <WorkspaceEmptyState iconPath={mdiFormatListChecks} text={myTaskLists.length === 0 ? 'Create your first list to start organizing tasks' : 'Select a list to view tasks'} />;
   }
 
   const displayedTasks = visibleTasks.filter((t) => {
