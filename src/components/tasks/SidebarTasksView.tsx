@@ -112,7 +112,7 @@ export const SidebarTasksView: React.FC = () => {
         hintText="Search lists..."
         onChange={setListSearchText}
         onClear={() => setListSearchText('')}
-        margin="0 6px 8px 6px"
+        margin="0 6px 10px 6px"
       />
 
       <div
