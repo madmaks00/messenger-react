@@ -916,7 +916,12 @@ eventBus.on('UserLeftGroupMessage' as any,()=>{void useSidebarChatsStore.getStat
 eventBus.on('UserStatusChangedMessage', ({userId,isOnline,lastSeen}) => {
   const status = parsePresence({isOnline,lastSeen});if(status)useSidebarChatsStore.getState().applyPresence(userId,status);
 });
-eventBus.on('BeforeAccountSwitchMessage',()=>{userPresenceState.reset();useSidebarChatsStore.getState().stopGlobalStatusPolling();});
+eventBus.on('BeforeAccountSwitchMessage',()=>{
+  const store=useSidebarChatsStore.getState();
+  for(const timer of store.typingTimers.values())clearTimeout(timer);
+  store.typingTimers.clear();
+  userPresenceState.reset();store.stopGlobalStatusPolling();
+});
 
 eventBus.on('SelectChatUserMessage' as any, (data: any) => {
   const target = data && typeof data === 'object' && 'target' in data ? data.target : data;
@@ -1008,9 +1013,29 @@ eventBus.on('SidebarUpdateMessage' as any, (data: any) => {
   );
 });
 
+eventBus.on('ReceiveMessage', incoming => {
+  if (incoming.senderId === userSession.userId || incoming.noteId || incoming.secretChatId) return;
+  const store = useSidebarChatsStore.getState();
+  const isGroup = Number(incoming.groupId) > 0;
+  const key = isGroup ? `g_${incoming.groupId}` : `u_${incoming.senderId}`;
+  const timer = store.typingTimers.get(key);
+  if (timer) clearTimeout(timer);
+  store.typingTimers.delete(key);
+  const update = (chat: IChatListItem) => !chat.isSecretChat && (isGroup
+    ? chat.isGroup && Number(chat.groupId ?? chat.id) === Number(incoming.groupId)
+    : !chat.isGroup && Number(chat.userId ?? chat.id) === incoming.senderId)
+    ? { ...chat, isTyping: false } : chat;
+  useSidebarChatsStore.setState(state => {
+    const allChats = state.allChats.map(update);
+    return { allChats, filteredChats: applyFolderFilter(allChats, state.selectedFolderId, state.isSystemFolder),
+      currentSidebarChat: state.currentSidebarChat ? update(state.currentSidebarChat) : null };
+  });
+});
+
 eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
   const store = useSidebarChatsStore.getState();
   const isGroup = Boolean(groupId && groupId > 0);
+  if (senderId <= 0 || senderId === userSession.userId) return;
   const key = isGroup ? `g_${groupId}` : `u_${senderId}`;
 
   const chats = store.allChats.map((c) => {
@@ -1033,6 +1058,7 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
   }
 
   const timer = setTimeout(() => {
+    if (useSidebarChatsStore.getState().typingTimers.get(key) !== timer) return;
     const currentChats = useSidebarChatsStore.getState().allChats.map((c) => {
       if (isGroup && c.isGroup && Number(c.groupId ?? c.id) === Number(groupId)) {
         return { ...c, isTyping: false };

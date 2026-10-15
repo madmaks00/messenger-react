@@ -2274,9 +2274,27 @@ eventBus.on('EndSearchBoxMessage', () => {
   }
 });
 
+function resetReceivedTyping(incoming: IMessage) {
+  if (incoming.senderId === userSession.userId || incoming.noteId || incoming.secretChatId) return;
+  const selected = useChatStore.getState().selectedChatUser;
+  if (!selected || selected.isSecretChat) return;
+  const isCurrent = incoming.groupId
+    ? selected.isGroup && Number(selected.id) === Number(incoming.groupId)
+    : !selected.isGroup && Number(selected.id) === Number(incoming.senderId);
+  if (!isCurrent) return;
+  if (activeChatTypingTimer) clearTimeout(activeChatTypingTimer);
+  activeChatTypingTimer = null;
+  if (selected.isTyping) useChatStore.setState({ selectedChatUser: { ...selected, isTyping: false } });
+}
+
+eventBus.on('BeforeAccountSwitchMessage', () => {
+  if (activeChatTypingTimer) clearTimeout(activeChatTypingTimer);
+  activeChatTypingTimer = null;
+});
+
 eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: number; groupId: number | null }) => {
   const { selectedChatUser } = useChatStore.getState();
-  if (!selectedChatUser || selectedChatUser.isSecretChat) return;
+  if (!selectedChatUser || selectedChatUser.isSecretChat || senderId <= 0 || senderId === userSession.userId) return;
 
   const activeId = Number(selectedChatUser.id ?? (selectedChatUser as any).userId ?? 0);
   const isCurrent = groupId
@@ -2291,10 +2309,8 @@ eventBus.on('UserTypingMessage' as any, ({ senderId, groupId }: { senderId: numb
     if (activeChatTypingTimer) clearTimeout(activeChatTypingTimer);
     activeChatTypingTimer = setTimeout(() => {
       const current = useChatStore.getState().selectedChatUser;
-      if (current) {
-        useChatStore.setState({
-          selectedChatUser: { ...current, isTyping: false },
-        });
+      if (current && !current.isSecretChat && current.isGroup === selectedChatUser.isGroup && Number(current.id) === activeId) {
+        useChatStore.setState({ selectedChatUser: { ...current, isTyping: false } });
       }
       activeChatTypingTimer = null;
     }, 4000);
@@ -2306,6 +2322,7 @@ eventBus.on('MessageInputTextChangedMessage' as any, ({ text }: { text: string }
 });
 
 eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
+  resetReceivedTyping(incoming);
   const currentUserId = Number(
     userSession.userId || JSON.parse(localStorage.getItem('user_session_data') || '{}').userId || 0
   );
@@ -2336,16 +2353,6 @@ eventBus.on('ReceiveMessage' as any, async (incoming: IMessage) => {
       ? selectedChatUser.isGroup && activeChatId === Number(incoming.groupId)
       : !selectedChatUser.isGroup && !selectedChatUser.isSecretChat && (activeChatId === Number(incoming.senderId) || activeChatId === Number(incoming.receiverId)))
   );
-
-  if (isFromCurrentChat) {
-    if (activeChatTypingTimer) {
-      clearTimeout(activeChatTypingTimer);
-      activeChatTypingTimer = null;
-    }
-    if (selectedChatUser?.isTyping) {
-      useChatStore.setState({ selectedChatUser: { ...selectedChatUser, isTyping: false } });
-    }
-  }
 
   const isChatOpen = isFromCurrentChat;
 
