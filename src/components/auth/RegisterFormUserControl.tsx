@@ -11,7 +11,7 @@ interface RegisterFormUserControlProps {
   onSwitchToLogin: () => void;
 }
 
-const GENDER_OPTIONS = ['Not specified', 'Male', 'Female'];
+const GENDER_OPTIONS = ['Not set', 'Male', 'Female'];
 
 export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = ({
   title = 'Create Account',

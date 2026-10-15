@@ -6,6 +6,6 @@ export function createProfileUpdatePayload(user: IUser) {
   return {
     firstName: value.firstName, lastName: value.lastName, nickName: value.nickName,
     username: value.username, description: value.description, phone: value.phone,
-    email: value.email, gender: value.gender ?? 0, birthday: value.birthday, avatar: value.avatar,
+    email: value.email, gender: value.gender, birthday: value.birthday, avatar: value.avatar,
   };
 }

@@ -229,14 +229,15 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                   <Icons.GenderMaleFemale size={18} color={Theme.ProfileInfoIconGender} />
                 </div>
                 <select disabled={isProfileSaving}
-                  value={editUser.gender ?? Gender.Male}
-                  onChange={(e) => setEditUser({ ...editUser, gender: Number(e.target.value) as Gender })}
+                  value={editUser.gender ?? ''}
+                  onChange={(e) => setEditUser({ ...editUser, gender: e.target.value === '' ? null : Number(e.target.value) as Gender })}
                   style={{
                     ...cleanInputStyle,
                     cursor: 'pointer',
                     backgroundColor: 'transparent',
                   }}
                 >
+                  <option value="" style={{ backgroundColor: Theme.ProfileComboBoxDropdownBg, color: Theme.ProfileComboBoxDropdownText }}>Not set</option>
                   <option value={Gender.Male} style={{ backgroundColor: Theme.ProfileComboBoxDropdownBg, color: Theme.ProfileComboBoxDropdownText }}>Male</option>
                   <option value={Gender.Female} style={{ backgroundColor: Theme.ProfileComboBoxDropdownBg, color: Theme.ProfileComboBoxDropdownText }}>Female</option>
                 </select>
