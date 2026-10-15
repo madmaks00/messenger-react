@@ -2761,6 +2761,23 @@ eventBus.on('SecretMessageReceivedMessage' as any, (data: any) => {
   }
 });
 
+eventBus.on('UserProfileUpdatedMessage', ({ user }) => {
+  if (!user || user.id <= 0) return;
+  const name = user.nickName || user.username || 'User';
+  const avatar = user.avatarPath || user.avatar || null;
+  useChatStore.setState(state => {
+    const selected = state.selectedChatUser;
+    const update = (message: IMessage) => message.senderId === user.id
+      ? { ...message, senderName: name, senderAvatar: avatar } : message;
+    return {
+      selectedChatUser: selected && !selected.isGroup && Number(selected.id) === user.id
+        ? { ...selected, nickName: name, username: user.username, avatar: user.avatar ?? null, avatarPath: user.avatarPath || null } : selected,
+      currentChatMessages: state.currentChatMessages.map(update), pinnedMessages: state.pinnedMessages.map(update),
+      ...(user.id === userSession.userId ? { currentUserName: name, currentUserAvatar: avatar } : {}),
+    };
+  });
+});
+
 eventBus.on('SecretChatEstablishedMessage' as any, ({ secretChatId, keyFingerprint }: any) => {
   const { selectedChatUser } = useChatStore.getState();
   if (

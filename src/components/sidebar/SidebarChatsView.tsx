@@ -769,6 +769,7 @@ export const SidebarChatsView: React.FC = () => {
 
                         {chatAvatarSrc && (
                           <img
+                            key={chatAvatarSrc}
                             src={chatAvatarSrc}
                             alt=""
                             onError={(e) => {

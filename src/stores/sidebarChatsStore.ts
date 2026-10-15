@@ -1088,6 +1088,22 @@ eventBus.on('ActiveChatUnreadResetMessage' as any, (data: any) => {
   });
 });
 
+eventBus.on('UserProfileUpdatedMessage', ({ user }) => {
+  if (!user || user.id <= 0) return;
+  userService.cacheUserProfile(user);
+  const profile = { nickName: user.nickName || user.username || 'User', username: user.username,
+    avatar: user.avatar ?? null, avatarPath: user.avatarPath || null };
+  useSidebarChatsStore.setState(state => {
+    const update = (chat: IChatListItem) => !chat.isGroup && Number(chat.userId ?? chat.id) === user.id
+      ? { ...chat, ...profile } : chat;
+    const allChats = state.allChats.map(update);
+    const selected = state.selectedChatUser;
+    return { allChats, filteredChats: applyFolderFilter(allChats, state.selectedFolderId, state.isSystemFolder),
+      currentSidebarChat: state.currentSidebarChat ? update(state.currentSidebarChat) : null,
+      selectedChatUser: selected && !selected.isGroup && Number(selected.id) === user.id ? { ...selected, ...profile } : selected };
+  });
+});
+
 eventBus.on('GroupUpdatedMessage' as any, ({ groupId, newName, newAvatar, newDescription }: any) => {
   useSidebarChatsStore.setState((state) => {
     const updated = state.allChats.map((c) =>
