@@ -1,0 +1,20 @@
+/* Keep browser-filled credentials consistent with both authentication cards. */
+.makc-auth-form {
+  color-scheme: dark;
+  --auth-autofill-label-offset: -19px;
+}
+
+.makc-register-form {
+  --auth-autofill-label-offset: -17px;
+}
+
+.makc-auth-form input:is(:autofill, :-webkit-autofill) {
+  -webkit-text-fill-color: #FFFFFF !important;
+  caret-color: var(--app-accent, #1E9BEB) !important;
+  -webkit-box-shadow: 0 0 0 1000px #161A23 inset !important;
+  box-shadow: 0 0 0 1000px #161A23 inset !important;
+}
+
+.makc-auth-form div:has(> input:is(:autofill, :-webkit-autofill)) > label {
+  transform: translateY(var(--auth-autofill-label-offset)) scale(0.8) !important;
+}

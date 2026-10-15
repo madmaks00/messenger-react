@@ -1,3 +1,4 @@
+import './auth-inputs.css';
 import React, { useState } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { authService } from '../../services/auth.service';
@@ -43,7 +44,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
   const isPassActive = passFocused || hasPassword;
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', userSelect: 'none' }}>
+    <form className="makc-auth-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', userSelect: 'none' }}>
       {/* 🟢 ЛОГОТИП MAKC: ВЫРАВНИВАНИЕ ПО ОПТИЧЕСКОМУ ЦЕНТРУ */}
       {showLogo && (
         <div

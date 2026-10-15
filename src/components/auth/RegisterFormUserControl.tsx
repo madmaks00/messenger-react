@@ -1,3 +1,4 @@
+import './auth-inputs.css';
 import React, { useRef, useState } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { authService } from '../../services/auth.service';
@@ -200,7 +201,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
     <form
       ref={formRef}
       onSubmit={handleSubmit}
-      className="makc-register-form"
+      className="makc-auth-form makc-register-form"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -209,27 +210,6 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
         boxSizing: 'border-box',
       }}
     >
-      {/* 🟢 ПОДАВЛЕНИЕ БЕЛОГО АВТОЗАПОЛНЕНИЯ В ХРОМЕ */}
-      <style>{`
-        .makc-register-form input:-webkit-autofill,
-        .makc-register-form input:-webkit-autofill:hover,
-        .makc-register-form input:-webkit-autofill:focus,
-        .makc-register-form input:-webkit-autofill:active,
-        .makc-register-form textarea:-webkit-autofill,
-        .makc-register-form select:-webkit-autofill {
-          -webkit-text-fill-color: #FFFFFF !important;
-          caret-color: var(--app-accent, #1E9BEB) !important;
-          -webkit-box-shadow: 0 0 0 1000px #141824 inset !important;
-          box-shadow: 0 0 0 1000px #141824 inset !important;
-          transition: background-color 5000000s ease-in-out 0s;
-        }
-
-        .makc-register-form div:has(input:-webkit-autofill) label {
-          transform: translateY(-17px) scale(0.8) !important;
-          color: rgba(255, 255, 255, 0.7) !important;
-        }
-      `}</style>
-
       {/* 🟢 ШАПКА */}
       <div style={{ flexShrink: 0, marginBottom: 14 }}>
         <h1 style={{ color: '#FFFFFF', fontSize: 26, fontWeight: 'bold', textAlign: 'center', margin: '0 0 2px 0' }}>
