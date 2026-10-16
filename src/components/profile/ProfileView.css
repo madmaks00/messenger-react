@@ -1,0 +1,31 @@
+.profile-modal-card {
+  width: var(--profile-modal-width, 365px);
+  height: var(--profile-modal-height, 720px);
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  flex-shrink: 0;
+  border-radius: var(--profile-card-radius, 16px);
+  box-shadow: var(--profile-card-shadow, 0 20px 60px var(--shadow-colour, rgba(0,0,0,.6)));
+}
+.profile-modal-card[data-expanded="true"] { width: var(--profile-modal-width, 888px); }
+.profile-modal-left { flex: 0 0 var(--profile-left-width, 365px); height: 100%; min-width: 0; min-height: 0; }
+.profile-modal-right { flex: 1; min-width: 0; min-height: 0; height: 100%; }
+.profile-modal-card[data-expanded="false"] > .profile-modal-left { flex: 1; }
+.profile-modal-card[data-expanded="false"] > .profile-modal-right { display: none !important; }
+/* Fill the available window when the normal card would leave at most 30px per side. */
+@media (max-height: 780px) {
+  .profile-modal-card { --profile-modal-width: 100%; --profile-modal-height: 100%; --profile-card-radius: 0px; --profile-card-shadow: none; --profile-left-width: 41.103604%; }
+}
+@media (max-width: 948px) {
+  .profile-modal-card[data-expanded="true"] { --profile-modal-width: 100%; --profile-modal-height: 100%; --profile-card-radius: 0px; --profile-card-shadow: none; --profile-left-width: 41.103604%; }
+}
+@media (max-width: 425px) {
+  .profile-modal-card { --profile-modal-width: 100%; --profile-modal-height: 100%; --profile-card-radius: 0px; --profile-card-shadow: none; --profile-left-width: 41.103604%; }
+}
+/* Keep both profile navigation and the open section reachable on narrow phones. */
+@media (max-width: 599px) {
+  .profile-modal-card[data-expanded="true"] { flex-direction: column; overflow-y: auto !important; }
+  .profile-modal-card[data-expanded="true"] > .profile-modal-left { flex: 0 0 340px; height: 340px; width: 100%; }
+  .profile-modal-card[data-expanded="true"] > .profile-modal-right { flex: 1 0 360px; height: auto; min-height: 360px; width: 100%; }
+}

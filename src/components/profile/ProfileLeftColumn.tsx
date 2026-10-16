@@ -154,11 +154,10 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
   return (
     <div
       style={{
-        width: 365,
-        minWidth: 365,
-        maxWidth: 365,
-        height: 720,
-        maxHeight: 720,
+        width: '100%',
+        minWidth: 0,
+        height: '100%',
+        minHeight: 0,
         backgroundColor: Theme.ProfileLeftPanelBackground,
         borderRight: isExpanded ? `1px solid ${Theme.ProfileLeftPanelBorder}` : 'none',
         display: 'flex',

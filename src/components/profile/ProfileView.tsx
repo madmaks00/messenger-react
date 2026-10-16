@@ -1,3 +1,4 @@
+import './ProfileView.css';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { IAttachment, IMessage, IUser } from '../../types/models';
 import { MainTab } from '../../types/enums';
@@ -280,14 +281,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* 🟢 КАРТОЧКА ПРОФИЛЯ: ПЛАВНАЯ АНИМАЦИЯ 1 В 1 С WPF (SetCardWidth 250ms QuarticEase) */}
       <div
+        className="profile-modal-card" role="dialog" aria-label="Profile"
+        data-expanded={isExpanded}
         onClick={(e) => e.stopPropagation()}
         style={{
           fontFamily: '"Segoe UI", sans-serif',
-          width: isExpanded ? 888 : 365,
-          height: 720,
           backgroundColor: Theme.ProfileCardBackground,
-          borderRadius: 16,
-          boxShadow: '0 20px 60px var(--shadow-colour, rgba(0, 0, 0, 0.6))',
           display: 'flex',
           overflow: 'hidden',
           opacity: isVisible ? 1 : 0,
@@ -297,8 +296,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s cubic-bezier(0.25, 1, 0.5, 1)',
         }}
       >
-        {/* ЛЕВАЯ КОЛОНКА (365px, ЖЕСТКИЙ ФИКСИРОВАННЫЙ РАЗМЕР БЕЗ СЖАТИЯ) */}
-        <div style={{ width: 365, minWidth: 365, maxWidth: 365, height: '100%', flexShrink: 0 }}>
+        {/* ЛЕВАЯ КОЛОНКА (адаптируется к размеру карточки) */}
+        <div className="profile-modal-left">
           <ProfileLeftColumn
             vm={vm}
             isOwnProfile={effectiveIsOwnProfile}
@@ -313,14 +312,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           />
         </div>
 
-        {/* ПРАВАЯ КОЛОНКА (523px, ПЛАВНО ВЫЕЗЖАЕТ ИЗ-ПОД МАСКИ С ОФСЕТОМ 20px И ОПАСИТИ) */}
-        <div
+        {/* ПРАВАЯ КОЛОНКА (занимает оставшееся место, сохраняет анимацию открытия) */}
+        <div className="profile-modal-right"
           style={{
-            width: 523,
-            minWidth: 523,
-            maxWidth: 523,
-            height: '100%',
-            flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
             backgroundColor: Theme.ProfileCardBackground,
