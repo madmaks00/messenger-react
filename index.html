@@ -3,10 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/messenger-react/favicon.svg" />
+    <script>
+      (() => {
+        let theme = 'dark';
+        try { if (localStorage.getItem('makc-theme') === 'light') theme = 'light'; } catch {}
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>messengerreactts</title>
-    <script type="module" crossorigin src="/messenger-react/assets/index-DAQZux-B.js"></script>
-    <link rel="stylesheet" crossorigin href="/messenger-react/assets/index-oEtIMqec.css">
+    <script type="module" crossorigin src="/messenger-react/assets/index-DiOwZpch.js"></script>
+    <link rel="stylesheet" crossorigin href="/messenger-react/assets/index-Cz8SLmp2.css">
   </head>
   <body>
     <div id="root"></div>
