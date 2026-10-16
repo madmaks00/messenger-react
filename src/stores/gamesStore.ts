@@ -243,8 +243,14 @@ export const useGamesStore = create<GamesState>((set, get) => ({
   startGame: async () => {
     const { currentRoom, isHost } = get();
     if (currentRoom && isHost) {
-      set({ canStartGame: false, isGameOver: false });
-      await gameSignalrService.startGameAsync(currentRoom.roomId);
+      set({ canStartGame: false });
+      try {
+        await gameSignalrService.startGameAsync(currentRoom.roomId);
+      } catch (error: any) {
+        if (get().currentRoom?.roomId !== currentRoom.roomId) return;
+        set({ gameStatusText: `Failed to start: ${error?.message || 'Unknown error'}` });
+        updateCanStartGame(currentRoom, set, get);
+      }
     }
   },
 
@@ -546,7 +552,7 @@ function updateCanStartGame(room: GameRoomDto | null, set: any, get: any) {
   }
 
   if (room.gameType === 'DrawAndRate' || room.gameType === 'DrawAndGuess') {
-    set({ canStartGame: room.drawPhase === 0 && room.players.length >= 2 });
+    set({ canStartGame: !room.isPlaying && room.players.length >= 2 });
   } else {
     set({ canStartGame: !room.isPlaying && room.players.length === 2 });
   }

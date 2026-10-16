@@ -994,7 +994,7 @@ export const SidebarChatsView: React.FC = () => {
             ) : (
               recentUsers.map((user) => (
                 <UserCard
-                  key={user.id}
+                  key={`${user.isGroup ? 'g' : 'u'}_${user.id}`}
                   user={user}
                   onSelect={() => {
                     selectUser?.(user);
@@ -1025,7 +1025,7 @@ export const SidebarChatsView: React.FC = () => {
                 ) : (
                   foundUsers?.map((user) => (
                     <UserCard
-                      key={user.id}
+                      key={`${user.isGroup ? 'g' : 'u'}_${user.id}`}
                       user={user}
                       onSelect={() => {
                         selectUser?.(user);

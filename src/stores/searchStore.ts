@@ -59,7 +59,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
           chatService.searchMessagesAsync(query),
         ]);
 
-        const filtered = (users || []).filter((u) => u.id !== userSession.userId);
+        const filtered = (users || []).filter((u) => u.isGroup || u.id !== userSession.userId);
         set({ foundUsers: filtered, foundMessages: messages || [], isSearching: false });
       } catch {
         set({ isSearching: false });
@@ -68,7 +68,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   },
 
   selectUser: (user) => {
-    const recent = get().recentUsers.filter((u) => u.id !== user.id);
+    const recent = get().recentUsers.filter((u) => u.id !== user.id || Boolean(u.isGroup) !== Boolean(user.isGroup));
     const updated = [user, ...recent].slice(0, 30);
     set({ recentUsers: updated });
     localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));

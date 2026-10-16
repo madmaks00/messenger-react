@@ -5,6 +5,7 @@ import { userSession } from '../../services/userSession';
 import { eventBus } from '../../services/eventBus';
 import { IChatListItem } from '../../types/models';
 import { LastMessageType } from '../../types/enums';
+import { normalizeCallAvatar } from '../../utils/callAvatar';
 
 interface CreateGroupModalViewProps {
   isOpen: boolean;
@@ -150,10 +151,9 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
     const groupLink = isPublic ? newGroupUsername.trim().replace(/@/g, '').replace(/\s/g, '') : '';
 
     try {
-      let avatarData: any = undefined;
-      if (avatarBytes) {
-        avatarData = Array.from(avatarBytes);
-      }
+      const avatarData = avatarBytes
+        ? btoa(Array.from(avatarBytes, byte => String.fromCharCode(byte)).join(''))
+        : undefined;
 
       const result = await groupService.createGroupAsync({
         Name: newGroupName.trim(),
@@ -175,8 +175,8 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           groupId: result.id,
           groupName: newGroupName.trim(),
           nickName: newGroupName.trim(),
-          avatar: avatarPreviewUrl,
-          avatarPath: avatarPreviewUrl,
+          avatar: normalizeCallAvatar(avatarData),
+          avatarPath: normalizeCallAvatar(avatarData),
           isGroup: true,
           isChannel: isChannel,
           adminId: userSession.userId,
@@ -208,7 +208,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           folderIds: [],
         };
 
-        eventBus.emit('GroupCreatedMessage' as any, newChat);
+        eventBus.emit('GroupCreatedMessage', { newChat });
         if (onGroupCreated) {
           onGroupCreated(newChat);
         }

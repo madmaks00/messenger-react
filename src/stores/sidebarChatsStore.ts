@@ -913,6 +913,14 @@ eventBus.on('GroupPresenceChangedMessage' as any,({groupId,onlineCount,memberCou
 eventBus.on('UserJoinedGroupMessage' as any,()=>{void useSidebarChatsStore.getState().syncOnlineStatuses(true);});
 eventBus.on('UserLeftGroupMessage' as any,()=>{void useSidebarChatsStore.getState().syncOnlineStatuses(true);});
 
+eventBus.on('GroupCreatedMessage', ({ newChat }) => {
+  useSidebarChatsStore.setState(state => {
+    const allChats = sortChats([newChat, ...state.allChats.filter(chat => !isMatchingChat(chat, newChat))]);
+    return { allChats, filteredChats: applyFolderFilter(allChats, state.selectedFolderId, state.isSystemFolder) };
+  });
+  void signalRService.subscribeToGroupAsync(Number(newChat.groupId ?? newChat.id));
+});
+
 eventBus.on('UserStatusChangedMessage', ({userId,isOnline,lastSeen}) => {
   const status = parsePresence({isOnline,lastSeen});if(status)useSidebarChatsStore.getState().applyPresence(userId,status);
 });

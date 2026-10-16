@@ -17,6 +17,8 @@ interface JoinGroupDialogProps {
   data: JoinGroupPreviewData | null;
   onCancel: () => void;
   onConfirm: () => void;
+  busy?: boolean;
+  error?: string;
 }
 
 export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
@@ -24,6 +26,8 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
   data,
   onCancel,
   onConfirm,
+  busy = false,
+  error = '',
 }) => {
   const [isRendered, setIsRendered] = useState(isOpen && !!data);
   const [isFadingOut, setIsFadingOut] = useState(false);
@@ -157,6 +161,7 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
           </span>
         </div>
 
+        {error && <div role="alert" style={{color:'#FF7070',marginBottom:14}}>{error}</div>}
         {/* Кнопки */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button
@@ -167,6 +172,7 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
           </button>
           <button
             onClick={onConfirm}
+            disabled={busy || !activeData.groupId}
             style={{
               backgroundColor: 'var(--app-accent, #3B82F6)',
               border: 'none',

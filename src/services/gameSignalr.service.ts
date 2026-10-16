@@ -86,7 +86,7 @@ export class GameSignalRService {
   }
 
   public async startGameAsync(roomId: string): Promise<void> {
-    if (!this.isConnected) return;
+    if (!this.isConnected) throw new Error('Game connection is unavailable.');
     await this.hubConnection!.invoke('StartGame', roomId);
   }
 

@@ -30,7 +30,7 @@ import { ConfirmDialogView } from './components/modals/ConfirmDialogView';
 import { CreateFolderDialog } from './components/modals/CreateFolderDialog';
 import { PinMessageDialog } from './components/modals/PinMessageDialog';
 import { ForwardMessageDialog } from './components/modals/ForwardMessageDialog';
-import { JoinGroupDialog, JoinGroupPreviewData } from './components/modals/JoinGroupDialog';
+import { JoinGroupDialog } from './components/modals/JoinGroupDialog';
 import { CreateGroupModalView } from './components/modals/CreateGroupModalView';
 import { StoryEditorView } from './components/stories/StoryEditorView';
 import { StoryViewerView } from './components/stories/StoryViewerView';
@@ -44,6 +44,7 @@ import { useTodoStore } from './stores/todoStore';
 import { useNotesStore } from './stores/notesStore';
 import { useStoriesStore } from './stores/storiesStore';
 import { useSidebarResize } from './hooks/useSidebarResize';
+import { useGroupInvite } from './hooks/useGroupInvite';
 import { SecurityService } from './services/security.service';
 import { authService } from './services/auth.service';
 import { userService } from './services/user.service';
@@ -79,7 +80,7 @@ export const App: React.FC = () => {
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [pinDialog, setPinDialog] = useState<any>({ isOpen: false });
   const [forwardDialog, setForwardDialog] = useState<any>({ isOpen: false });
-  const [joinGroupData, setJoinGroupData] = useState<JoinGroupPreviewData | null>(null);
+  const groupInvite = useGroupInvite();
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
 
   const [photoViewer, setPhotoViewer] = useState<{ isOpen: boolean; list: IAttachment[]; index: number }>({
@@ -469,10 +470,12 @@ export const App: React.FC = () => {
         onConfirm={(chatIds: any) => forwardDialog.onConfirm?.(chatIds)}
       />
       <JoinGroupDialog
-        isOpen={Boolean(joinGroupData)}
-        data={joinGroupData}
-        onCancel={() => setJoinGroupData(null)}
-        onConfirm={() => setJoinGroupData(null)}
+        isOpen={!!groupInvite.data}
+        data={groupInvite.data}
+        busy={groupInvite.busy}
+        error={groupInvite.error}
+        onCancel={groupInvite.close}
+        onConfirm={groupInvite.confirm}
       />
       <CreateGroupModalView
         isOpen={isCreateGroupOpen}
