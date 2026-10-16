@@ -235,13 +235,13 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
           color: var(--surface-hover, rgba(255, 255, 255, 0.56)) !important;
           opacity: 1 !important;
           font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
-          font-size: 14px !important;
+          font-size: 15px !important;
         }
         .wpf-message-input::-webkit-input-placeholder {
           color: var(--surface-hover, rgba(255, 255, 255, 0.56)) !important;
           opacity: 1 !important;
           font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
-          font-size: 14px !important;
+          font-size: 15px !important;
         }
         .wpf-message-input {
           scrollbar-width: thin !important;
@@ -616,7 +616,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                     outline: 'none',
                     color: COLORS.inputText,
                     caretColor: 'var(--text-body, #FFFFFF)',
-                    fontSize: 14,
+                    fontSize: 15,
                     lineHeight: '20px',
                     padding: '8px 6px 10px 8px',
                     resize: 'none',

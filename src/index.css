@@ -98,7 +98,7 @@ input[type="search"]::-webkit-search-results-decoration {
   color: var(--text-secondary, rgba(255, 255, 255, 0.56)) !important;
   opacity: 1 !important;
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
-  font-size: 14px !important;
+  font-size: 15px !important;
 }
 
 /* 🟢 Стиль ссылок AuthLinkButtonStyle из WPF */
