@@ -152,7 +152,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
   };
 
   return (
-    <div
+    <div className="profile-left-content"
       style={{
         width: '100%',
         minWidth: 0,
@@ -167,8 +167,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
         overflow: 'hidden',
       }}
     >
-      {!isExpanded && (
-        <button
+        <button className="profile-left-close"
           onClick={onClose}
           title="Close Profile"
           style={{
@@ -188,7 +187,6 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
         >
           <Icons.Close size={18} color={Theme.ProfileSectionLabel} />
         </button>
-      )}
 
       {/* 1. СТАТИЧНЫЙ ВЕРХ */}
       <div style={{ padding: '20px 20px 15px 20px', textAlign: 'center', flexShrink: 0 }}>
