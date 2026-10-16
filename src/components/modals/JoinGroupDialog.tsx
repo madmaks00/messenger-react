@@ -95,7 +95,6 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
         {/* 1. Иконка + Заголовок */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>
-            <span>{activeData.isChannel ? '📢' : '👥'}</span>
             <span>{activeData.isChannel ? 'Group Details' : 'Join Group'}</span>
           </div>
           <button onClick={onCancel} style={{ background: 'transparent', border: 'none', color: '#94A3B8', fontSize: 18, cursor: 'pointer' }}>
