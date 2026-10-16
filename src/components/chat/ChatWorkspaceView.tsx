@@ -257,7 +257,8 @@ export const ChatWorkspaceView: React.FC = () => {
   const prevMessagesLengthRef = useRef<number>(0);
   const prevLastMsgIdRef = useRef<number | null>(null);
 
-  const handleMessageAreaMouseDown = useCallback((e: React.MouseEvent) => {
+  const handleMessageAreaMouseUp = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (
       target.closest('button') ||
@@ -265,17 +266,17 @@ export const ChatWorkspaceView: React.FC = () => {
       target.closest('input') ||
       target.closest('textarea') ||
       target.closest('[role="button"]') ||
-      target.closest('.context-menu')
+      target.closest('.context-menu') ||
+      target.closest('.chat-message-text') ||
+      target.closest('[contenteditable]')
     ) {
       return;
     }
 
-    setTimeout(() => {
-      const selection = window.getSelection();
-      if (!selection || selection.toString().length === 0) {
-        eventBus.emit('FocusMessageInputMessage' as any, undefined);
-      }
-    }, 10);
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      eventBus.emit('FocusMessageInputMessage' as any, undefined);
+    }
   }, []);
 
   const handleOpenPhotoGallery = useCallback((clickedAtt: IAttachment, clickedMsgId?: number) => {
@@ -1312,7 +1313,7 @@ export const ChatWorkspaceView: React.FC = () => {
 
       {/* ОБЛАСТЬ СООБЩЕНИЙ */}
       <div
-        onMouseDown={handleMessageAreaMouseDown}
+        onMouseUp={handleMessageAreaMouseUp}
         style={{ flex: 1, position: 'relative', overflow: 'hidden' }}
       >
         {isHistoryLoading && msgs.length === 0 && (

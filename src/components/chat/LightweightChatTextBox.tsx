@@ -99,7 +99,10 @@ export const LightweightChatTextBox: React.FC<LightweightChatTextBoxProps> = ({
 
   return (
     <div
+      className="chat-message-text"
       style={{
+        cursor: 'text',
+        WebkitUserSelect: 'text',
         fontSize: `${fontSize}px`,
         lineHeight: `${lineHeight}px`,
         wordBreak: 'break-word',
