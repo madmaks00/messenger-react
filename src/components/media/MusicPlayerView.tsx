@@ -280,7 +280,7 @@ export const MusicPlayerView: React.FC = () => {
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--other-bubble-bg, #1C212D)')}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-chat, #11141B)')}
       >
-          {currentTrack?.noteId ? <svg viewBox="0 0 24 24" width={16} height={16} fill={currentTrack.noteIconColor || '#1E9BEB'} style={{ marginRight: 6, flexShrink: 0 }}><path d={resolveMdiIcon(currentTrack.noteIconKind, mdiBookmarkOutline)} /></svg> : (
+          {currentTrack?.noteId ? <svg viewBox="0 0 24 24" width={16} height={16} fill={currentTrack.noteIconColor || 'var(--link-colour, #1E9BEB)'} style={{ marginRight: 6, flexShrink: 0 }}><path d={resolveMdiIcon(currentTrack.noteIconKind, mdiBookmarkOutline)} /></svg> : (
         <div style={{ width: 16, height: 16, marginRight: 6, position: 'relative' }}>
           <div
             style={{
@@ -388,7 +388,7 @@ export const MusicPlayerView: React.FC = () => {
                 maxWidth: 'calc(50% - 65px)',
                 transition: 'background-color 0.15s ease',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)')}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover, rgba(255, 255, 255, 0.05))')}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
               <div

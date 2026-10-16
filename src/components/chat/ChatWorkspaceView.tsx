@@ -46,34 +46,34 @@ import { IAttachment, AttachmentHelper, IChatListItem } from '../../types/models
 import { AttachmentType, LastMessageType } from '../../types/enums';
 
 const PALETTE = {
-  bgChat: '#11141B',
-  chatHeaderBg: '#161A23',
-  chatHeaderBorder: '#1F2533',
-  chatHeaderTitle: '#FFFFFF',
-  accent: '#1E9BEB',
+  bgChat: 'var(--surface-page, #11141B)',
+  chatHeaderBg: 'var(--surface-panel, #161A23)',
+  chatHeaderBorder: 'var(--border-primary, #1F2533)',
+  chatHeaderTitle: 'var(--text-body, #FFFFFF)',
+  accent: 'var(--accent-primary, #1E9BEB)',
   accentMarker: '#5E92CE',
   tgCheckmark: '#80BFFF',
-  textMuted: '#7D8494',
-  activeButtonBg: 'rgba(255, 255, 255, 0.16)',
-  pinnedPopupBg: '#1C212D',
-  pinnedPopupBorder: '#2A303C',
-  pinnedPopupHover: '#232A3B',
-  contextMenuBg: '#1C212D',
-  contextMenuBorder: '#2A303C',
-  contextMenuHover: '#232A3B',
-  contextMenuDivider: '#2A303C',
+  textMuted: 'var(--text-secondary, #7D8494)',
+  activeButtonBg: 'var(--surface-hover, rgba(255, 255, 255, 0.16))',
+  pinnedPopupBg: 'var(--surface-control, #1C212D)',
+  pinnedPopupBorder: 'var(--border-primary, #2A303C)',
+  pinnedPopupHover: 'var(--surface-hover, #232A3B)',
+  contextMenuBg: 'var(--surface-control, #1C212D)',
+  contextMenuBorder: 'var(--border-primary, #2A303C)',
+  contextMenuHover: 'var(--surface-hover, #232A3B)',
+  contextMenuDivider: 'var(--border-primary, #2A303C)',
   destructive: '#FF3B30',
-  emptyIconContainerBg: '#232A3B',
-  scrollButtonBg: '#232A3B',
-  scrollButtonBorder: '#2A303C',
-  fogTop: 'rgba(17, 20, 27, 0)',
-  fogMid: 'rgba(17, 20, 27, 0.8)',
-  fogBottom: '#11141B',
-  secretChatCardBg: '#1E293B',
-  secretChatCardBorder: '#334155',
-  secretChatBadgeBg: '#166534',
-  secretChatBadgeIcon: '#4ADE80',
-  secretChatFingerprintBg: '#0F172A',
+  emptyIconContainerBg: 'var(--surface-hover, #232A3B)',
+  scrollButtonBg: 'var(--surface-hover, #232A3B)',
+  scrollButtonBorder: 'var(--border-primary, #2A303C)',
+  fogTop: 'var(--chat-fade-transparent, rgba(17, 20, 27, 0))',
+  fogMid: 'var(--chat-fade, rgba(17, 20, 27, 0.8))',
+  fogBottom: 'var(--surface-recessed, #11141B)',
+  secretChatCardBg: 'var(--surface-hover, #1E293B)',
+  secretChatCardBorder: 'var(--border-primary, #334155)',
+  secretChatBadgeBg: 'var(--surface-success, #166534)',
+  secretChatBadgeIcon: 'var(--success-text, #4ADE80)',
+  secretChatFingerprintBg: 'var(--surface-control, #0F172A)',
 };
 
 const formatPinTimestamp = (timestamp: string | Date | undefined): string => {
@@ -904,11 +904,11 @@ export const ChatWorkspaceView: React.FC = () => {
               <button
                 onClick={clearSelection}
                 title="Cancel Selection"
-                style={{ background: 'transparent', border: 'none', color: '#FFFFFF', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-body, #FFFFFF)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
               >
-                <MdiIcon path={mdiClose} size={20} color="#FFFFFF" />
+                <MdiIcon path={mdiClose} size={20} color="var(--text-body, #FFFFFF)" />
               </button>
-              <span style={{ fontWeight: 'bold', fontSize: 18, color: '#FFFFFF' }}>
+              <span style={{ fontWeight: 'bold', fontSize: 18, color: 'var(--text-body, #FFFFFF)' }}>
                 Selected: {selectedCount}
               </span>
             </div>
@@ -918,7 +918,7 @@ export const ChatWorkspaceView: React.FC = () => {
                 onClick={replySelected}
                 style={headerActionBtnStyle}
               >
-                <MdiIcon path={mdiReplyOutline} size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <MdiIcon path={mdiReplyOutline} size={18} color="var(--text-body, #FFFFFF)" style={{ marginRight: 6 }} />
                 <span>Reply</span>
               </button>
 
@@ -1040,7 +1040,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       zIndex: 1000,
                       display: 'flex',
                       flexDirection: 'column',
-                      boxShadow: '0 8px 25px rgba(0,0,0,0.45)',
+                      boxShadow: '0 8px 25px var(--shadow-colour, rgba(0,0,0,0.45))',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 8px 8px 4px', borderBottom: `1px solid ${PALETTE.pinnedPopupBorder}`, margin: '0 4px 6px 0' }}>
@@ -1048,10 +1048,10 @@ export const ChatWorkspaceView: React.FC = () => {
                         <div style={{ transform: 'rotate(45deg)', display: 'flex' }}>
                           <MdiIcon path={mdiPinOutline} size={16} color={PALETTE.accent} />
                         </div>
-                        <span style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13.5 }}>Pinned Messages</span>
+                        <span style={{ color: 'var(--text-body, #FFFFFF)', fontWeight: 'bold', fontSize: 13.5 }}>Pinned Messages</span>
                       </div>
                       {pinnedMessages.length > 0 && (
-                        <div style={{ background: PALETTE.accent, color: '#FFFFFF', borderRadius: 9, padding: '2px 7px', fontSize: 11, fontWeight: 'bold' }}>
+                        <div style={{ background: PALETTE.accent, color: 'var(--text-body, #FFFFFF)', borderRadius: 9, padding: '2px 7px', fontSize: 11, fontWeight: 'bold' }}>
                           {pinnedMessages.length}
                         </div>
                       )}
@@ -1124,7 +1124,7 @@ export const ChatWorkspaceView: React.FC = () => {
                                   </span>
                                 </div>
 
-                                <div style={{ color: '#FFFFFF', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                <div style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                                   {getMessageReplyText(pin)}
                                 </div>
                               </div>
@@ -1185,7 +1185,7 @@ export const ChatWorkspaceView: React.FC = () => {
                       borderRadius: 10,
                       padding: '4px 0',
                       zIndex: 1000,
-                      boxShadow: '0 8px 25px rgba(0,0,0,0.45)',
+                      boxShadow: '0 8px 25px var(--shadow-colour, rgba(0,0,0,0.45))',
                     }}
                   >
                     <HeaderMenuItem
@@ -1231,7 +1231,7 @@ export const ChatWorkspaceView: React.FC = () => {
                     {!selectedChatUser.isGroup && !selectedChatUser.isSecretChat && (
                       <HeaderMenuItem
                         icon={mdiLockOutline}
-                        iconColor="#4CAF50"
+                        iconColor="var(--success-text, #4CAF50)"
                         text="Start Secret Chat"
                         onClick={() => {
                           setIsHeaderMenuOpen(false);
@@ -1327,7 +1327,7 @@ export const ChatWorkspaceView: React.FC = () => {
             <div style={{ width: 100, height: 100, borderRadius: 50, background: PALETTE.emptyIconContainerBg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
               <MdiIcon path={selectedChatUser.isChannel ? mdiBullhornOutline : mdiMessageTextOutline} size={50} color={PALETTE.accent} />
             </div>
-            <div style={{ fontSize: 20, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 8 }}>
+            <div style={{ fontSize: 20, fontWeight: 'bold', color: 'var(--text-body, #FFFFFF)', marginBottom: 8 }}>
               {selectedChatUser.isChannel ? 'No posts yet' : 'No messages yet'}
             </div>
             <div style={{ fontSize: 14, color: PALETTE.textMuted }}>
@@ -1373,22 +1373,22 @@ export const ChatWorkspaceView: React.FC = () => {
               <MdiIcon path={mdiLockCheck} size={32} color={PALETTE.secretChatBadgeIcon} />
             </div>
 
-            <div style={{ color: '#F8FAFC', fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>
+            <div style={{ color: 'var(--text-body, #F8FAFC)', fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>
               Secret Chat
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '5px 0', width: '100%' }}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <MdiIcon path={mdiCheck} size={16} color={PALETTE.secretChatBadgeIcon} style={{ marginRight: 8 }} />
-                <span style={{ color: '#94A3B8', fontSize: 13 }}>End-to-end encryption (E2EE)</span>
+                <span style={{ color: 'var(--text-secondary, #94A3B8)', fontSize: 13 }}>End-to-end encryption (E2EE)</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <MdiIcon path={mdiCheck} size={16} color={PALETTE.secretChatBadgeIcon} style={{ marginRight: 8 }} />
-                <span style={{ color: '#94A3B8', fontSize: 13 }}>Leave no traces on server</span>
+                <span style={{ color: 'var(--text-secondary, #94A3B8)', fontSize: 13 }}>Leave no traces on server</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <MdiIcon path={mdiCheck} size={16} color={PALETTE.secretChatBadgeIcon} style={{ marginRight: 8 }} />
-                <span style={{ color: '#94A3B8', fontSize: 13 }}>Messages stored on device only</span>
+                <span style={{ color: 'var(--text-secondary, #94A3B8)', fontSize: 13 }}>Messages stored on device only</span>
               </div>
             </div>
 
@@ -1408,7 +1408,7 @@ export const ChatWorkspaceView: React.FC = () => {
               >
                 <span
                   style={{
-                    color: '#F8FAFC',
+                    color: 'var(--text-body, #F8FAFC)',
                     fontSize: 14,
                     fontWeight: 'bold',
                     fontFamily: 'Consolas, monospace',
@@ -1417,7 +1417,7 @@ export const ChatWorkspaceView: React.FC = () => {
                 >
                   {selectedChatUser.keyFingerprint}
                 </span>
-                <span style={{ color: '#64748B', fontSize: 10.5, marginTop: 2 }}>
+                <span style={{ color: 'var(--text-secondary, #64748B)', fontSize: 10.5, marginTop: 2 }}>
                   Encryption Key Fingerprint
                 </span>
               </div>
@@ -1434,7 +1434,7 @@ export const ChatWorkspaceView: React.FC = () => {
                   boxSizing: 'border-box',
                 }}
               >
-                <span style={{ color: '#F59E0B', fontSize: 12.5, fontWeight: 600 }}>
+                <span style={{ color: 'var(--warning-text, #F59E0B)', fontSize: 12.5, fontWeight: 600 }}>
                   Waiting for user to connect...
                 </span>
               </div>
@@ -1533,16 +1533,16 @@ export const ChatWorkspaceView: React.FC = () => {
                   borderRadius: 22,
                   backgroundColor: PALETTE.scrollButtonBg,
                   border: `1.2px solid ${PALETTE.scrollButtonBorder}`,
-                  color: '#FFFFFF',
+                  color: 'var(--text-body, #FFFFFF)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: 0,
-                  boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                  boxShadow: '0 4px 15px var(--shadow-colour, rgba(0,0,0,0.3))',
                 }}
               >
-                <MdiIcon path={mdiChevronDown} size={30} color="#FFFFFF" />
+                <MdiIcon path={mdiChevronDown} size={30} color="var(--text-body, #FFFFFF)" />
               </button>
 
               {unreadCountInActiveChat > 0 && (
@@ -1553,7 +1553,7 @@ export const ChatWorkspaceView: React.FC = () => {
                     left: '50%',
                     transform: 'translateX(-50%)',
                     backgroundColor: PALETTE.accent,
-                    color: '#FFFFFF',
+                    color: 'var(--text-body, #FFFFFF)',
                     borderRadius: 10,
                     minWidth: 20,
                     height: 20,
@@ -1632,7 +1632,7 @@ const HeaderIconButton: React.FC<{
         backgroundColor: isActive
           ? PALETTE.activeButtonBg
           : isHovered
-          ? 'rgba(255, 255, 255, 0.08)'
+          ? 'var(--surface-hover, rgba(255, 255, 255, 0.08))'
           : 'transparent',
         border: 'none',
         outline: 'none',
@@ -1644,7 +1644,7 @@ const HeaderIconButton: React.FC<{
         justifyContent: 'center',
         borderRadius: '50%',
         padding: 0,
-        color: isActive || isHovered ? '#FFFFFF' : PALETTE.textMuted,
+        color: isActive || isHovered ? 'var(--text-body, #FFFFFF)' : PALETTE.textMuted,
         transition: 'background-color 0.15s ease, color 0.15s ease',
       }}
     >
@@ -1674,7 +1674,7 @@ const HeaderMenuItem: React.FC<{
         borderRadius: 6,
         fontSize: 14,
         cursor: 'pointer',
-        color: isDestructive ? PALETTE.destructive : '#FFFFFF',
+        color: isDestructive ? PALETTE.destructive : 'var(--text-body, #FFFFFF)',
         backgroundColor: isHovered ? PALETTE.contextMenuHover : 'transparent',
         display: 'flex',
         alignItems: 'center',
@@ -1683,7 +1683,7 @@ const HeaderMenuItem: React.FC<{
       }}
     >
       <div style={{ transform: rotate ? `rotate(${rotate}deg)` : undefined, display: 'flex' }}>
-        <MdiIcon path={icon} size={20} color={isDestructive ? PALETTE.destructive : iconColor || '#FFFFFF'} />
+        <MdiIcon path={icon} size={20} color={isDestructive ? PALETTE.destructive : iconColor || 'var(--text-body, #FFFFFF)'} />
       </div>
       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
     </div>
@@ -1693,7 +1693,7 @@ const HeaderMenuItem: React.FC<{
 const headerActionBtnStyle: React.CSSProperties = {
   background: 'transparent',
   border: 'none',
-  color: '#FFFFFF',
+  color: 'var(--text-body, #FFFFFF)',
   fontSize: 14,
   fontWeight: 600,
   cursor: 'pointer',

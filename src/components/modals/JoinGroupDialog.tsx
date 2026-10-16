@@ -85,19 +85,19 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: 380,
-          backgroundColor: '#1E2330',
+          backgroundColor: 'var(--surface-control, #1E2330)',
           borderRadius: 16,
           padding: '24px 20px',
-          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.6)',
-          border: '1px solid #334155',
+          boxShadow: '0 16px 40px var(--shadow-colour, rgba(0, 0, 0, 0.6))',
+          border: '1px solid var(--border-primary, #334155)',
         }}
       >
         {/* 1. Иконка + Заголовок */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-body, #FFF)', fontSize: 16, fontWeight: 'bold' }}>
             <span>{activeData.isChannel ? 'Group Details' : 'Join Group'}</span>
           </div>
-          <button onClick={onCancel} style={{ background: 'transparent', border: 'none', color: '#94A3B8', fontSize: 18, cursor: 'pointer' }}>
+          <button onClick={onCancel} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary, #94A3B8)', fontSize: 18, cursor: 'pointer' }}>
             ✕
           </button>
         </div>
@@ -129,12 +129,12 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
         </div>
 
         {/* Название */}
-        <div style={{ fontSize: 20, fontWeight: 'bold', color: '#FFF', textAlign: 'center', marginBottom: 4 }}>
+        <div style={{ fontSize: 20, fontWeight: 'bold', color: 'var(--text-body, #FFF)', textAlign: 'center', marginBottom: 4 }}>
           {activeData.title}
         </div>
 
         {/* Подписчики / Участники */}
-        <div style={{ textAlign: 'center', color: '#94A3B8', fontSize: 13.5, fontWeight: 600, marginBottom: 14 }}>
+        <div style={{ textAlign: 'center', color: 'var(--text-secondary, #94A3B8)', fontSize: 13.5, fontWeight: 600, marginBottom: 14 }}>
           {activeData.isChannel ? (
             `${activeData.memberCount.toLocaleString()} subscribers`
           ) : (
@@ -147,25 +147,25 @@ export const JoinGroupDialog: React.FC<JoinGroupDialogProps> = ({
 
         {/* Описание */}
         {activeData.description && (
-          <div style={{ backgroundColor: '#161A23', borderRadius: 10, padding: '12px 10px', marginBottom: 14, maxHeight: 80, overflowY: 'auto', fontSize: 13, color: '#94A3B8' }}>
+          <div style={{ backgroundColor: 'var(--surface-panel, #161A23)', borderRadius: 10, padding: '12px 10px', marginBottom: 14, maxHeight: 80, overflowY: 'auto', fontSize: 13, color: 'var(--text-secondary, #94A3B8)' }}>
             {activeData.description}
           </div>
         )}
 
         {/* Плашка ссылки */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(255, 255, 255, 0.08)', borderRadius: 8, padding: '6px 10px', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'var(--surface-hover, rgba(255, 255, 255, 0.08))', borderRadius: 8, padding: '6px 10px', marginBottom: 24 }}>
           <span style={{ fontSize: 13 }}>🔗</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#94A3B8', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #94A3B8)', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {activeData.joinLink}
           </span>
         </div>
 
-        {error && <div role="alert" style={{color:'#FF7070',marginBottom:14}}>{error}</div>}
+        {error && <div role="alert" style={{color:'var(--danger-text, #FF7070)',marginBottom:14}}>{error}</div>}
         {/* Кнопки */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button
             onClick={onCancel}
-            style={{ background: 'transparent', border: 'none', color: '#94A3B8', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '8px 16px' }}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary, #94A3B8)', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '8px 16px' }}
           >
             Cancel
           </button>

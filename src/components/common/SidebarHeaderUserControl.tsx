@@ -33,7 +33,7 @@ export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
             viewBox="0 0 24 24"
             width={28}
             height={28}
-            fill="#FFFFFF"
+            fill="var(--text-heading, #FFFFFF)"
             style={{ marginRight: 10, flexShrink: 0 }}
           >
             <path d={iconPath} />
@@ -41,7 +41,7 @@ export const SidebarHeaderUserControl: React.FC<SidebarHeaderProps> = ({
         )}
         <span
           style={{
-            color: '#FFFFFF', // SidebarMainTitleBrush
+            color: 'var(--text-heading, #FFFFFF)', // SidebarMainTitleBrush
             fontSize: 25, // WPF: FontSize="25"
             fontWeight: 800, // WPF: FontWeight="ExtraBold"
             lineHeight: 1,

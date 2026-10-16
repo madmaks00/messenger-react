@@ -47,7 +47,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* ШАПКА */}
       <div style={rightHeaderStyle}>
-        <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText }}>Edit Profile</span>
+        <span style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-heading, #FFFFFF)' }}>Edit Profile</span>
         <CloseButton onClick={onClose} />
       </div>
 
@@ -256,7 +256,7 @@ export const ProfileRightEditProfile: React.FC<ProfileRightEditProfileProps> = (
                   onChange={(e) => setEditUser({ ...editUser, birthday: e.target.value })}
                   style={{
                     ...cleanInputStyle,
-                    colorScheme: 'dark',
+                    colorScheme: 'inherit',
                     cursor: 'pointer',
                   }}
                 />
@@ -360,7 +360,7 @@ const primaryBtnStyle: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 'bold',
   cursor: 'pointer',
-  boxShadow: '0 0 15px rgba(30, 155, 235, 0.4)',
+  boxShadow: '0 0 15px var(--surface-accent, rgba(30, 155, 235, 0.4))',
 };
 
 const secondaryBtnStyle: React.CSSProperties = {

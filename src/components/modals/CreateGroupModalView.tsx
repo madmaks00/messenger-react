@@ -267,11 +267,11 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .app-dialog-group .btn-close:hover {
-          background-color: rgba(255, 255, 255, 0.08) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.08)) !important;
           color: #FFFFFF !important;
         }
         .app-dialog-group .btn-close:active {
-          background-color: rgba(255, 255, 255, 0.16) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.16)) !important;
         }
 
         .app-dialog-group .btn-cancel {
@@ -288,17 +288,17 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .app-dialog-group .btn-cancel:hover {
-          background-color: rgba(255, 255, 255, 0.08) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.08)) !important;
           color: #FFFFFF !important;
         }
         .app-dialog-group .btn-cancel:active {
-          background-color: rgba(255, 255, 255, 0.14) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.14)) !important;
         }
 
         .app-dialog-group .btn-create {
           height: 36px;
           padding: 0 22px;
-          background-color: #1E9BEB !important;
+          background-color: var(--accent-primary, #1E9BEB) !important;
           border: none;
           border-radius: 8px;
           color: #FFFFFF !important;
@@ -348,8 +348,8 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                 onClick={() => setIsCreatingChannel(false)}
                 style={{
                   ...styles.segmentedButton,
-                  backgroundColor: !isCreatingChannel ? '#2E3646' : 'transparent',
-                  color: !isCreatingChannel ? '#FFFFFF' : '#7D8494',
+                  backgroundColor: !isCreatingChannel ? 'var(--surface-hover, #2E3646)' : 'transparent',
+                  color: !isCreatingChannel ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #7D8494)',
                 }}
               >
                 Group
@@ -359,8 +359,8 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                 onClick={() => setIsCreatingChannel(true)}
                 style={{
                   ...styles.segmentedButton,
-                  backgroundColor: isCreatingChannel ? '#2E3646' : 'transparent',
-                  color: isCreatingChannel ? '#FFFFFF' : '#7D8494',
+                  backgroundColor: isCreatingChannel ? 'var(--surface-hover, #2E3646)' : 'transparent',
+                  color: isCreatingChannel ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #7D8494)',
                 }}
               >
                 Channel
@@ -381,7 +381,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                       style={styles.avatarImage}
                     />
                   ) : (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#7D8494">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--text-secondary, #7D8494)">
                       <path d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m8 3a5 5 0 0 0-5 5 5 5 0 0 0 5 5 5 5 0 0 0 5-5 5 5 0 0 0-5-5m0 2a3 3 0 0 1 3 3 3 3 0 0 1-3 3 3 3 0 0 1-3-3 3 3 0 0 1 3-3M20 7v3h-2V7h-3V5h3V2h2v3h3v2h-3z" />
                     </svg>
                   )}
@@ -405,8 +405,8 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                     placeholder={isCreatingChannel ? 'Channel name' : 'Group name'}
                     style={{
                       ...styles.modernInput,
-                      borderColor: focusedField === 'name' ? '#1E9BEB' : '#333E4A',
-                      backgroundColor: focusedField === 'name' ? '#1F2633' : '#1C242F',
+                      borderColor: focusedField === 'name' ? 'var(--accent-primary, #1E9BEB)' : 'var(--border-primary, #333E4A)',
+                      backgroundColor: focusedField === 'name' ? 'var(--surface-control, #1F2633)' : 'var(--surface-control, #1C242F)',
                     }}
                   />
                 </div>
@@ -422,8 +422,8 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                 placeholder="Description (optional)"
                 style={{
                   ...styles.modernInput,
-                  borderColor: focusedField === 'description' ? '#1E9BEB' : '#333E4A',
-                  backgroundColor: focusedField === 'description' ? '#1F2633' : '#1C242F',
+                  borderColor: focusedField === 'description' ? 'var(--accent-primary, #1E9BEB)' : 'var(--border-primary, #333E4A)',
+                  backgroundColor: focusedField === 'description' ? 'var(--surface-control, #1F2633)' : 'var(--surface-control, #1C242F)',
                 }}
               />
             </div>
@@ -437,22 +437,22 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                   className={`group-access ${!isPublicGroup ? 'selected' : ''}`}
                   style={{
                     ...styles.accessCard,
-                    borderColor: !isPublicGroup ? '#1E9BEB' : '#333E4A',
-                    backgroundColor: !isPublicGroup ? 'rgba(30, 155, 235, 0.082)' : '#1C242F',
+                    borderColor: !isPublicGroup ? 'var(--accent-primary, #1E9BEB)' : 'var(--border-primary, #333E4A)',
+                    backgroundColor: !isPublicGroup ? 'var(--surface-accent, rgba(30, 155, 235, 0.082))' : 'var(--surface-control, #1C242F)',
                   }}
                 >
                   <div
                     style={{
                       ...styles.accessBadge,
-                      backgroundColor: !isPublicGroup ? 'rgba(30, 155, 235, 0.133)' : 'rgba(255, 255, 255, 0.05)',
+                      backgroundColor: !isPublicGroup ? 'var(--surface-accent, rgba(30, 155, 235, 0.133))' : 'var(--surface-hover, rgba(255, 255, 255, 0.05))',
                     }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill={!isPublicGroup ? '#1E9BEB' : '#7D8494'}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill={!isPublicGroup ? 'var(--link-colour, #1E9BEB)' : 'var(--text-secondary, #7D8494)'}>
                       <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2m6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2M8.9 6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2H8.9V6M18 20H6V10h12v10z" />
                     </svg>
                   </div>
                   <div style={styles.accessCardTextCol}>
-                    <div style={{ ...styles.accessCardTitle, color: !isPublicGroup ? '#1E9BEB' : '#FFFFFF' }}>
+                    <div style={{ ...styles.accessCardTitle, color: !isPublicGroup ? 'var(--link-colour, #1E9BEB)' : 'var(--text-body, #FFFFFF)' }}>
                       Private
                     </div>
                     <div style={styles.accessCardSubtitle}>Only via invite link</div>
@@ -464,22 +464,22 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                   className={`group-access ${isPublicGroup ? 'selected' : ''}`}
                   style={{
                     ...styles.accessCard,
-                    borderColor: isPublicGroup ? '#1E9BEB' : '#333E4A',
-                    backgroundColor: isPublicGroup ? 'rgba(30, 155, 235, 0.082)' : '#1C242F',
+                    borderColor: isPublicGroup ? 'var(--accent-primary, #1E9BEB)' : 'var(--border-primary, #333E4A)',
+                    backgroundColor: isPublicGroup ? 'var(--surface-accent, rgba(30, 155, 235, 0.082))' : 'var(--surface-control, #1C242F)',
                   }}
                 >
                   <div
                     style={{
                       ...styles.accessBadge,
-                      backgroundColor: isPublicGroup ? 'rgba(30, 155, 235, 0.133)' : 'rgba(255, 255, 255, 0.05)',
+                      backgroundColor: isPublicGroup ? 'var(--surface-accent, rgba(30, 155, 235, 0.133))' : 'var(--surface-hover, rgba(255, 255, 255, 0.05))',
                     }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill={isPublicGroup ? '#1E9BEB' : '#7D8494'}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill={isPublicGroup ? 'var(--link-colour, #1E9BEB)' : 'var(--text-secondary, #7D8494)'}>
                       <path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93m1-17.93c-5.52 0-10 4.48-10 10s4.48 10 10 10 10-4.48 10-10-4.48-10-10-10z" />
                     </svg>
                   </div>
                   <div style={styles.accessCardTextCol}>
-                    <div style={{ ...styles.accessCardTitle, color: isPublicGroup ? '#1E9BEB' : '#FFFFFF' }}>
+                    <div style={{ ...styles.accessCardTitle, color: isPublicGroup ? 'var(--link-colour, #1E9BEB)' : 'var(--text-body, #FFFFFF)' }}>
                       Public
                     </div>
                     <div style={styles.accessCardSubtitle}>Visible in search</div>
@@ -533,7 +533,7 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
           <div id="Step2_Success" style={styles.stepContainer}>
             <div style={styles.successContent}>
               <div style={styles.successIconBadge}>
-                <svg width="30" height="30" viewBox="0 0 24 24" fill="#1E9BEB">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="var(--link-colour, #1E9BEB)">
                   <path d="M9 20.42L2.79 14.21L5.62 11.38L9 14.77L18.88 4.88L21.71 7.71L9 20.42Z" />
                 </svg>
               </div>
@@ -558,11 +558,11 @@ export const CreateGroupModalView: React.FC<CreateGroupModalViewProps> = ({
                   title="Copy link"
                 >
                   {isCopied ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#1E9BEB">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--link-colour, #1E9BEB)">
                       <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                     </svg>
                   ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#7D8494">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--text-secondary, #7D8494)">
                       <path d="M19 21H8V7h11m0-2H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m-3-4H4a2 2 0 0 0-2 2v14h2V3h12V1z" />
                     </svg>
                   )}
@@ -614,11 +614,11 @@ const styles: Record<string, React.CSSProperties> = {
     width: 410,
     maxWidth: '95vw',
     maxHeight: '92vh',
-    backgroundColor: '#161A23', // Точный цвет фона как в CreateFolderDialog
+    backgroundColor: 'var(--surface-panel, #161A23)', // Точный цвет фона как в CreateFolderDialog
     borderRadius: 14,
     padding: '20px 22px',
-    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)', // Глубокая тень окна
-    border: '1px solid #2A3342', // Контрастная граница окна
+    boxShadow: '0 20px 50px var(--shadow-colour, rgba(0, 0, 0, 0.65))', // Глубокая тень окна
+    border: '1px solid var(--border-primary, #2A3342)', // Контрастная граница окна
     boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
@@ -638,7 +638,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   headerTitle: {
     margin: 0,
-    color: '#FFFFFF',
+    color: 'var(--text-body, #FFFFFF)',
     fontSize: 18,
     fontWeight: 600,
   },
@@ -646,7 +646,7 @@ const styles: Record<string, React.CSSProperties> = {
     // Стили переопределены через .btn-close
   },
   segmentedTrack: {
-    backgroundColor: '#11151D',
+    backgroundColor: 'var(--surface-recessed, #11151D)',
     borderRadius: 8,
     padding: 3,
     marginBottom: 16,
@@ -676,8 +676,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: 60,
     height: 60,
     borderRadius: '50%',
-    backgroundColor: '#1C242F',
-    border: '1px solid #333E4A',
+    backgroundColor: 'var(--surface-control, #1C242F)',
+    border: '1px solid var(--border-primary, #333E4A)',
     marginRight: 14,
     cursor: 'pointer',
     display: 'flex',
@@ -700,8 +700,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderStyle: 'solid',
     fontSize: 14,
     padding: '0 12px',
-    color: '#FFFFFF',
-    caretColor: '#1E9BEB',
+    color: 'var(--text-body, #FFFFFF)',
+    caretColor: 'var(--link-colour, #1E9BEB)',
     outline: 'none',
     boxSizing: 'border-box',
     fontFamily: 'inherit',
@@ -713,7 +713,7 @@ const styles: Record<string, React.CSSProperties> = {
   accessSectionLabel: {
     fontSize: 11,
     fontWeight: 700,
-    color: '#7D8494',
+    color: 'var(--text-secondary, #7D8494)',
     marginLeft: 2,
     marginBottom: 8,
     letterSpacing: '0.5px',
@@ -757,7 +757,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   accessCardSubtitle: {
     fontSize: 11,
-    color: '#7D8494',
+    color: 'var(--text-secondary, #7D8494)',
     marginTop: 2,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -768,8 +768,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   publicSuffixContainer: {
     height: 40,
-    backgroundColor: '#1C242F',
-    border: '1px solid #333E4A',
+    backgroundColor: 'var(--surface-control, #1C242F)',
+    border: '1px solid var(--border-primary, #333E4A)',
     borderRadius: 8,
     padding: '0 12px',
     display: 'flex',
@@ -777,7 +777,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: 'border-box',
   },
   publicSuffixPrefix: {
-    color: '#7D8494',
+    color: 'var(--text-secondary, #7D8494)',
     fontSize: 13.5,
     marginRight: 2,
     userSelect: 'none',
@@ -787,9 +787,9 @@ const styles: Record<string, React.CSSProperties> = {
     height: 36,
     background: 'transparent',
     border: 'none',
-    color: '#FFFFFF',
+    color: 'var(--text-body, #FFFFFF)',
     fontSize: 13.5,
-    caretColor: '#1E9BEB',
+    caretColor: 'var(--link-colour, #1E9BEB)',
     outline: 'none',
     padding: 0,
     fontFamily: 'inherit',
@@ -818,28 +818,28 @@ const styles: Record<string, React.CSSProperties> = {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(30, 155, 235, 0.082)',
+    backgroundColor: 'var(--surface-accent, rgba(30, 155, 235, 0.082))',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   successTitle: {
-    color: '#FFFFFF',
+    color: 'var(--text-body, #FFFFFF)',
     fontSize: 19,
     fontWeight: 700,
     textAlign: 'center',
   },
   successSubtitle: {
-    color: '#7D8494',
+    color: 'var(--text-secondary, #7D8494)',
     fontSize: 13,
     textAlign: 'center',
     margin: '6px 0 18px 0',
   },
   inviteLinkContainer: {
     width: '100%',
-    backgroundColor: '#11151D',
-    border: '1px solid #2A3342',
+    backgroundColor: 'var(--surface-recessed, #11151D)',
+    border: '1px solid var(--border-primary, #2A3342)',
     borderRadius: 8,
     padding: '10px 14px',
     display: 'flex',
@@ -848,7 +848,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: 'border-box',
   },
   inviteLinkText: {
-    color: '#1E9BEB',
+    color: 'var(--link-colour, #1E9BEB)',
     fontSize: 13.5,
     overflow: 'hidden',
     textOverflow: 'ellipsis',

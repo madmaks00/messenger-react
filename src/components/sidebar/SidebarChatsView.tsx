@@ -454,7 +454,7 @@ export const SidebarChatsView: React.FC = () => {
             boxSizing: 'border-box',
           }}
         >
-          <MdiIcon path={mdiMagnify} size={18} color="#8E95A5" style={{ marginRight: 10 }} />
+          <MdiIcon path={mdiMagnify} size={18} color="var(--text-secondary, #8E95A5)" style={{ marginRight: 10 }} />
 
           <input
             ref={searchInputRef}
@@ -479,7 +479,7 @@ export const SidebarChatsView: React.FC = () => {
               background: 'transparent',
               border: 'none',
               outline: 'none',
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               fontSize: 14,
               fontFamily: "'Segoe UI', -apple-system, sans-serif",
               padding: 0,
@@ -505,7 +505,7 @@ export const SidebarChatsView: React.FC = () => {
                 marginLeft: 4,
               }}
             >
-              <MdiIcon path={mdiCloseCircle} size={18} color="#8E95A5" />
+              <MdiIcon path={mdiCloseCircle} size={18} color="var(--text-secondary, #8E95A5)" />
             </button>
           )}
         </div>
@@ -562,7 +562,7 @@ export const SidebarChatsView: React.FC = () => {
                   marginRight: 4,
                   fontSize: 15,
                   fontWeight: 600,
-                  color: isSelected ? '#FFFFFF' : 'var(--text-muted)',
+                  color: isSelected ? 'var(--text-body, #FFFFFF)' : 'var(--text-muted)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -581,7 +581,7 @@ export const SidebarChatsView: React.FC = () => {
                   <MdiIcon
                     path={folderIconPath}
                     size={16}
-                    color={folder.color || '#FFFFFF'}
+                    color={folder.color || 'var(--text-body, #FFFFFF)'}
                     style={{ opacity: isSelected ? 1 : 0.6 }}
                   />
                 )}
@@ -646,7 +646,7 @@ export const SidebarChatsView: React.FC = () => {
               >
                 <MdiIcon path={mdiMessageTextOutline} size={40} color="var(--text-muted)" style={{ opacity: 0.5 }} />
               </div>
-              <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>No Chats</span>
+              <span style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 18, fontWeight: 'bold' }}>No Chats</span>
             </div>
           ) : (
             <div style={{ height: `${totalHeight}px`, position: 'relative', width: '100%' }}>
@@ -826,10 +826,10 @@ export const SidebarChatsView: React.FC = () => {
 
                     <div style={{ flex: 1, minWidth: 0, marginRight: 10, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                        {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="#FFFFFF" />}
+                        {chat.isSecretChat && <MdiIcon path={mdiLock} size={15} color="var(--text-body, #FFFFFF)" />}
                         <span
                           style={{
-                            color: '#FFFFFF',
+                            color: 'var(--text-body, #FFFFFF)',
                             fontSize: 15.5,
                             fontWeight: 600,
                             overflow: 'hidden',
@@ -932,10 +932,10 @@ export const SidebarChatsView: React.FC = () => {
                 height: `${thumbHeight}px`,
                 borderRadius: 3,
                 backgroundColor: isScrollDragging
-                  ? 'rgba(255, 255, 255, 0.6)'
+                  ? 'var(--surface-hover, rgba(255, 255, 255, 0.6))'
                   : isThumbHovered
-                  ? 'rgba(255, 255, 255, 0.4)'
-                  : 'rgba(255, 255, 255, 0.3)',
+                  ? 'var(--surface-hover, rgba(255, 255, 255, 0.4))'
+                  : 'var(--surface-hover, rgba(255, 255, 255, 0.3))',
                 opacity: isListHovered || isScrollDragging ? 1 : 0,
                 transition: isScrollDragging ? 'none' : 'opacity 0.2s ease, background-color 0.15s ease',
                 cursor: 'pointer',
@@ -1092,7 +1092,7 @@ export const SidebarChatsView: React.FC = () => {
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                            <span style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: 600 }}>{titleName}</span>
+                            <span style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 14.5, fontWeight: 600 }}>{titleName}</span>
                             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                               {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                             </span>
@@ -1118,7 +1118,7 @@ export const SidebarChatsView: React.FC = () => {
                   style={{
                     width: 32,
                     height: 32,
-                    border: '3px solid rgba(255,255,255,0.1)',
+                    border: '3px solid var(--border-subtle, rgba(255,255,255,0.1))',
                     borderTopColor: 'var(--app-accent)',
                     borderRadius: '50%',
                     animation: 'spin 0.8s linear infinite',
@@ -1202,7 +1202,7 @@ export const SidebarChatsView: React.FC = () => {
                         <div style={{ flex: 1, minWidth: 0, marginRight: 5 }}>
                           <div
                             style={{
-                              color: '#FFFFFF',
+                              color: 'var(--text-body, #FFFFFF)',
                               fontSize: 14.5,
                               fontWeight: 600,
                               overflow: 'hidden',
@@ -1255,7 +1255,7 @@ export const SidebarChatsView: React.FC = () => {
               borderRadius: 12,
               padding: '2px 0',
               minWidth: 220,
-              boxShadow: '0 2px 15px rgba(0, 0, 0, 0.25)',
+              boxShadow: '0 2px 15px var(--shadow-colour, rgba(0, 0, 0, 0.25))',
               zIndex: 1001,
             }}
           >
@@ -1299,7 +1299,7 @@ export const SidebarChatsView: React.FC = () => {
                     borderRadius: 12,
                     padding: '2px 0',
                     minWidth: 180,
-                    boxShadow: '0 2px 15px rgba(0, 0, 0, 0.25)',
+                    boxShadow: '0 2px 15px var(--shadow-colour, rgba(0, 0, 0, 0.25))',
                   }}
                 >
                   {customFolders.map((folder) => {
@@ -1420,7 +1420,7 @@ export const SidebarChatsView: React.FC = () => {
               borderRadius: 12,
               padding: '2px 0',
               minWidth: 160,
-              boxShadow: '0 2px 15px rgba(0, 0, 0, 0.25)',
+              boxShadow: '0 2px 15px var(--shadow-colour, rgba(0, 0, 0, 0.25))',
               zIndex: 1001,
             }}
           >
@@ -1500,7 +1500,7 @@ const UserCard: React.FC<{ user: IUserSearchResult; onSelect: () => void }> = ({
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ color: '#FFFFFF', fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {user.nickName || 'User'}
         </div>
         {user.username && (
@@ -1540,7 +1540,7 @@ const ContextRow: React.FC<{
         borderRadius: 6,
         fontSize: 14,
         cursor: 'pointer',
-        color: isDestructive ? 'var(--destructive-action)' : '#FFFFFF',
+        color: isDestructive ? 'var(--destructive-action)' : 'var(--text-body, #FFFFFF)',
         backgroundColor: isHovered ? 'var(--context-menu-hover)' : 'transparent',
         display: 'flex',
         alignItems: 'center',
@@ -1557,7 +1557,7 @@ const ContextRow: React.FC<{
         <MdiIcon
           path={icon}
           size={18}
-          color={isDestructive ? 'var(--destructive-action)' : iconColor || '#FFFFFF'}
+          color={isDestructive ? 'var(--destructive-action)' : iconColor || 'var(--text-body, #FFFFFF)'}
           style={rotate ? { transform: `rotate(${rotate}deg)` } : undefined}
         />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>

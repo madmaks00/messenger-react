@@ -5,6 +5,7 @@ import { getAvatarColor, getFirstLetter, formatDateTime, parsePrivacyVisibility 
 import { useProfileView } from './useProfileView';
 import { Theme } from './profile.theme';
 import { Icons } from './ProfileIcons';
+import { useNavigationStore } from '../../stores/navigationStore';
 
 interface ProfileRightSettingsProps {
   vm: ReturnType<typeof useProfileView>;
@@ -185,7 +186,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
       {/* ДИНАМИЧЕСКАЯ ШАПКА НАСТРОЕК (1:1 со структурой WPF) */}
       <div style={rightHeaderStyle}>
         {currentSettingsSubPanel === 'main' ? (
-          <span style={{ fontSize: 26, fontWeight: 800, color: Theme.MainWindowText, lineHeight: 1.1 }}>
+          <span style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-heading, #FFFFFF)', lineHeight: 1.1 }}>
             Settings
           </span>
         ) : (
@@ -258,7 +259,8 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
               <SettingsRowItem
                 icon={<Icons.PaletteOutline size={20} color={Theme.AppAccent} />}
                 title="App Theme"
-                subtitle="Select light or dark mode"
+                subtitle={useNavigationStore.getState().isDarkTheme ? 'Dark mode · switch to light' : 'Light mode · switch to dark'}
+                onClick={() => useNavigationStore.getState().toggleTheme()}
               />
 
               <SettingsRowItem
@@ -564,7 +566,7 @@ export const ProfileRightSettings: React.FC<ProfileRightSettingsProps> = ({
                     {currentDevice.ipAddress} • {currentDevice.location}
                   </div>
                 </div>
-                <span style={{ color: '#2EA043', fontWeight: 'bold', fontSize: 12, background: 'rgba(46,160,67,0.15)', padding: '4px 8px', borderRadius: 6 }}>
+                <span style={{ color: 'var(--success-text, #2EA043)', fontWeight: 'bold', fontSize: 12, background: 'rgba(46,160,67,0.15)', padding: '4px 8px', borderRadius: 6 }}>
                   Active Now
                 </span>
               </div>
@@ -770,7 +772,7 @@ export const CloseButton: React.FC<{ onClick: () => void; title?: string }> = ({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: isHovered ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+        backgroundColor: isHovered ? 'var(--surface-hover, rgba(255, 255, 255, 0.08))' : 'transparent',
         border: 'none',
         cursor: 'pointer',
         display: 'flex',
@@ -780,7 +782,7 @@ export const CloseButton: React.FC<{ onClick: () => void; title?: string }> = ({
         transition: 'all 0.15s ease-out',
       }}
     >
-      <Icons.Close size={20} color={isHovered ? '#FFFFFF' : Theme.ProfileSectionLabel} />
+      <Icons.Close size={20} color={isHovered ? 'var(--text-body, #FFFFFF)' : Theme.ProfileSectionLabel} />
     </button>
   );
 };
@@ -842,7 +844,7 @@ const SettingsRowItem: React.FC<SettingsRowItemProps> = ({
 
       <Icons.ChevronRight
         size={24}
-        color={isHovered ? '#FFFFFF' : Theme.ProfileSectionLabel}
+        color={isHovered ? 'var(--text-body, #FFFFFF)' : Theme.ProfileSectionLabel}
       />
     </div>
   );
@@ -962,7 +964,7 @@ const smallActionBtn: React.CSSProperties = {
   padding: '6px 14px',
   borderRadius: 8,
   background: Theme.ProfileDeviceItemBg,
-  color: '#FFF',
+  color: 'var(--text-body, #FFF)',
   border: 'none',
   fontSize: 12.5,
   cursor: 'pointer',

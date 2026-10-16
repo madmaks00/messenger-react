@@ -1,3 +1,4 @@
+import { useNavigationStore } from '../../stores/navigationStore';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { IAttachment } from '../../types/models';
 import { AudioConverterHelper } from '../../utils/audioConverters';
@@ -153,10 +154,13 @@ export const VoiceWaveform: React.FC<VoiceWaveformProps> = ({
   attachment,
   currentAttachment,
   positionSeconds = 0,
-  playedBrush = '#FFFFFF',
-  unplayedBrush = 'rgba(255, 255, 255, 0.4)',
+  playedBrush,
+  unplayedBrush,
   onSeek,
 }) => {
+  const isDarkTheme = useNavigationStore(state => state.isDarkTheme);
+  const playedColour = playedBrush ?? (isDarkTheme ? '#FFFFFF' : '#0078B8');
+  const unplayedColour = unplayedBrush ?? (isDarkTheme ? 'rgba(255,255,255,.4)' : '#AFC8DA');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDraggingRef = useRef(false);
   const dragRatioRef = useRef(-1.0);
@@ -295,19 +299,19 @@ export const VoiceWaveform: React.FC<VoiceWaveformProps> = ({
       }
     };
 
-    drawBars(unplayedBrush);
+    drawBars(unplayedColour);
 
     if (progressCutX > 0.5) {
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, progressCutX, h);
       ctx.clip();
-      drawBars(playedBrush);
+      drawBars(playedColour);
       ctx.restore();
     }
 
     ctx.restore();
-  }, [waveform, extractedWave, isCurrent, positionSeconds, getAccurateDuration, playedBrush, unplayedBrush]);
+  }, [waveform, extractedWave, isCurrent, positionSeconds, getAccurateDuration, playedColour, unplayedColour]);
 
   useEffect(() => {
     renderCanvas();

@@ -100,7 +100,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
     const isHovered = hoveredCopyKey === key;
 
     // 🟢 Точный цвет юзернейма из C# DefaultDark.xaml (TgAccent / OtherProfileInfoIconAtBrush = #00AFF4)
-    const textColor = isAccent ? '#00AFF4' : Theme.MainWindowText;
+    const textColor = isAccent ? 'var(--link-colour, #00AFF4)' : Theme.MainWindowText;
 
     return (
       <div
@@ -140,7 +140,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
           }}
         >
           {isCopied ? (
-            <Icons.CheckBold size={14} color="#00AFF4" />
+            <Icons.CheckBold size={14} color="var(--link-colour, #00AFF4)" />
           ) : (
             <div style={{ opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s ease' }}>
               <Icons.ContentCopy size={13} color={Theme.ProfileSectionLabel} />
@@ -208,7 +208,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
             position: 'relative',
           }}
         >
-          <span style={{ fontSize: 42, fontWeight: 'bold', color: Theme.MainWindowText, userSelect: 'none' }}>
+          <span style={{ fontSize: 42, fontWeight: 'bold', color: '#FFFFFF', userSelect: 'none' }}>
             {getFirstLetter(isGroupProfile ? (groupDetails?.name || displayedUser.nickName) : displayedUser.nickName)}
           </span>
 
@@ -709,7 +709,7 @@ export const ProfileLeftColumn: React.FC<ProfileLeftColumnProps> = ({
                 <div style={groupMenuContentStyle}><ProfileIcon path={mdiAccountCancelOutline} size="20px" color={Theme.MainWindowText} /><span>Blacklist ({blackListCount})</span></div>
                 <Icons.ChevronRight size={18} color={Theme.ProfileSectionLabel} />
               </MenuTabButton>
-              <MenuTabButton style={{ padding: '10px 8px', margin: '2px 0' }} onClick={() => expandRightPanel('editGroup')} isActive={isEditGroupActive} hoverBg="rgba(30, 155, 235, 0.12)">
+              <MenuTabButton style={{ padding: '10px 8px', margin: '2px 0' }} onClick={() => expandRightPanel('editGroup')} isActive={isEditGroupActive} hoverBg="var(--surface-accent, rgba(30, 155, 235, 0.12))">
                 <div style={groupMenuContentStyle}><Icons.CogOutline size={20} color={Theme.AppAccent} /><span style={{ fontWeight: 'bold' }}>Manage Group</span></div>
                 <Icons.ChevronRight size={18} color={Theme.MainWindowText} />
               </MenuTabButton>
@@ -734,14 +734,14 @@ const MenuTabButton: React.FC<MenuTabButtonProps> = ({
   children,
   isActive = false,
   style,
-  hoverBg = 'rgba(255, 255, 255, 0.08)',
+  hoverBg = 'var(--surface-hover, rgba(255, 255, 255, 0.08))',
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const currentBg = isActive
     ? isHovered
-      ? 'rgba(255, 255, 255, 0.18)'
-      : 'rgba(255, 255, 255, 0.14)'
+      ? 'var(--surface-hover, rgba(255, 255, 255, 0.18))'
+      : 'var(--surface-hover, rgba(255, 255, 255, 0.14))'
     : isHovered
     ? hoverBg
     : 'transparent';

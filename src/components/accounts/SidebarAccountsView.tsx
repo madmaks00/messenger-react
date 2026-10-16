@@ -50,7 +50,7 @@ export const SidebarAccountsView: React.FC = () => {
         width: '100%',
         minWidth: 0,
         height: '100%',
-        backgroundColor: '#161A23', // BgList
+        backgroundColor: 'var(--surface-panel, #161A23)', // BgList
         display: 'flex',
         flexDirection: 'column',
         userSelect: 'none',
@@ -63,7 +63,7 @@ export const SidebarAccountsView: React.FC = () => {
         rightContent={<button className="account-action" type="button" aria-label="Log out" title="Log out"
           disabled={isLoggingOut || isChangingSession} onClick={requestLogout}
           style={{ width: 40, height: 40, border: 0, borderRadius: 10,
-            color: '#E74C3C', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--danger-text, #E74C3C)', display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: isLoggingOut ? 'wait' : 'pointer', opacity: isLoggingOut ? 0.5 : 1 }}>
           <svg viewBox="0 0 24 24" width={24} height={24} fill="currentColor"><path d={mdiLogout} /></svg>
         </button>} />
@@ -110,12 +110,12 @@ export const SidebarAccountsView: React.FC = () => {
                   padding: 10, // WPF: Padding="10"
                   borderRadius: 12, // WPF: CornerRadius="12"
                   border: isActive
-                    ? '1.5px solid rgba(30, 155, 235, 0.2)' // WPF: AccountsActiveItemBorderBrush (#331E9BEB)
+                    ? '1.5px solid var(--border-primary, rgba(30, 155, 235, 0.2))' // WPF: AccountsActiveItemBorderBrush (#331E9BEB)
                     : '1.5px solid transparent',
                   backgroundColor: isActive
-                    ? 'rgba(30, 155, 235, 0.1)' // WPF: AccountsActiveItemBgBrush (#1A1E9BEB)
+                    ? 'var(--surface-accent, rgba(30, 155, 235, 0.1))' // WPF: AccountsActiveItemBgBrush (#1A1E9BEB)
                     : isHovered
-                    ? '#1C212D' // WPF: AccountsItemHoverBgBrush
+                    ? 'var(--surface-control, #1C212D)' // WPF: AccountsItemHoverBgBrush
                     : 'transparent',
                   cursor: 'pointer',
                   marginBottom: 6,
@@ -135,7 +135,7 @@ export const SidebarAccountsView: React.FC = () => {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: '#FFFFFF',
+                      color: 'var(--text-body, #FFFFFF)',
                       fontWeight: 'bold', // WPF: FontWeight="Bold"
                       fontSize: 16, // WPF: FontSize="16"
                       overflow: 'hidden',
@@ -171,7 +171,7 @@ export const SidebarAccountsView: React.FC = () => {
                       style={{
                         fontSize: 16,
                         fontWeight: 600, // WPF: SemiBold
-                        color: '#FFFFFF', // AccountsItemNameBrush
+                        color: 'var(--text-body, #FFFFFF)', // AccountsItemNameBrush
                         marginTop: -2,
                         marginBottom: 2,
                         marginRight: 6,
@@ -188,7 +188,7 @@ export const SidebarAccountsView: React.FC = () => {
                     <div
                       style={{
                         fontSize: 13,
-                        color: isActive ? '#1E9BEB' : '#7D8494', // WPF Trigger: AppAccentBrush : TextMuted
+                        color: isActive ? 'var(--link-colour, #1E9BEB)' : 'var(--text-secondary, #7D8494)', // WPF Trigger: AppAccentBrush : TextMuted
                         fontWeight: isActive ? 600 : 400, // WPF Trigger: SemiBold : Normal
                         marginBottom: 1,
                         whiteSpace: 'nowrap',
@@ -215,7 +215,7 @@ export const SidebarAccountsView: React.FC = () => {
                           viewBox="0 0 24 24"
                           width={14}
                           height={14}
-                          fill="#7D8494"
+                          fill="var(--text-secondary, #7D8494)"
                           style={{ marginRight: 6, flexShrink: 0 }}
                         >
                           <path d={mdiEmailOutline} />
@@ -223,7 +223,7 @@ export const SidebarAccountsView: React.FC = () => {
                         <span
                           style={{
                             fontSize: 12, // WPF: FontSize="12"
-                            color: '#7D8494', // TextMuted
+                            color: 'var(--text-secondary, #7D8494)', // TextMuted
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -257,7 +257,7 @@ export const SidebarAccountsView: React.FC = () => {
                       alignSelf: 'flex-start',
                     }}
                   >
-                    <svg viewBox="0 0 24 24" width={24} height={24} fill="#1E9BEB">
+                    <svg viewBox="0 0 24 24" width={24} height={24} fill="var(--link-colour, #1E9BEB)">
                       <path d={mdiCheckCircle} />
                     </svg>
                   </div>

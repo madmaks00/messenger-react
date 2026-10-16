@@ -41,7 +41,7 @@ input, button, textarea, select {
 }
 
 .wpf-scroll-viewer:hover {
-  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+  scrollbar-color: var(--text-secondary, rgba(255, 255, 255, 0.3)) transparent;
 }
 
 .wpf-scroll-viewer::-webkit-scrollbar {
@@ -59,25 +59,25 @@ input, button, textarea, select {
 }
 
 .wpf-scroll-viewer:hover::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3); /* #4DFFFFFF в покое */
+  background: var(--surface-hover, rgba(255, 255, 255, 0.3)); /* #4DFFFFFF в покое */
 }
 
 .wpf-scroll-viewer::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4); /* #66FFFFFF при наведении */
+  background: var(--surface-hover, rgba(255, 255, 255, 0.4)); /* #66FFFFFF при наведении */
 }
 
 .wpf-scroll-viewer::-webkit-scrollbar-thumb:active {
-  background: rgba(255, 255, 255, 0.6); /* #99FFFFFF при зажатии */
+  background: var(--surface-hover, rgba(255, 255, 255, 0.6)); /* #99FFFFFF при зажатии */
 }
 
 /* Градиент историй StoryGradient из App.xaml */
 .wpf-story-gradient {
-  background: linear-gradient(135deg, #8A2387 0%, #E94057 50%, #F27121 100%);
+  background: linear-gradient(135deg, var(--surface-danger, #8A2387) 0%, #E94057 50%, #F27121 100%);
 }
 
 /* 🟢 Плейсхолдер поиска (1 в 1 с WPF Material Design) */
 .wpf-search-input::placeholder {
-  color: #8E95A5 !important;
+  color: var(--text-secondary, #8E95A5) !important;
   opacity: 1 !important;
   font-size: 14.5px !important;
 }
@@ -95,7 +95,7 @@ input[type="search"]::-webkit-search-results-decoration {
 .wpf-message-input::-webkit-input-placeholder,
 .wpf-message-input::-moz-placeholder,
 .wpf-message-input:-ms-input-placeholder {
-  color: rgba(255, 255, 255, 0.56) !important;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.56)) !important;
   opacity: 1 !important;
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
   font-size: 14px !important;

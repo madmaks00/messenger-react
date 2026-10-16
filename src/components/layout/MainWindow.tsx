@@ -203,8 +203,8 @@ export const MainWindow: React.FC = () => {
         width: '100vw',
         height: '100vh',
         overflow: 'hidden',
-        backgroundColor: '#0E1621',
-        color: '#FFFFFF',
+        backgroundColor: 'var(--surface-page, #0E1621)',
+        color: 'var(--text-body, #FFFFFF)',
         fontFamily: 'Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif',
       }}
     >
@@ -215,7 +215,7 @@ export const MainWindow: React.FC = () => {
           width: isSidebarCollapsed ? 0 : sidebarWidth,
           maxWidth: 1100,
           height: '100%',
-          backgroundColor: '#111B21',
+          backgroundColor: 'var(--surface-page, #111B21)',
           overflow: 'hidden',
           transition: isDraggingSplitter.current ? 'none' : 'width 0.15s ease-out',
           display: 'flex',
@@ -225,25 +225,25 @@ export const MainWindow: React.FC = () => {
       >
         {currentTab === MainTab.Chats && <SidebarChatsView />}
         {currentTab === MainTab.AccountSwitch && (
-          <div style={{ padding: 24, textAlign: 'center', color: '#8696A0' }}>
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary, #8696A0)' }}>
             <h3>Accounts</h3>
             <p>Saved profiles switcher</p>
           </div>
         )}
         {currentTab === MainTab.Notes && (
-          <div style={{ padding: 24, textAlign: 'center', color: '#8696A0' }}>
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary, #8696A0)' }}>
             <h3>Notes</h3>
             <p>Saved notes and bookmarks</p>
           </div>
         )}
         {currentTab === MainTab.Tasks && (
-          <div style={{ padding: 24, textAlign: 'center', color: '#8696A0' }}>
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary, #8696A0)' }}>
             <h3>Tasks</h3>
             <p>Task lists and checklists</p>
           </div>
         )}
         {currentTab === MainTab.Games && (
-          <div style={{ padding: 24, textAlign: 'center', color: '#8696A0' }}>
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary, #8696A0)' }}>
             <h3>Games</h3>
             <p>Interactive mini-games</p>
           </div>
@@ -282,19 +282,19 @@ export const MainWindow: React.FC = () => {
         style={{
           flex: 1,
           height: '100%',
-          backgroundColor: '#0B141B',
+          backgroundColor: 'var(--surface-page, #0B141B)',
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
-          borderLeft: '1px solid #17212B',
+          borderLeft: '1px solid var(--border-primary, #17212B)',
           minWidth: MIN_CHAT_WORKSPACE_WIDTH,
         }}
       >
         {currentTab === MainTab.Chats && <ChatWorkspaceView />}
 
         {currentTab !== MainTab.Chats && (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>
-            <div style={{ padding: '16px 24px', background: '#1E293B', borderRadius: 12 }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary, #64748B)' }}>
+            <div style={{ padding: '16px 24px', background: 'var(--surface-hover, #1E293B)', borderRadius: 12 }}>
               Workspace for {currentTab} is ready
             </div>
           </div>

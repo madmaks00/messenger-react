@@ -48,7 +48,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
   const rawAvatar = targetAvatar || avatar || null;
   const resolvedAvatar = normalizeAvatarUrl(rawAvatar);
   const resolvedIcon = resolvedAvatar ? null : targetIcon || icon || null;
-  const resolvedIconColor = targetIconColor || iconColor || '#1E9BEB';
+  const resolvedIconColor = targetIconColor || iconColor || 'var(--link-colour, #1E9BEB)';
   const resolvedMessage = dialogMessage || message || '';
 
   // 🟢 Замораживаем данные, чтобы при исчезновении модалка не дергалась
@@ -166,7 +166,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .app-dialog-confirm .btn-close-modal:hover {
-          background-color: rgba(255, 255, 255, 0.08) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.08)) !important;
           color: #FFFFFF !important;
         }
 
@@ -184,14 +184,14 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .app-dialog-confirm .btn-cancel-modal:hover {
-          background-color: rgba(255, 255, 255, 0.08) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.08)) !important;
           color: #FFFFFF !important;
         }
 
         .app-dialog-confirm .btn-primary-modal {
           height: 36px;
           padding: 0 22px;
-          background-color: #1E9BEB !important;
+          background-color: var(--accent-primary, #1E9BEB) !important;
           border: none;
           border-radius: 8px;
           color: #FFFFFF !important;
@@ -229,11 +229,11 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
         style={{
           width: 380,
           maxWidth: 'calc(100vw - 32px)',
-          backgroundColor: '#161A23',
+          backgroundColor: 'var(--surface-panel, #161A23)',
           borderRadius: 14,
           padding: '20px 22px 18px 22px',
-          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
-          border: '1px solid #2A3342',
+          boxShadow: '0 20px 50px var(--shadow-colour, rgba(0, 0, 0, 0.65))',
+          border: '1px solid var(--border-primary, #2A3342)',
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
@@ -276,7 +276,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
                 width="22"
                 height="22"
                 viewBox="0 0 24 24"
-                fill={currentData.iconColor || '#1E9BEB'}
+                fill={currentData.iconColor || 'var(--link-colour, #1E9BEB)'}
                 style={{ flexShrink: 0 }}
               >
                 <path d={currentData.icon} />
@@ -287,7 +287,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
               style={{
                 fontSize: 18,
                 fontWeight: 600,
-                color: '#FFFFFF',
+                color: 'var(--text-body, #FFFFFF)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -310,7 +310,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
         </div>
 
         {/* MESSAGE */}
-        <div style={{ fontSize: 15, color: '#FFFFFF', lineHeight: '22px', marginBottom: 20, wordBreak: 'break-word' }}>
+        <div style={{ fontSize: 15, color: 'var(--text-body, #FFFFFF)', lineHeight: '22px', marginBottom: 20, wordBreak: 'break-word' }}>
           {currentData.message}
         </div>
 
@@ -324,7 +324,7 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
               cursor: 'pointer',
               marginBottom: 24,
               fontSize: 14.5,
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               userSelect: 'none',
             }}
           >
@@ -332,9 +332,9 @@ export const ConfirmDialogView: React.FC<ConfirmDialogProps> = ({
               type="checkbox"
               checked={isChecked}
               onChange={(e) => setIsChecked(e.target.checked)}
-              style={{ width: 18, height: 18, accentColor: isDestructive ? '#E74C3C' : '#1E9BEB', cursor: 'pointer' }}
+              style={{ width: 18, height: 18, accentColor: isDestructive ? 'var(--danger-text, #E74C3C)' : 'var(--link-colour, #1E9BEB)', cursor: 'pointer' }}
             />
-            <span style={{ color: '#E2E8F0' }}>{currentData.checkbox}</span>
+            <span style={{ color: 'var(--text-body, #E2E8F0)' }}>{currentData.checkbox}</span>
           </label>
         )}
 

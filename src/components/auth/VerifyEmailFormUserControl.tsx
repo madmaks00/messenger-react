@@ -98,12 +98,12 @@ export const VerifyEmailFormUserControl: React.FC = () => {
       </div>
 
       {/* Заголовок Verify Your Email */}
-      <h2 style={{ fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', margin: '0 0 6px 0' }}>
+      <h2 style={{ fontSize: 24, fontWeight: 'bold', color: 'var(--text-body, #FFFFFF)', margin: '0 0 6px 0' }}>
         Verify Your Email
       </h2>
 
       {/* Подзаголовок */}
-      <div style={{ fontSize: 13.5, color: '#7D8494' }}>
+      <div style={{ fontSize: 13.5, color: 'var(--text-secondary, #7D8494)' }}>
         We have sent a 6-digit confirmation code to:
       </div>
       <div
@@ -139,7 +139,7 @@ export const VerifyEmailFormUserControl: React.FC = () => {
               width: '100%',
               background: 'transparent',
               border: 'none',
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               fontSize: 24,
               fontWeight: 'bold',
               textAlign: 'center',
@@ -156,7 +156,7 @@ export const VerifyEmailFormUserControl: React.FC = () => {
         <div
           style={{
             minHeight: 22,
-            color: '#FF4D4D',
+            color: 'var(--danger-text, #FF4D4D)',
             fontSize: 13,
             fontWeight: 600,
             marginBottom: 10,
@@ -183,7 +183,7 @@ export const VerifyEmailFormUserControl: React.FC = () => {
             fontWeight: 'bold',
             cursor: verificationCode.length === 6 && !isSubmitting ? 'pointer' : 'default',
             opacity: verificationCode.length === 6 && !isSubmitting ? 1 : 0.6,
-            boxShadow: '0 5px 20px rgba(30, 155, 235, 0.35)',
+            boxShadow: '0 5px 20px var(--surface-accent, rgba(30, 155, 235, 0.35))',
             transition: 'opacity 0.2s ease, box-shadow 0.2s ease',
           }}
         >
@@ -192,7 +192,7 @@ export const VerifyEmailFormUserControl: React.FC = () => {
 
         {/* Таймер / Повторная отправка Resend */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4, marginTop: 20, fontSize: 13 }}>
-          <span style={{ color: '#7D8494' }}>Didn't get the code? </span>
+          <span style={{ color: 'var(--text-secondary, #7D8494)' }}>Didn't get the code? </span>
           <button
             type="button"
             onClick={handleResend}
@@ -200,7 +200,7 @@ export const VerifyEmailFormUserControl: React.FC = () => {
             style={{
               background: 'transparent',
               border: 'none',
-              color: canResend ? 'var(--app-accent, #1E9BEB)' : '#64748B',
+              color: canResend ? 'var(--app-accent, #1E9BEB)' : 'var(--text-secondary, #64748B)',
               fontWeight: 'bold',
               cursor: canResend && !isSubmitting ? 'pointer' : 'default',
               padding: 0,
@@ -208,7 +208,7 @@ export const VerifyEmailFormUserControl: React.FC = () => {
           >
             Resend
           </button>
-          {!canResend && <span style={{ color: '#7D8494' }}>({timerSeconds}s)</span>}
+          {!canResend && <span style={{ color: 'var(--text-secondary, #7D8494)' }}>({timerSeconds}s)</span>}
         </div>
 
         {/* Кнопка возврата к форме (Back to form) */}
@@ -218,7 +218,7 @@ export const VerifyEmailFormUserControl: React.FC = () => {
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#7D8494',
+            color: 'var(--text-secondary, #7D8494)',
             fontSize: 13,
             cursor: 'pointer',
             marginTop: 15,

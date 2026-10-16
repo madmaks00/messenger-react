@@ -92,7 +92,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
               style={{
                 position: 'relative',
                 fill: 'var(--app-accent, #1E9BEB)',
-                filter: 'drop-shadow(0 0 12px rgba(30, 155, 235, 0.8))',
+                filter: 'drop-shadow(0 0 12px var(--surface-accent, rgba(30, 155, 235, 0.8)))',
               }}
             >
               <path d={mdiSendVariant} />
@@ -102,12 +102,12 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
           {/* Текст MAKC, смещенный строго в центр высоты повернутого самолетика */}
           <span
             style={{
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               fontSize: 48,
               fontWeight: 900,
               lineHeight: 1,
               letterSpacing: '0.5px',
-              textShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
+              textShadow: '0 2px 10px var(--shadow-colour, rgba(0, 0, 0, 0.5))',
               transform: 'translateY(7px)', // Смещение вниз под оптический центр самолетика
             }}
           >
@@ -117,10 +117,10 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
       )}
 
       {/* Заголовок и подзаголовок */}
-      <h1 style={{ color: '#FFFFFF', fontSize: 28, fontWeight: 'bold', textAlign: 'center', margin: '0 0 4px 0' }}>
+      <h1 style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 28, fontWeight: 'bold', textAlign: 'center', margin: '0 0 4px 0' }}>
         {title}
       </h1>
-      <div style={{ color: '#7D8494', fontSize: 14, textAlign: 'center', margin: '0 0 28px 0' }}>
+      <div style={{ color: 'var(--text-secondary, #7D8494)', fontSize: 14, textAlign: 'center', margin: '0 0 28px 0' }}>
         {subtitle}
       </div>
 
@@ -129,7 +129,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
         <div
           style={{
             position: 'relative',
-            borderBottom: `1px solid ${hasError ? '#FF4D4D' : '#232836'}`,
+            borderBottom: `1px solid ${hasError ? '#FF4D4D' : 'var(--border-primary, #232836)'}`,
             padding: '16px 0 6px 0',
           }}
         >
@@ -139,7 +139,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
               left: 0,
               top: 16,
               fontSize: 15,
-              color: hasError ? '#FF4D4D' : userFocused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.56)',
+              color: hasError ? 'var(--danger-text, #FF4D4D)' : userFocused ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, rgba(255, 255, 255, 0.56))',
               transformOrigin: 'top left',
               transform: isUserActive ? 'translateY(-19px) scale(0.8)' : 'translateY(0) scale(1)',
               transition: 'transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), color 0.18s ease',
@@ -159,7 +159,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
               width: '100%',
               background: 'transparent',
               border: 'none',
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               fontSize: 15,
               outline: 'none',
               caretColor: 'var(--app-accent, #1E9BEB)',
@@ -189,7 +189,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
         <div
           style={{
             position: 'relative',
-            borderBottom: `1px solid ${hasError ? '#FF4D4D' : '#232836'}`,
+            borderBottom: `1px solid ${hasError ? '#FF4D4D' : 'var(--border-primary, #232836)'}`,
             padding: '16px 30px 6px 0',
           }}
         >
@@ -199,7 +199,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
               left: 0,
               top: 16,
               fontSize: 15,
-              color: hasError ? '#FF4D4D' : passFocused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.56)',
+              color: hasError ? 'var(--danger-text, #FF4D4D)' : passFocused ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, rgba(255, 255, 255, 0.56))',
               transformOrigin: 'top left',
               transform: isPassActive ? 'translateY(-19px) scale(0.8)' : 'translateY(0) scale(1)',
               transition: 'transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), color 0.18s ease',
@@ -219,7 +219,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
               width: '100%',
               background: 'transparent',
               border: 'none',
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               fontSize: 15,
               outline: 'none',
               caretColor: 'var(--app-accent, #1E9BEB)',
@@ -238,7 +238,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
               bottom: 6,
               background: 'transparent',
               border: 'none',
-              color: '#7D8494',
+              color: 'var(--text-secondary, #7D8494)',
               cursor: 'pointer',
               padding: 0,
               display: 'flex',
@@ -246,7 +246,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
               justifyContent: 'center',
             }}
           >
-            <svg viewBox="0 0 24 24" width={20} height={20} fill="#7D8494">
+            <svg viewBox="0 0 24 24" width={20} height={20} fill="var(--text-secondary, #7D8494)">
               <path d={showPassword ? mdiEyeOff : mdiEye} />
             </svg>
           </button>
@@ -290,7 +290,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
       <div
         style={{
           minHeight: 22,
-          color: '#FF4D4D',
+          color: 'var(--danger-text, #FF4D4D)',
           fontSize: 13.5,
           fontWeight: 600,
           textAlign: 'center',
@@ -315,7 +315,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
           fontSize: 16,
           fontWeight: 'bold',
           cursor: loading ? 'wait' : 'pointer',
-          boxShadow: '0 5px 20px rgba(30, 155, 235, 0.4)',
+          boxShadow: '0 5px 20px var(--surface-accent, rgba(30, 155, 235, 0.4))',
           transition: 'box-shadow 0.2s ease, opacity 0.2s ease',
           opacity: loading ? 0.8 : 1,
         }}
@@ -325,7 +325,7 @@ export const LoginFormUserControl: React.FC<LoginFormUserControlProps> = ({
 
       {/* Переход к Sign Up */}
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 15 }}>
-        <span style={{ color: '#7D8494', fontSize: 14 }}>Don't have an account?</span>
+        <span style={{ color: 'var(--text-secondary, #7D8494)', fontSize: 14 }}>Don't have an account?</span>
         <button
           type="button"
           onClick={onSwitchToRegister}

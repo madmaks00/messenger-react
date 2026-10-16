@@ -1,4 +1,4 @@
-import { AttachmentMediaEditorView } from '../media/AttachmentMediaEditorView';
+﻿import { AttachmentMediaEditorView } from '../media/AttachmentMediaEditorView';
 import { isMessageTextTooLong } from '../../utils/messageTextLimit';
 import { apiClient } from '../../services/apiClient';
 import React, { useRef, useEffect, useCallback, useState } from 'react';
@@ -25,16 +25,16 @@ import type { IAttachment } from '../../types/models';
 import { eventBus } from '../../services/eventBus';
 
 const COLORS = {
-  accent: '#1E9BEB',
-  inputBg: '#1C212D',
-  inputBorder: '#2A303C',
-  inputText: '#FFFFFF',
-  textMuted: '#7D8494',
-  warningBg: '#1C212D',
+  accent: 'var(--link-colour, #1E9BEB)',
+  inputBg: 'var(--surface-control, #1C212D)',
+  inputBorder: 'var(--border-primary, #2A303C)',
+  inputText: 'var(--text-body, #FFFFFF)',
+  textMuted: 'var(--text-secondary, #7D8494)',
+  warningBg: 'var(--surface-control, #1C212D)',
   warningBorder: '#E74C3C',
-  warningText: '#FFFFFF',
-  activeToggleBg: 'rgba(255, 255, 255, 0.12)',
-  hoverWhite: '#FFFFFF',
+  warningText: 'var(--text-body, #FFFFFF)',
+  activeToggleBg: 'var(--surface-hover, rgba(255, 255, 255, 0.12))',
+  hoverWhite: 'var(--text-body, #FFFFFF)',
 };
 
 const MdiIcon: React.FC<{ path: string; size?: number; color?: string; style?: React.CSSProperties }> = ({
@@ -232,20 +232,20 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
       <style>{`
         .wpf-message-input::placeholder {
-          color: rgba(255, 255, 255, 0.56) !important;
+          color: var(--surface-hover, rgba(255, 255, 255, 0.56)) !important;
           opacity: 1 !important;
           font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
           font-size: 14px !important;
         }
         .wpf-message-input::-webkit-input-placeholder {
-          color: rgba(255, 255, 255, 0.56) !important;
+          color: var(--surface-hover, rgba(255, 255, 255, 0.56)) !important;
           opacity: 1 !important;
           font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
           font-size: 14px !important;
         }
         .wpf-message-input {
           scrollbar-width: thin !important;
-          scrollbar-color: rgba(255, 255, 255, 0.25) transparent !important;
+          scrollbar-color: var(--surface-hover, rgba(255, 255, 255, 0.25)) transparent !important;
         }
         .wpf-message-input::-webkit-scrollbar {
           width: 4px !important;
@@ -256,11 +256,11 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
           background: transparent !important;
         }
         .wpf-message-input::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.25) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.25)) !important;
           border-radius: 2px !important;
         }
         .wpf-message-input::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.45) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.45)) !important;
         }
         .wpf-message-input::-webkit-scrollbar-button {
           display: none !important;
@@ -375,7 +375,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                   }}
                   style={{ ...actionCloseButtonStyle(24), margin: '0 15px 0 10px' }}
                 >
-                  <MdiIcon path={mdiClose} size={16} color="#777777" />
+                  <MdiIcon path={mdiClose} size={16} color="var(--text-secondary, #777777)" />
                 </button>
               </div>
             ))}
@@ -471,7 +471,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                         height: 60,
                         borderRadius: 8,
                         position: 'relative',
-                        background: '#232A3B',
+                        background: 'var(--surface-hover, #232A3B)',
                         overflow: 'hidden',
                         display: 'flex',
                         alignItems: 'center',
@@ -505,7 +505,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />
                       ) : (
-                        <MdiIcon path={mdiFileDocumentOutline} size={30} color="#5E92CE" />
+                        <MdiIcon path={mdiFileDocumentOutline} size={30} color="var(--link-colour, #5E92CE)" />
                       )}
 
                       <button
@@ -531,7 +531,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                           zIndex: 5,
                         }}
                       >
-                        <MdiIcon path={mdiClose} size={12} color="#FFFFFF" />
+                        <MdiIcon path={mdiClose} size={12} color="var(--text-on-accent, #FFFFFF)" />
                       </button>
                     </div>
                   );
@@ -547,7 +547,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                 padding: '2px 5px 2px 7px',
                 minHeight: 46,
                 maxHeight: 200,
-                backgroundColor: isRecordingVoice ? '#1C212D' : COLORS.inputBg,
+                backgroundColor: isRecordingVoice ? 'var(--surface-control, #1C212D)' : COLORS.inputBg,
                 display: 'flex',
                 alignItems: 'flex-end',
                 boxSizing: 'border-box',
@@ -615,7 +615,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                     border: 'none',
                     outline: 'none',
                     color: COLORS.inputText,
-                    caretColor: '#FFFFFF',
+                    caretColor: 'var(--text-body, #FFFFFF)',
                     fontSize: 14,
                     lineHeight: '20px',
                     padding: '8px 6px 10px 8px',
@@ -666,7 +666,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                       background: isEmojiPickerOpen
                         ? COLORS.activeToggleBg
                         : isEmojiHovered
-                        ? 'rgba(255, 255, 255, 0.08)'
+                        ? 'var(--surface-hover, rgba(255, 255, 255, 0.08))'
                         : 'transparent',
                       border: 'none',
                       cursor: 'pointer',
@@ -714,7 +714,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                     flexShrink: 0,
                   }}
                 >
-                  <MdiIcon path={mdiClose} size={22} color="#FF3B30" />
+                  <MdiIcon path={mdiClose} size={22} color="var(--danger-text, #FF3B30)" />
                 </button>
               )}
 
@@ -745,7 +745,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                   justifyContent: 'center',
                   padding: 0,
                   margin: '0 0 1px 0',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                  boxShadow: '0 1px 3px var(--shadow-colour, rgba(0,0,0,0.25))',
                   flexShrink: 0,
                   transition: 'opacity 0.1s ease',
                 }}
@@ -753,7 +753,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
                 <MdiIcon
                   path={isRecordingVoice ? mdiCheck : hasAttachments || hasText ? mdiSend : mdiMicrophone}
                   size={22}
-                  color="#FFFFFF"
+                  color="var(--text-on-accent, #FFFFFF)"
                   style={!isRecordingVoice && (hasAttachments || hasText) ? { transform: 'translateX(1px)' } : undefined}
                 />
               </button>
@@ -761,7 +761,7 @@ export const MessageInputUserControl: React.FC<{ noteId?: number; onSend?: (text
           </div>
         )}
       </div>
-      {attachmentError && <div role="alert" style={{ color: '#FF6B6B', padding: 6 }}>{attachmentError}</div>}
+      {attachmentError && <div role="alert" style={{ color: 'var(--danger-text, #FF6B6B)', padding: 6 }}>{attachmentError}</div>}
       {mediaEditor && <AttachmentMediaEditorView key={mediaEditor.attachment.id} file={mediaEditor.file}
         onClose={() => setMediaEditor(null)}
         onDone={file => addPendingAttachments([file], mediaEditor.attachment)} />}

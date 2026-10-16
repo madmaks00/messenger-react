@@ -23,8 +23,8 @@ const AUTO_PLAY_SIZE_LIMIT = 100 * 1024 * 1024;
 const BRUSHES = {
   videoOverlayBg: 'rgba(0, 0, 0, 0.125)', // #20000000
   videoLabelTagBg: 'rgba(0, 0, 0, 0.6)',   // #99000000
-  videoPlayIcon: '#FFFFFF',                // #FFFFFF
-  videoPlayLabel: '#FFFFFF',               // #FFFFFF
+  videoPlayIcon: 'var(--text-body, #FFFFFF)',                // #FFFFFF
+  videoPlayLabel: 'var(--text-body, #FFFFFF)',               // #FFFFFF
   gifTagBg: 'rgba(0, 0, 0, 0.5)',          // #80000000
   moreMediaOverlayBg: 'rgba(0, 0, 0, 0.7)',// #B3000000
 };
@@ -367,7 +367,7 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               >
                 <span
                   style={{
-                    color: '#FFFFFF',
+                    color: 'var(--text-body, #FFFFFF)',
                     fontSize: 10.5,
                     fontWeight: 'bold',
                     lineHeight: '12px',
@@ -396,7 +396,7 @@ export const MediaAlbumGrid: React.FC<MediaAlbumGridProps> = ({
               >
                 <span
                   style={{
-                    color: '#FFFFFF',
+                    color: 'var(--text-body, #FFFFFF)',
                     fontSize: 24,
                     fontWeight: 'bold',
                   }}

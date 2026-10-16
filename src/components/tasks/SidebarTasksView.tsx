@@ -97,7 +97,7 @@ export const SidebarTasksView: React.FC = () => {
         width: '100%',
         minWidth: 0,
         height: '100%',
-        backgroundColor: '#161A23',
+        backgroundColor: 'var(--surface-panel, #161A23)',
         display: 'flex',
         flexDirection: 'column',
         userSelect: 'none',
@@ -134,21 +134,21 @@ export const SidebarTasksView: React.FC = () => {
                 width: 80,
                 height: 80,
                 borderRadius: 40,
-                backgroundColor: '#1C212D',
+                backgroundColor: 'var(--surface-control, #1C212D)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: 15,
               }}
             >
-              <MdiIcon path={mdiClipboardPlusOutline} size={40} color="#7D8494" style={{ opacity: 0.5 }} />
+              <MdiIcon path={mdiClipboardPlusOutline} size={40} color="var(--text-secondary, #7D8494)" style={{ opacity: 0.5 }} />
             </div>
-            <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
+            <span style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 18, fontWeight: 'bold' }}>
               No Task Lists
             </span>
           </div>
         ) : filteredLists.length === 0 ? (
-          <div style={{ color: '#7D8494', fontSize: 14, textAlign: 'center', margin: '40px 0' }}>
+          <div style={{ color: 'var(--text-secondary, #7D8494)', fontSize: 14, textAlign: 'center', margin: '40px 0' }}>
             No task lists found
           </div>
         ) : (
@@ -173,9 +173,9 @@ export const SidebarTasksView: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   backgroundColor: isSelected
-                    ? '#232836'
+                    ? 'var(--surface-control, #232836)'
                     : isHovered
-                    ? '#1C212D'
+                    ? 'var(--surface-control, #1C212D)'
                     : 'transparent',
                   boxSizing: 'border-box',
                   transition: 'background-color 0.12s ease',
@@ -209,7 +209,7 @@ export const SidebarTasksView: React.FC = () => {
                   <MdiIcon
                     path={listIconPath}
                     size={22}
-                    color={list.iconColor || '#7D8494'}
+                    color={list.iconColor || 'var(--text-secondary, #7D8494)'}
                     style={{ position: 'absolute', left: 0, top: 0 }}
                   />
 
@@ -222,7 +222,7 @@ export const SidebarTasksView: React.FC = () => {
                         width: 14,
                         height: 14,
                         borderRadius: 7,
-                        backgroundColor: '#1E9BEB',
+                        backgroundColor: 'var(--accent-primary, #1E9BEB)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -257,19 +257,19 @@ export const SidebarTasksView: React.FC = () => {
                         background: 'transparent',
                         border: 'none',
                         borderBottom: '1px solid #3B82F6',
-                        color: '#FFFFFF',
+                        color: 'var(--text-body, #FFFFFF)',
                         fontSize: 14.5,
                         fontWeight: 600,
                         outline: 'none',
                         padding: '2px 0',
-                        caretColor: '#FFFFFF',
+                        caretColor: 'var(--text-body, #FFFFFF)',
                         fontFamily: "'Segoe UI', -apple-system, sans-serif",
                       }}
                     />
                   ) : (
                     <span
                       style={{
-                        color: '#FFFFFF',
+                        color: 'var(--text-body, #FFFFFF)',
                         fontSize: 14.5,
                         fontWeight: 600,
                         overflow: 'hidden',
@@ -290,8 +290,8 @@ export const SidebarTasksView: React.FC = () => {
                         minWidth: 20,
                         height: 20,
                         padding: '0 6px',
-                        backgroundColor: list.urgencyColor || '#2A303C',
-                        color: '#FFFFFF',
+                        backgroundColor: list.urgencyColor || 'var(--surface-hover, #2A303C)',
+                        color: 'var(--text-body, #FFFFFF)',
                         fontSize: 11.5,
                         fontWeight: 'bold',
                         display: 'flex',
@@ -325,7 +325,7 @@ export const SidebarTasksView: React.FC = () => {
                           beginEditList(list);
                         }}
                       >
-                        <MdiIcon path={mdiPencilOutline} size={16} color="#3B82F6" />
+                        <MdiIcon path={mdiPencilOutline} size={16} color="var(--link-colour, #3B82F6)" />
                       </ActionIconButton>
 
                       <ActionIconButton
@@ -336,7 +336,7 @@ export const SidebarTasksView: React.FC = () => {
                           deleteTaskList(list);
                         }}
                       >
-                        <MdiIcon path={mdiTrashCanOutline} size={16} color="#EF4444" />
+                        <MdiIcon path={mdiTrashCanOutline} size={16} color="var(--danger-text, #EF4444)" />
                       </ActionIconButton>
                     </div>
                   )}

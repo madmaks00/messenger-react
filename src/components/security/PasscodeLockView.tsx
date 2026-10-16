@@ -6,17 +6,17 @@ import { useAuthStore } from '../../stores/authStore';
 // ИКОНКИ MATERIAL DESIGN (1:1 PackIconKind)
 // =========================================================================
 const Icons = {
-  LockOutline: ({ size = 56, color = '#1E9BEB' }: { size?: number; color?: string }) => (
+  LockOutline: ({ size = 56, color = 'var(--link-colour, #1E9BEB)' }: { size?: number; color?: string }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
       <path d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.89,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z" />
     </svg>
   ),
-  CheckBold: ({ size = 56, color = '#4CAF50' }: { size?: number; color?: string }) => (
+  CheckBold: ({ size = 56, color = 'var(--success-text, #4CAF50)' }: { size?: number; color?: string }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
       <path d="M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z" />
     </svg>
   ),
-  CloseBold: ({ size = 56, color = '#FF5252' }: { size?: number; color?: string }) => (
+  CloseBold: ({ size = 56, color = 'var(--danger-text, #FF5252)' }: { size?: number; color?: string }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
       <path d="M20 6.91L17.09 4L12 9.09L6.91 4L4 6.91L9.09 12L4 17.09L6.91 20L12 14.91L17.09 20L20 17.09L14.91 12L20 6.91Z" />
     </svg>
@@ -70,7 +70,7 @@ export const PasscodeLockView: React.FC<PasscodeLockViewProps> = ({ isLocked, on
     onUnlock();
 
     setIconKind('LockOutline');
-    setIconColor('#1E9BEB');
+    setIconColor('var(--accent-primary, #1E9BEB)');
     setRotateActive(false);
     setPulseActive(false);
   }, [onUnlock]);
@@ -92,7 +92,7 @@ export const PasscodeLockView: React.FC<PasscodeLockViewProps> = ({ isLocked, on
     setScaleDownActive(false);
 
     setIconKind('LockOutline');
-    setIconColor('#1E9BEB');
+    setIconColor('var(--accent-primary, #1E9BEB)');
 
     setScaleUpActive(true);
     await new Promise((r) => setTimeout(r, 120));
@@ -138,7 +138,7 @@ export const PasscodeLockView: React.FC<PasscodeLockViewProps> = ({ isLocked, on
       if (inputRef.current) inputRef.current.value = '';
       setHasError(false);
       setIconKind('LockOutline');
-      setIconColor('#1E9BEB');
+      setIconColor('var(--accent-primary, #1E9BEB)');
       setRotateActive(false);
       setPulseActive(false);
       setShakeActive(false);
@@ -160,7 +160,7 @@ export const PasscodeLockView: React.FC<PasscodeLockViewProps> = ({ isLocked, on
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: '#0C1017',
+        backgroundColor: 'var(--surface-recessed, #0C1017)',
         zIndex: 99999,
         display: 'flex',
         alignItems: 'center',
@@ -344,7 +344,7 @@ export const PasscodeLockView: React.FC<PasscodeLockViewProps> = ({ isLocked, on
         {/* ЗАГОЛОВОК */}
         <div
           style={{
-            color: '#FFFFFF',
+            color: 'var(--text-body, #FFFFFF)',
             fontSize: 20,
             fontWeight: 'bold',
             marginBottom: 25,
@@ -367,8 +367,8 @@ export const PasscodeLockView: React.FC<PasscodeLockViewProps> = ({ isLocked, on
                   borderRadius: '50%',
                   margin: '0 8px',
                   boxSizing: 'border-box',
-                  border: '2px solid #222836',
-                  backgroundColor: isFilled ? '#1E9BEB' : 'transparent',
+                  border: '2px solid var(--border-primary, #222836)',
+                  backgroundColor: isFilled ? 'var(--accent-primary, #1E9BEB)' : 'transparent',
                   transition: 'background-color 0.1s ease',
                 }}
               />
@@ -379,7 +379,7 @@ export const PasscodeLockView: React.FC<PasscodeLockViewProps> = ({ isLocked, on
         {/* СООБЩЕНИЕ ОБ ОШИБКЕ */}
         <div
           style={{
-            color: '#FF5252',
+            color: 'var(--danger-text, #FF5252)',
             fontSize: 13.5,
             fontWeight: 600,
             height: 20,

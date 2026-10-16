@@ -149,7 +149,7 @@ const NoteMessageItem: React.FC<{ msg: IMessage }> = ({ msg }) => {
               style={{
                 fontSize: 14,
                 fontWeight: 600,
-                color: isMy ? '#60A5FA' : '#E2E8F0',
+                color: isMy ? 'var(--link-colour, #60A5FA)' : 'var(--text-body, #E2E8F0)',
                 lineHeight: 1,
               }}
             >
@@ -159,7 +159,7 @@ const NoteMessageItem: React.FC<{ msg: IMessage }> = ({ msg }) => {
             <span
               style={{
                 fontSize: 11,
-                color: '#64748B',
+                color: 'var(--text-secondary, #64748B)',
                 marginLeft: 8,
                 lineHeight: 1,
               }}
@@ -176,7 +176,7 @@ const NoteMessageItem: React.FC<{ msg: IMessage }> = ({ msg }) => {
               alignSelf: 'flex-start',
               minWidth: isMediaOnly ? undefined : 40,
               borderRadius: isMediaOnly ? 10 : '0 10px 10px 10px',
-              backgroundColor: isMediaOnly ? 'transparent' : isMy ? '#1E9BEB' : '#1E293B',
+              backgroundColor: isMediaOnly ? 'transparent' : isMy ? 'var(--accent-primary, #1E9BEB)' : 'var(--surface-hover, #1E293B)',
               color: '#FFFFFF',
               boxSizing: 'border-box',
               overflow: 'hidden',
@@ -265,7 +265,7 @@ export const NotesWorkspaceView: React.FC = () => {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: '#11141B',
+        backgroundColor: 'var(--surface-page, #11141B)',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -276,8 +276,8 @@ export const NotesWorkspaceView: React.FC = () => {
           height: 54,
           minHeight: 54,
           width: '100%',
-          backgroundColor: '#161A23',
-          borderBottom: '1px solid #1F2533',
+          backgroundColor: 'var(--surface-panel, #161A23)',
+          borderBottom: '1px solid var(--border-primary, #1F2533)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -291,12 +291,12 @@ export const NotesWorkspaceView: React.FC = () => {
           <MdiIcon
             path={noteIconPath}
             size={22}
-            color={selectedNote.iconColor || '#1E9BEB'}
+            color={selectedNote.iconColor || 'var(--link-colour, #1E9BEB)'}
             style={{ marginRight: 10 }}
           />
           <span
             style={{
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               fontSize: 15,
               fontWeight: 600,
               overflow: 'hidden',
@@ -317,7 +317,7 @@ export const NotesWorkspaceView: React.FC = () => {
               padding: '0 16px',
               fontSize: 14,
               fontWeight: isNoteChatMode ? 'bold' : 600,
-              color: isNoteChatMode ? '#FFFFFF' : '#8B95A5',
+              color: isNoteChatMode ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #8B95A5)',
               position: 'relative',
               cursor: 'pointer',
               display: 'flex',
@@ -336,8 +336,8 @@ export const NotesWorkspaceView: React.FC = () => {
                   right: 16,
                   height: 3,
                   borderRadius: '1.5px 1.5px 0 0',
-                  backgroundColor: '#1E9BEB',
-                  boxShadow: '0 0 8px rgba(30, 155, 235, 0.8)',
+                  backgroundColor: 'var(--accent-primary, #1E9BEB)',
+                  boxShadow: '0 0 8px var(--surface-accent, rgba(30, 155, 235, 0.8))',
                 }}
               />
             )}
@@ -351,7 +351,7 @@ export const NotesWorkspaceView: React.FC = () => {
               padding: '0 16px',
               fontSize: 14,
               fontWeight: !isNoteChatMode ? 'bold' : 600,
-              color: !isNoteChatMode ? '#FFFFFF' : '#8B95A5',
+              color: !isNoteChatMode ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #8B95A5)',
               position: 'relative',
               cursor: 'pointer',
               display: 'flex',
@@ -370,8 +370,8 @@ export const NotesWorkspaceView: React.FC = () => {
                   right: 16,
                   height: 3,
                   borderRadius: '1.5px 1.5px 0 0',
-                  backgroundColor: '#1E9BEB',
-                  boxShadow: '0 0 8px rgba(30, 155, 235, 0.8)',
+                  backgroundColor: 'var(--accent-primary, #1E9BEB)',
+                  boxShadow: '0 0 8px var(--surface-accent, rgba(30, 155, 235, 0.8))',
                 }}
               />
             )}
@@ -410,7 +410,7 @@ export const NotesWorkspaceView: React.FC = () => {
                 right: 0,
                 bottom: 0,
                 height: 80,
-                background: 'linear-gradient(to bottom, rgba(17, 20, 27, 0) 0%, rgba(17, 20, 27, 0.8) 50%, #11141B 100%)',
+                background: 'linear-gradient(to bottom, var(--chat-fade-transparent, rgba(17, 20, 27, 0)) 0%, var(--chat-fade, rgba(17, 20, 27, 0.8)) 50%, var(--surface-page, #11141B) 100%)',
                 pointerEvents: 'none',
                 zIndex: 5,
               }}

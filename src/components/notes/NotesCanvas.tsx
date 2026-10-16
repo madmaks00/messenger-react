@@ -870,10 +870,10 @@ export const NotesCanvas: React.FC = () => {
         width: '100%',
         height: '100%',
         overflow: 'hidden',
-        backgroundColor: bgType === 'Solid' ? bgColor : '#11141B',
+        backgroundColor: bgType === 'Solid' ? bgColor : 'var(--surface-recessed, #11141B)',
         backgroundImage:
           bgType === 'Grid'
-            ? 'radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px)'
+            ? 'radial-gradient(var(--surface-hover, rgba(255, 255, 255, 0.08)) 1px, transparent 1px)'
             : bgType === 'Image' && bgImage
             ? `url(${formatBase64DataUrl(bgImage)})`
             : 'none',
@@ -904,12 +904,12 @@ export const NotesCanvas: React.FC = () => {
           transition: all 0.15s ease;
         }
         .wpf-tool-btn:hover {
-          background: rgba(255, 255, 255, 0.1) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.1)) !important;
           color: #F8FAFC !important;
         }
         .wpf-tool-btn:active {
           transform: scale(0.95);
-          background: rgba(255, 255, 255, 0.05) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.05)) !important;
         }
         .wpf-tool-btn.active {
           background: #3B82F6 !important;
@@ -932,7 +932,7 @@ export const NotesCanvas: React.FC = () => {
           transition: all 0.15s ease;
         }
         .wpf-shape-btn:hover {
-          background: rgba(255, 255, 255, 0.1) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.1)) !important;
           color: #FFFFFF !important;
         }
         .wpf-shape-btn:active {
@@ -944,7 +944,7 @@ export const NotesCanvas: React.FC = () => {
         }
         .wpf-color-swatch:hover {
           transform: scale(1.18);
-          box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+          box-shadow: 0 0 8px var(--surface-hover, rgba(255, 255, 255, 0.6));
         }
 
         .wpf-save-btn {
@@ -979,7 +979,7 @@ export const NotesCanvas: React.FC = () => {
           font-size: 14px;
         }
         .wpf-menu-item-row:hover {
-          background-color: #232A3B;
+          background-color: var(--surface-hover, #232A3B);
         }
 
         .wpf-menu-parent-row {
@@ -996,7 +996,7 @@ export const NotesCanvas: React.FC = () => {
           transition: background-color 0.12s ease;
         }
         .wpf-menu-parent-row:hover {
-          background-color: #232A3B;
+          background-color: var(--surface-hover, #232A3B);
         }
       `}</style>
 
@@ -1060,8 +1060,8 @@ export const NotesCanvas: React.FC = () => {
                     width: '100%',
                     height: '100%',
                     background: el.backgroundHex || 'transparent',
-                    border: '1px dashed rgba(120,120,120,0.5)',
-                    color: el.foregroundHex || '#FFFFFF',
+                    border: '1px dashed var(--border-primary, rgba(120,120,120,0.5))',
+                    color: el.foregroundHex || 'var(--text-body, #FFFFFF)',
                     fontSize: el.fontSize || 16,
                     fontWeight: el.isBold ? 'bold' : 'normal',
                     fontStyle: el.isItalic ? 'italic' : 'normal',
@@ -1203,31 +1203,31 @@ export const NotesCanvas: React.FC = () => {
             bottom: 75,
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(22, 26, 35, 0.85)',
+            background: 'var(--chat-fade, rgba(22, 26, 35, 0.85))',
             backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255,255,255,0.2)',
+            border: '1px solid var(--border-subtle, rgba(255,255,255,0.2))',
             borderRadius: 32,
             padding: '8px 16px',
             display: 'flex',
             alignItems: 'center',
             gap: 16,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+            boxShadow: '0 10px 30px var(--shadow-colour, rgba(0,0,0,0.4))',
             zIndex: 30,
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontWeight: 'bold', color: '#94A3B8' }}>{brushSize}px</span>
+            <span style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text-secondary, #94A3B8)' }}>{brushSize}px</span>
             <input
               type="range"
               min={1}
               max={20}
               value={brushSize}
               onChange={(e) => setBrushSize(parseInt(e.target.value, 10))}
-              style={{ width: 70, accentColor: '#3B82F6', cursor: 'pointer' }}
+              style={{ width: 70, accentColor: 'var(--link-colour, #3B82F6)', cursor: 'pointer' }}
             />
           </div>
 
-          <div style={{ width: 1, height: 36, background: 'rgba(255,255,255,0.2)' }} />
+          <div style={{ width: 1, height: 36, background: 'var(--surface-hover, rgba(255,255,255,0.2))' }} />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4 }}>
             {DEFAULT_PALETTE_ROW1.map((c) => (
@@ -1241,7 +1241,7 @@ export const NotesCanvas: React.FC = () => {
                   borderRadius: 12,
                   background: c,
                   cursor: 'pointer',
-                  border: brushColor === c ? '2px solid #3B82F6' : '1px solid rgba(255,255,255,0.2)',
+                  border: brushColor === c ? '2px solid #3B82F6' : '1px solid var(--border-subtle, rgba(255,255,255,0.2))',
                   boxSizing: 'border-box',
                 }}
               />
@@ -1271,7 +1271,7 @@ export const NotesCanvas: React.FC = () => {
                   borderRadius: 12,
                   background: c,
                   cursor: 'pointer',
-                  border: brushColor === c ? '2px solid #3B82F6' : '1px solid rgba(255,255,255,0.2)',
+                  border: brushColor === c ? '2px solid #3B82F6' : '1px solid var(--border-subtle, rgba(255,255,255,0.2))',
                   boxSizing: 'border-box',
                 }}
               />
@@ -1292,7 +1292,7 @@ export const NotesCanvas: React.FC = () => {
             />
           </div>
 
-          <div style={{ width: 1, height: 36, background: 'rgba(255,255,255,0.2)' }} />
+          <div style={{ width: 1, height: 36, background: 'var(--surface-hover, rgba(255,255,255,0.2))' }} />
 
           <div
             className="wpf-color-swatch"
@@ -1309,7 +1309,7 @@ export const NotesCanvas: React.FC = () => {
               justifyContent: 'center',
             }}
           >
-            <MdiIcon path={mdiPalette} size={18} color="#FFF" />
+            <MdiIcon path={mdiPalette} size={18} color="var(--text-body, #FFF)" />
           </div>
         </div>
       )}
@@ -1322,9 +1322,9 @@ export const NotesCanvas: React.FC = () => {
             bottom: 75,
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(22, 26, 35, 0.85)',
+            background: 'var(--chat-fade, rgba(22, 26, 35, 0.85))',
             backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255,255,255,0.2)',
+            border: '1px solid var(--border-subtle, rgba(255,255,255,0.2))',
             borderRadius: 24,
             padding: '6px 10px',
             display: 'flex',
@@ -1334,25 +1334,25 @@ export const NotesCanvas: React.FC = () => {
           }}
         >
           <button onClick={() => selectShape(NoteShapeType.Text)} className="wpf-shape-btn" title="Текст">
-            <MdiIcon path={mdiFormatText} size={20} color="#FFF" />
+            <MdiIcon path={mdiFormatText} size={20} color="var(--text-body, #FFF)" />
           </button>
           <button onClick={() => selectShape(NoteShapeType.Square)} className="wpf-shape-btn" title="Квадрат">
-            <MdiIcon path={mdiSquareOutline} size={20} color="#FFF" />
+            <MdiIcon path={mdiSquareOutline} size={20} color="var(--text-body, #FFF)" />
           </button>
           <button onClick={() => selectShape(NoteShapeType.Rectangle)} className="wpf-shape-btn" title="Прямоугольник">
-            <MdiIcon path={mdiRectangleOutline} size={20} color="#FFF" />
+            <MdiIcon path={mdiRectangleOutline} size={20} color="var(--text-body, #FFF)" />
           </button>
           <button onClick={() => selectShape(NoteShapeType.Triangle)} className="wpf-shape-btn" title="Треугольник">
-            <MdiIcon path={mdiTriangleOutline} size={20} color="#FFF" />
+            <MdiIcon path={mdiTriangleOutline} size={20} color="var(--text-body, #FFF)" />
           </button>
           <button onClick={() => selectShape(NoteShapeType.Ellipse)} className="wpf-shape-btn" title="Овал">
-            <MdiIcon path={mdiEllipseOutline} size={20} color="#FFF" />
+            <MdiIcon path={mdiEllipseOutline} size={20} color="var(--text-body, #FFF)" />
           </button>
           <button onClick={() => selectShape(NoteShapeType.Line)} className="wpf-shape-btn" title="Линия">
-            <MdiIcon path={mdiVectorLine} size={20} color="#FFF" />
+            <MdiIcon path={mdiVectorLine} size={20} color="var(--text-body, #FFF)" />
           </button>
           <button onClick={() => selectShape(NoteShapeType.Polyline)} className="wpf-shape-btn" title="Полилиния">
-            <MdiIcon path={mdiVectorPolyline} size={20} color="#FFF" />
+            <MdiIcon path={mdiVectorPolyline} size={20} color="var(--text-body, #FFF)" />
           </button>
         </div>
       )}
@@ -1364,15 +1364,15 @@ export const NotesCanvas: React.FC = () => {
           bottom: 16,
           left: '50%',
           transform: 'translateX(-50%)',
-          background: 'rgba(22, 26, 35, 0.85)',
+          background: 'var(--chat-fade, rgba(22, 26, 35, 0.85))',
           backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255,255,255,0.2)',
+          border: '1px solid var(--border-subtle, rgba(255,255,255,0.2))',
           borderRadius: 28,
           padding: '6px 12px',
           display: 'flex',
           alignItems: 'center',
           gap: 6,
-          boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+          boxShadow: '0 10px 30px var(--shadow-colour, rgba(0,0,0,0.4))',
           zIndex: 30,
         }}
       >
@@ -1384,7 +1384,7 @@ export const NotesCanvas: React.FC = () => {
           <MdiIcon path={mdiCogOutline} size={22} color="currentColor" />
         </button>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+        <div style={{ width: 1, height: 20, background: 'var(--surface-hover, rgba(255,255,255,0.2))', margin: '0 4px' }} />
 
         <button onClick={undo} className="wpf-tool-btn" title="Undo (Ctrl+Z)">
           <MdiIcon path={mdiUndo} size={22} color="currentColor" />
@@ -1393,7 +1393,7 @@ export const NotesCanvas: React.FC = () => {
           <MdiIcon path={mdiRedo} size={22} color="currentColor" />
         </button>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+        <div style={{ width: 1, height: 20, background: 'var(--surface-hover, rgba(255,255,255,0.2))', margin: '0 4px' }} />
 
         <button
           onClick={() => setNoteTool('Select')}
@@ -1427,7 +1427,7 @@ export const NotesCanvas: React.FC = () => {
           <MdiIcon path={mdiPalette} size={22} color="currentColor" />
         </button>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+        <div style={{ width: 1, height: 20, background: 'var(--surface-hover, rgba(255,255,255,0.2))', margin: '0 4px' }} />
 
         <button
           onClick={() => setIsShapePopoverOpen(!isShapePopoverOpen)}
@@ -1437,13 +1437,13 @@ export const NotesCanvas: React.FC = () => {
           <MdiIcon path={mdiShapePlus} size={22} color="currentColor" />
         </button>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+        <div style={{ width: 1, height: 20, background: 'var(--surface-hover, rgba(255,255,255,0.2))', margin: '0 4px' }} />
 
         <button onClick={() => fileInputRef.current?.click()} className="wpf-tool-btn" title="Вставить изображение">
           <MdiIcon path={mdiImagePlus} size={22} color="currentColor" />
         </button>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+        <div style={{ width: 1, height: 20, background: 'var(--surface-hover, rgba(255,255,255,0.2))', margin: '0 4px' }} />
 
         <button
           onClick={handleSave}
@@ -1454,7 +1454,7 @@ export const NotesCanvas: React.FC = () => {
             borderRadius: 18,
             background: 'linear-gradient(135deg, #60A5FA, #2563EB)',
             border: 'none',
-            color: '#FFF',
+            color: 'var(--text-body, #FFF)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1462,7 +1462,7 @@ export const NotesCanvas: React.FC = () => {
           }}
           title="Сохранить заметку"
         >
-          <MdiIcon path={mdiContentSaveOutline} size={20} color="#FFF" />
+          <MdiIcon path={mdiContentSaveOutline} size={20} color="var(--text-on-accent, #FFF)" />
         </button>
       </div>
 
@@ -1473,17 +1473,17 @@ export const NotesCanvas: React.FC = () => {
             position: 'absolute',
             bottom: 80,
             left: '30%',
-            background: '#161A23',
-            border: '1px solid rgba(255,255,255,0.2)',
+            background: 'var(--surface-panel, #161A23)',
+            border: '1px solid var(--border-subtle, rgba(255,255,255,0.2))',
             borderRadius: 18,
             padding: 15,
             zIndex: 40,
             width: 250,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+            boxShadow: '0 10px 30px var(--shadow-colour, rgba(0,0,0,0.5))',
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 'bold', color: '#FFF', textAlign: 'center' }}>Фон холста</span>
+            <span style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-body, #FFF)', textAlign: 'center' }}>Фон холста</span>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={() => {
@@ -1491,7 +1491,7 @@ export const NotesCanvas: React.FC = () => {
                   pushSnapshot({ ...historyRef.current.present, bgType: 'Grid' });
                 }}
                 className="wpf-shape-btn"
-                style={{ flex: 1, padding: 6, background: '#22FFFFFF', border: 'none', color: '#FFF', borderRadius: 4, width: 'auto' }}
+                style={{ flex: 1, padding: 6, background: '#22FFFFFF', border: 'none', color: 'var(--text-body, #FFF)', borderRadius: 4, width: 'auto' }}
               >
                 Сетка
               </button>
@@ -1516,12 +1516,12 @@ export const NotesCanvas: React.FC = () => {
                   input.click();
                 }}
                 className="wpf-shape-btn"
-                style={{ flex: 1, padding: 6, background: '#22FFFFFF', border: 'none', color: '#FFF', borderRadius: 4, width: 'auto' }}
+                style={{ flex: 1, padding: 6, background: '#22FFFFFF', border: 'none', color: 'var(--text-body, #FFF)', borderRadius: 4, width: 'auto' }}
               >
                 Картинка...
               </button>
             </div>
-            <span style={{ fontSize: 12, color: '#7D8494', textAlign: 'center' }}>Заливка цветом</span>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary, #7D8494)', textAlign: 'center' }}>Заливка цветом</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
               {['#000000', '#808080', '#FFFFFF', '#FF0000', '#FFA500', '#FFFF00', '#008000', '#90EE90', '#0000FF', '#FF00FF'].map((c) => (
                 <div
@@ -1542,7 +1542,7 @@ export const NotesCanvas: React.FC = () => {
                 setBgImage(null);
                 pushSnapshot({ ...historyRef.current.present, bgType: 'Grid', bgImage: null });
               }}
-              style={{ background: 'transparent', border: 'none', color: '#FF3B30', fontSize: 12, cursor: 'pointer', padding: '4px 0' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--danger-text, #FF3B30)', fontSize: 12, cursor: 'pointer', padding: '4px 0' }}
             >
               Сбросить фон
             </button>
@@ -1558,16 +1558,16 @@ export const NotesCanvas: React.FC = () => {
             bottom: 140,
             left: '50%',
             transform: 'translateX(-50%)',
-            background: '#1E232E',
-            border: '1px solid rgba(255,255,255,0.2)',
+            background: 'var(--surface-control, #1E232E)',
+            border: '1px solid var(--border-subtle, rgba(255,255,255,0.2))',
             borderRadius: 12,
             padding: 15,
             zIndex: 40,
-            boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+            boxShadow: '0 25px 50px var(--shadow-colour, rgba(0,0,0,0.5))',
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 'bold', color: '#FFF' }}>Choose Custom Color</span>
+            <span style={{ fontSize: 13, fontWeight: 'bold', color: 'var(--text-body, #FFF)' }}>Choose Custom Color</span>
             <input
               type="color"
               value={customBrushColorHex.length === 7 ? customBrushColorHex : '#FF0000'}
@@ -1575,7 +1575,7 @@ export const NotesCanvas: React.FC = () => {
               style={{ width: 160, height: 40, cursor: 'pointer', background: 'transparent', border: 'none' }}
             />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, color: '#888' }}>HEX:</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary, #888)' }}>HEX:</span>
               <input
                 type="text"
                 value={customBrushColorHex}
@@ -1583,9 +1583,9 @@ export const NotesCanvas: React.FC = () => {
                 style={{
                   width: 90,
                   background: 'transparent',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  border: '1px solid var(--border-subtle, rgba(255,255,255,0.2))',
                   borderRadius: 4,
-                  color: '#FFF',
+                  color: 'var(--text-body, #FFF)',
                   padding: '4px 6px',
                   fontFamily: 'monospace',
                 }}
@@ -1617,14 +1617,14 @@ export const NotesCanvas: React.FC = () => {
             position: 'absolute',
             left: Math.min(contextMenu.x, (containerRef.current?.clientWidth || 800) - 240),
             top: Math.min(contextMenu.y, (containerRef.current?.clientHeight || 600) - 260),
-            background: '#1C212D',
-            border: '1px solid #2A303C',
+            background: 'var(--surface-control, #1C212D)',
+            border: '1px solid var(--border-primary, #2A303C)',
             borderRadius: 12,
             padding: '4px 0',
             zIndex: 100,
             minWidth: 220,
-            boxShadow: '0 15px 35px rgba(0,0,0,0.6)',
-            color: '#FFFFFF',
+            boxShadow: '0 15px 35px var(--shadow-colour, rgba(0,0,0,0.6))',
+            color: 'var(--text-body, #FFFFFF)',
             fontSize: 14,
           }}
         >
@@ -1636,10 +1636,10 @@ export const NotesCanvas: React.FC = () => {
                 className="wpf-menu-parent-row"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <MdiIcon path={mdiPaletteOutline} size={18} color="#FFFFFF" />
+                  <MdiIcon path={mdiPaletteOutline} size={18} color="var(--text-body, #FFFFFF)" />
                   <span>Цвет заливки</span>
                 </div>
-                <MdiIcon path={mdiChevronRight} size={18} color="#7D8494" />
+                <MdiIcon path={mdiChevronRight} size={18} color="var(--text-secondary, #7D8494)" />
 
                 {activeSubmenu === 'fill' && (
                   <div style={submenuContainerStyle}>
@@ -1655,7 +1655,7 @@ export const NotesCanvas: React.FC = () => {
                             height: 14,
                             borderRadius: 7,
                             backgroundColor: item.color,
-                            border: '1px solid rgba(255,255,255,0.4)',
+                            border: '1px solid var(--border-subtle, rgba(255,255,255,0.4))',
                           }}
                         />
                         <span>{item.name}</span>
@@ -1671,10 +1671,10 @@ export const NotesCanvas: React.FC = () => {
                 className="wpf-menu-parent-row"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <MdiIcon path={mdiVectorSquare} size={18} color="#FFFFFF" />
+                  <MdiIcon path={mdiVectorSquare} size={18} color="var(--text-body, #FFFFFF)" />
                   <span>Цвет контура</span>
                 </div>
-                <MdiIcon path={mdiChevronRight} size={18} color="#7D8494" />
+                <MdiIcon path={mdiChevronRight} size={18} color="var(--text-secondary, #7D8494)" />
 
                 {activeSubmenu === 'stroke' && (
                   <div style={submenuContainerStyle}>
@@ -1690,7 +1690,7 @@ export const NotesCanvas: React.FC = () => {
                             height: 14,
                             borderRadius: 7,
                             backgroundColor: item.color,
-                            border: '1px solid rgba(255,255,255,0.4)',
+                            border: '1px solid var(--border-subtle, rgba(255,255,255,0.4))',
                           }}
                         />
                         <span>{item.name}</span>
@@ -1706,10 +1706,10 @@ export const NotesCanvas: React.FC = () => {
                 className="wpf-menu-parent-row"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <MdiIcon path={mdiFormatLineWeight} size={18} color="#FFFFFF" />
+                  <MdiIcon path={mdiFormatLineWeight} size={18} color="var(--text-body, #FFFFFF)" />
                   <span>Толщина контура</span>
                 </div>
-                <MdiIcon path={mdiChevronRight} size={18} color="#7D8494" />
+                <MdiIcon path={mdiChevronRight} size={18} color="var(--text-secondary, #7D8494)" />
 
                 {activeSubmenu === 'thickness' && (
                   <div style={submenuContainerStyle}>
@@ -1749,7 +1749,7 @@ export const NotesCanvas: React.FC = () => {
                 }}
                 className="wpf-menu-item-row"
               >
-                <MdiIcon path={mdiContentCopy} size={18} color="#FFFFFF" />
+                <MdiIcon path={mdiContentCopy} size={18} color="var(--text-body, #FFFFFF)" />
                 <span>Копировать фигуру</span>
               </div>
 
@@ -1763,9 +1763,9 @@ export const NotesCanvas: React.FC = () => {
                   setContextMenu(null);
                 }}
                 className="wpf-menu-item-row"
-                style={{ color: '#FF3B30' }}
+                style={{ color: 'var(--danger-text, #FF3B30)' }}
               >
-                <MdiIcon path={mdiDeleteOutline} size={18} color="#FF3B30" />
+                <MdiIcon path={mdiDeleteOutline} size={18} color="var(--danger-text, #FF3B30)" />
                 <span>Удалить фигуру</span>
               </div>
             </>
@@ -1779,10 +1779,10 @@ export const NotesCanvas: React.FC = () => {
                 className="wpf-menu-parent-row"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <MdiIcon path={mdiFormatSize} size={18} color="#FFFFFF" />
+                  <MdiIcon path={mdiFormatSize} size={18} color="var(--text-body, #FFFFFF)" />
                   <span>Размер шрифта</span>
                 </div>
-                <MdiIcon path={mdiChevronRight} size={18} color="#7D8494" />
+                <MdiIcon path={mdiChevronRight} size={18} color="var(--text-secondary, #7D8494)" />
 
                 {activeSubmenu === 'fontSize' && (
                   <div style={submenuContainerStyle}>
@@ -1793,7 +1793,7 @@ export const NotesCanvas: React.FC = () => {
                         className="wpf-menu-item-row"
                         style={{
                           fontWeight: (contextMenu.element.fontSize || 16) === sz ? 'bold' : 'normal',
-                          color: (contextMenu.element.fontSize || 16) === sz ? '#3B82F6' : '#FFFFFF',
+                          color: (contextMenu.element.fontSize || 16) === sz ? 'var(--link-colour, #3B82F6)' : 'var(--text-body, #FFFFFF)',
                         }}
                       >
                         <span>{sz} pt</span>
@@ -1809,10 +1809,10 @@ export const NotesCanvas: React.FC = () => {
                 className="wpf-menu-parent-row"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <MdiIcon path={mdiFormatColorText} size={18} color="#FFFFFF" />
+                  <MdiIcon path={mdiFormatColorText} size={18} color="var(--text-body, #FFFFFF)" />
                   <span>Цвет текста</span>
                 </div>
-                <MdiIcon path={mdiChevronRight} size={18} color="#7D8494" />
+                <MdiIcon path={mdiChevronRight} size={18} color="var(--text-secondary, #7D8494)" />
 
                 {activeSubmenu === 'textColor' && (
                   <div style={submenuContainerStyle}>
@@ -1828,7 +1828,7 @@ export const NotesCanvas: React.FC = () => {
                             height: 14,
                             borderRadius: 7,
                             backgroundColor: item.color,
-                            border: '1px solid rgba(255,255,255,0.4)',
+                            border: '1px solid var(--border-subtle, rgba(255,255,255,0.4))',
                           }}
                         />
                         <span>{item.name}</span>
@@ -1844,10 +1844,10 @@ export const NotesCanvas: React.FC = () => {
                 className="wpf-menu-parent-row"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <MdiIcon path={mdiFormatColorFill} size={18} color="#FFFFFF" />
+                  <MdiIcon path={mdiFormatColorFill} size={18} color="var(--text-body, #FFFFFF)" />
                   <span>Фон блока</span>
                 </div>
-                <MdiIcon path={mdiChevronRight} size={18} color="#7D8494" />
+                <MdiIcon path={mdiChevronRight} size={18} color="var(--text-secondary, #7D8494)" />
 
                 {activeSubmenu === 'textBg' && (
                   <div style={submenuContainerStyle}>
@@ -1863,7 +1863,7 @@ export const NotesCanvas: React.FC = () => {
                             height: 14,
                             borderRadius: 7,
                             backgroundColor: item.color,
-                            border: '1px solid rgba(255,255,255,0.4)',
+                            border: '1px solid var(--border-subtle, rgba(255,255,255,0.4))',
                           }}
                         />
                         <span>{item.name}</span>
@@ -1879,10 +1879,10 @@ export const NotesCanvas: React.FC = () => {
                 className="wpf-menu-parent-row"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <MdiIcon path={mdiFormatFont} size={18} color="#FFFFFF" />
+                  <MdiIcon path={mdiFormatFont} size={18} color="var(--text-body, #FFFFFF)" />
                   <span>Стиль текста</span>
                 </div>
-                <MdiIcon path={mdiChevronRight} size={18} color="#7D8494" />
+                <MdiIcon path={mdiChevronRight} size={18} color="var(--text-secondary, #7D8494)" />
 
                 {activeSubmenu === 'textStyle' && (
                   <div style={submenuContainerStyle}>
@@ -1891,7 +1891,7 @@ export const NotesCanvas: React.FC = () => {
                       className="wpf-menu-item-row"
                       style={{
                         fontWeight: 'bold',
-                        color: contextMenu.element.isBold ? '#3B82F6' : '#FFFFFF',
+                        color: contextMenu.element.isBold ? 'var(--link-colour, #3B82F6)' : 'var(--text-body, #FFFFFF)',
                       }}
                     >
                       <span>Полужирный (Bold)</span>
@@ -1901,7 +1901,7 @@ export const NotesCanvas: React.FC = () => {
                       className="wpf-menu-item-row"
                       style={{
                         fontStyle: 'italic',
-                        color: contextMenu.element.isItalic ? '#3B82F6' : '#FFFFFF',
+                        color: contextMenu.element.isItalic ? 'var(--link-colour, #3B82F6)' : 'var(--text-body, #FFFFFF)',
                       }}
                     >
                       <span>Курсив (Italic)</span>
@@ -1929,7 +1929,7 @@ export const NotesCanvas: React.FC = () => {
                 }}
                 className="wpf-menu-item-row"
               >
-                <MdiIcon path={mdiContentCopy} size={18} color="#FFFFFF" />
+                <MdiIcon path={mdiContentCopy} size={18} color="var(--text-body, #FFFFFF)" />
                 <span>Копировать блок</span>
               </div>
 
@@ -1943,9 +1943,9 @@ export const NotesCanvas: React.FC = () => {
                   setContextMenu(null);
                 }}
                 className="wpf-menu-item-row"
-                style={{ color: '#FF3B30' }}
+                style={{ color: 'var(--danger-text, #FF3B30)' }}
               >
-                <MdiIcon path={mdiDeleteOutline} size={18} color="#FF3B30" />
+                <MdiIcon path={mdiDeleteOutline} size={18} color="var(--danger-text, #FF3B30)" />
                 <span>Удалить текст</span>
               </div>
             </>
@@ -1969,7 +1969,7 @@ export const NotesCanvas: React.FC = () => {
                 }}
                 className="wpf-menu-item-row"
               >
-                <MdiIcon path={mdiContentCopy} size={18} color="#FFFFFF" />
+                <MdiIcon path={mdiContentCopy} size={18} color="var(--text-body, #FFFFFF)" />
                 <span>Копировать картинку</span>
               </div>
 
@@ -1982,9 +1982,9 @@ export const NotesCanvas: React.FC = () => {
                   setContextMenu(null);
                 }}
                 className="wpf-menu-item-row"
-                style={{ color: '#FF3B30' }}
+                style={{ color: 'var(--danger-text, #FF3B30)' }}
               >
-                <MdiIcon path={mdiDeleteOutline} size={18} color="#FF3B30" />
+                <MdiIcon path={mdiDeleteOutline} size={18} color="var(--danger-text, #FF3B30)" />
                 <span>Удалить картинку</span>
               </div>
             </>
@@ -1999,18 +1999,18 @@ const submenuContainerStyle: React.CSSProperties = {
   position: 'absolute',
   left: '100%',
   top: -4,
-  background: '#1C212D',
-  border: '1px solid #2A303C',
+  background: 'var(--surface-control, #1C212D)',
+  border: '1px solid var(--border-primary, #2A303C)',
   borderRadius: 12,
   padding: '4px 0',
   minWidth: 180,
-  boxShadow: '0 15px 35px rgba(0,0,0,0.6)',
+  boxShadow: '0 15px 35px var(--shadow-colour, rgba(0,0,0,0.6))',
   zIndex: 110,
 };
 
 const separatorStyle: React.CSSProperties = {
   height: 1,
-  background: '#2A303C',
+  background: 'var(--surface-hover, #2A303C)',
   margin: '4px 8px',
 };
 

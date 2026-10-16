@@ -103,8 +103,8 @@ export const NavigationRail: React.FC = () => {
       style={{
         width: 66,
         height: '100%',
-        backgroundColor: '#0F1319',
-        borderRight: '1px solid #1E232F',
+        backgroundColor: 'var(--surface-nav, #0F1319)',
+        borderRight: '1px solid var(--border-primary, #1E232F)',
         display: 'flex',
         flexDirection: 'column',
         userSelect: 'none',
@@ -126,9 +126,9 @@ export const NavigationRail: React.FC = () => {
         {/* 1. Логотип SendVariant */}
         <div
           style={{
-            color: '#1E9BEB',
+            color: 'var(--link-colour, #1E9BEB)',
             transform: 'rotate(-20deg)',
-            filter: 'drop-shadow(0 0 15px rgba(30, 155, 235, 0.4))',
+            filter: 'drop-shadow(0 0 15px var(--surface-accent, rgba(30, 155, 235, 0.4)))',
             marginBottom: 25,
             display: 'flex',
             alignItems: 'center',
@@ -150,7 +150,7 @@ export const NavigationRail: React.FC = () => {
               width: 54,
               height: 54,
               borderRadius: 27,
-              border: connectionStatus === 'connected' ? '2px solid #1E9BEB' : '2px solid transparent',
+              border: connectionStatus === 'connected' ? '2px solid var(--accent-primary, #1E9BEB)' : '2px solid transparent',
               backgroundColor: 'transparent',
               display: 'flex',
               alignItems: 'center',
@@ -212,8 +212,8 @@ export const NavigationRail: React.FC = () => {
               width: 20,
               height: 20,
               borderRadius: 10,
-              backgroundColor: '#1E9BEB',
-              border: '2px solid #0F1319',
+              backgroundColor: 'var(--accent-primary, #1E9BEB)',
+              border: '2px solid var(--border-primary, #0F1319)',
               color: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
@@ -252,7 +252,7 @@ export const NavigationRail: React.FC = () => {
         >
           {currentTab === MainTab.Chats && <div style={activeBarIndicatorStyle} />}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: currentTab === MainTab.Chats ? '#1E9BEB' : hoveredBtn === 'chats' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
+            <span style={{ color: currentTab === MainTab.Chats ? 'var(--link-colour, #1E9BEB)' : hoveredBtn === 'chats' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #7D8494)', transition: 'color 0.15s ease' }}>
               <Icon path={currentTab === MainTab.Chats ? mdiChat : mdiChatOutline} size="24px" />
             </span>
             {hasUnreadChats && <div style={unreadDotBadgeStyle} />}
@@ -270,7 +270,7 @@ export const NavigationRail: React.FC = () => {
           title="Notes"
         >
           {currentTab === MainTab.Notes && <div style={activeBarIndicatorStyle} />}
-          <span style={{ color: currentTab === MainTab.Notes ? '#1E9BEB' : hoveredBtn === 'notes' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
+          <span style={{ color: currentTab === MainTab.Notes ? 'var(--link-colour, #1E9BEB)' : hoveredBtn === 'notes' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #7D8494)', transition: 'color 0.15s ease' }}>
             <Icon path={currentTab === MainTab.Notes ? mdiBookmark : mdiBookmarkOutline} size="24px" />
           </span>
         </div>
@@ -285,7 +285,7 @@ export const NavigationRail: React.FC = () => {
         >
           {currentTab === MainTab.Tasks && <div style={activeBarIndicatorStyle} />}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: currentTab === MainTab.Tasks ? '#1E9BEB' : hoveredBtn === 'tasks' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
+            <span style={{ color: currentTab === MainTab.Tasks ? 'var(--link-colour, #1E9BEB)' : hoveredBtn === 'tasks' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #7D8494)', transition: 'color 0.15s ease' }}>
               <Icon path={currentTab === MainTab.Tasks ? mdiClipboardList : mdiClipboardListOutline} size="24px" />
             </span>
             {hasDueTasks && <div style={unreadDotBadgeStyle} />}
@@ -301,7 +301,7 @@ export const NavigationRail: React.FC = () => {
           title="Games"
         >
           {currentTab === MainTab.Games && <div style={activeBarIndicatorStyle} />}
-          <span style={{ color: currentTab === MainTab.Games ? '#1E9BEB' : hoveredBtn === 'games' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
+          <span style={{ color: currentTab === MainTab.Games ? 'var(--link-colour, #1E9BEB)' : hoveredBtn === 'games' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #7D8494)', transition: 'color 0.15s ease' }}>
             <Icon path={currentTab === MainTab.Games ? mdiGamepadVariant : mdiGamepadVariantOutline} size="24px" />
           </span>
         </div>
@@ -317,7 +317,7 @@ export const NavigationRail: React.FC = () => {
           title="Switch Account"
         >
           {currentTab === MainTab.AccountSwitch && <div style={activeBarIndicatorStyle} />}
-          <span style={{ color: currentTab === MainTab.AccountSwitch ? '#1E9BEB' : hoveredBtn === 'acc' ? '#FFFFFF' : '#7D8494', transition: 'color 0.15s ease' }}>
+          <span style={{ color: currentTab === MainTab.AccountSwitch ? 'var(--link-colour, #1E9BEB)' : hoveredBtn === 'acc' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #7D8494)', transition: 'color 0.15s ease' }}>
             <Icon path={currentTab === MainTab.AccountSwitch ? mdiAccountSwitch : mdiAccountSwitchOutline} size="24px" />
           </span>
         </div>
@@ -378,6 +378,8 @@ export const NavigationRail: React.FC = () => {
           onMouseEnter={() => setHoveredBtn('theme')}
           onMouseLeave={() => setHoveredBtn(null)}
           title={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          aria-label={isDarkTheme ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          aria-pressed={!isDarkTheme}
           style={getActionButtonStyle(hoveredBtn === 'theme')}
         >
           <div
@@ -411,7 +413,7 @@ export const NavigationRail: React.FC = () => {
 const getNavTabStyle = (isActive: boolean): React.CSSProperties => ({
   height: 50,
   width: '100%',
-  backgroundColor: isActive ? 'rgba(30, 155, 235, 0.1)' : 'transparent',
+  backgroundColor: isActive ? 'var(--surface-accent, rgba(30, 155, 235, 0.1))' : 'transparent',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -425,7 +427,7 @@ const activeBarIndicatorStyle: React.CSSProperties = {
   top: 0,
   bottom: 0,
   width: 4,
-  backgroundColor: '#1E9BEB',
+  backgroundColor: 'var(--accent-primary, #1E9BEB)',
   borderRadius: 2,
 };
 
@@ -441,7 +443,7 @@ const unreadDotBadgeStyle: React.CSSProperties = {
 
 const railDividerStyle: React.CSSProperties = {
   height: 2,
-  backgroundColor: '#1C212D',
+  backgroundColor: 'var(--border-primary, #1C212D)',
   margin: '15px 25px',
 };
 
@@ -449,9 +451,9 @@ const getActionButtonStyle = (isHovered: boolean): React.CSSProperties => ({
   width: 44,
   height: 44,
   borderRadius: 12,
-  background: isHovered ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+  background: isHovered ? 'var(--surface-hover, rgba(255, 255, 255, 0.08))' : 'transparent',
   border: 'none',
-  color: isHovered ? '#FFFFFF' : '#7D8494',
+  color: isHovered ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #7D8494)',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',

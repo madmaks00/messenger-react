@@ -104,11 +104,11 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .app-dialog-forward .btn-close:hover {
-          background-color: rgba(255, 255, 255, 0.08) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.08)) !important;
           color: #FFFFFF !important;
         }
         .app-dialog-forward .btn-close:active {
-          background-color: rgba(255, 255, 255, 0.16) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.16)) !important;
         }
 
         .app-dialog-forward .btn-cancel {
@@ -125,17 +125,17 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .app-dialog-forward .btn-cancel:hover {
-          background-color: rgba(255, 255, 255, 0.08) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.08)) !important;
           color: #FFFFFF !important;
         }
         .app-dialog-forward .btn-cancel:active {
-          background-color: rgba(255, 255, 255, 0.14) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.14)) !important;
         }
 
         .app-dialog-forward .btn-primary {
           height: 34px;
           padding: 0 18px;
-          background-color: #1E9BEB !important;
+          background-color: var(--accent-primary, #1E9BEB) !important;
           border: none;
           border-radius: 7px;
           color: #FFFFFF !important;
@@ -152,8 +152,8 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           opacity: 0.8 !important;
         }
         .app-dialog-forward .btn-primary:disabled {
-          background-color: #232A3B !important;
-          color: #4B5563 !important;
+          background-color: var(--surface-hover, #232A3B) !important;
+          color: var(--surface-hover, #4B5563) !important;
           cursor: default !important;
           opacity: 1 !important;
         }
@@ -164,11 +164,11 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
         style={{
           width: 340,
           maxWidth: '92vw',
-          backgroundColor: '#161A23',
+          backgroundColor: 'var(--surface-panel, #161A23)',
           borderRadius: 12,
           padding: '10px 0',
-          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
-          border: '1px solid #2A3342',
+          boxShadow: '0 20px 50px var(--shadow-colour, rgba(0, 0, 0, 0.65))',
+          border: '1px solid var(--border-primary, #2A3342)',
           display: 'flex',
           flexDirection: 'column',
           maxHeight: '82vh',
@@ -185,7 +185,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
             flexShrink: 0,
           }}
         >
-          <span style={{ fontSize: 18, fontWeight: 600, color: '#FFFFFF' }}>
+          <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-body, #FFFFFF)' }}>
             Forward to...
           </span>
 
@@ -204,7 +204,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           }}
         >
           {displayList.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '25px 10px', color: '#7D8494', fontSize: 13.5 }}>
+            <div style={{ textAlign: 'center', padding: '25px 10px', color: 'var(--text-secondary, #7D8494)', fontSize: 13.5 }}>
               No chats available
             </div>
           ) : (
@@ -232,14 +232,14 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                     padding: '10px 15px',
                     borderRadius: 8,
                     cursor: 'pointer',
-                    backgroundColor: isSelected ? 'rgba(30, 155, 235, 0.12)' : 'transparent',
+                    backgroundColor: isSelected ? 'var(--surface-accent, rgba(30, 155, 235, 0.12))' : 'transparent',
                     border: 'none',
                     marginBottom: 2,
                     transition: 'background-color 0.12s ease, border-color 0.12s ease',
                     boxSizing: 'border-box',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                    if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--surface-hover, rgba(255, 255, 255, 0.05))';
                   }}
                   onMouseLeave={(e) => {
                     if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
@@ -284,8 +284,8 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                           height: 16,
                           borderRadius: 8,
                           backgroundColor: '#22C55E',
-                          border: '2px solid #161B26',
-                          color: '#FFFFFF',
+                          border: '2px solid var(--border-primary, #161B26)',
+                          color: 'var(--text-body, #FFFFFF)',
                           fontSize: 9.5,
                           fontWeight: 'bold',
                           display: 'flex',
@@ -302,7 +302,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        color: '#FFFFFF',
+                        color: 'var(--text-body, #FFFFFF)',
                         fontSize: 15,
                         fontWeight: 600,
                         overflow: 'hidden',
@@ -313,7 +313,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                     >
                       {displayName}
                     </div>
-                    <div style={{ color: '#7D8494', fontSize: 12, marginTop: 2 }}>{chatType}</div>
+                    <div style={{ color: 'var(--text-secondary, #7D8494)', fontSize: 12, marginTop: 2 }}>{chatType}</div>
                   </div>
                 </div>
               );

@@ -123,15 +123,15 @@ export const GameOverlayView: React.FC = () => {
         zIndex: 150,
         display: 'grid',
         gridTemplateRows: 'auto 1fr',
-        background: 'radial-gradient(circle at 50% 50%, #1A2130 0%, #0B0E14 100%)',
+        background: 'radial-gradient(circle at 50% 50%, var(--surface-control, #1A2130) 0%, var(--surface-recessed, #0B0E14) 100%)',
         userSelect: 'none',
       }}
     >
       {/* ================= 1. ШАПКА ================= */}
       <div
         style={{
-          backgroundColor: '#161A23',
-          borderBottom: '1px solid #1F2533',
+          backgroundColor: 'var(--surface-panel, #161A23)',
+          borderBottom: '1px solid var(--border-primary, #1F2533)',
           padding: '10px 25px',
           display: 'grid',
           gridTemplateColumns: 'auto 1fr auto',
@@ -146,17 +146,17 @@ export const GameOverlayView: React.FC = () => {
           style={{
             width: 42,
             height: 42,
-            backgroundColor: '#1C212D',
-            border: '1px solid #2A303C',
+            backgroundColor: 'var(--surface-control, #1C212D)',
+            border: '1px solid var(--border-primary, #2A303C)',
             borderRadius: 10,
-            color: '#FFFFFF',
+            color: 'var(--text-body, #FFFFFF)',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <svg viewBox="0 0 24 24" width={24} height={24} fill="#FFFFFF"><path d={mdiArrowLeft} /></svg>
+          <svg viewBox="0 0 24 24" width={24} height={24} fill="var(--text-body, #FFFFFF)"><path d={mdiArrowLeft} /></svg>
         </button>
 
         {/* Кнопка START / PLAY AGAIN */}
@@ -183,19 +183,19 @@ export const GameOverlayView: React.FC = () => {
         {/* Плашка Room ID */}
         <div
           style={{
-            backgroundColor: '#1C212D',
-            border: '1px solid #2A303C',
+            backgroundColor: 'var(--surface-control, #1C212D)',
+            border: '1px solid var(--border-primary, #2A303C)',
             borderRadius: 8,
             padding: '5px 10px',
             display: 'flex',
             alignItems: 'center',
           }}
         >
-          <svg viewBox="0 0 24 24" width={22} height={22} fill="#00D2FF" style={{ marginRight: 8 }}>
+          <svg viewBox="0 0 24 24" width={22} height={22} fill="var(--link-colour, #00D2FF)" style={{ marginRight: 8 }}>
             <path d={renderGameIcon(currentRoom.gameType)} />
           </svg>
-          <span style={{ color: '#8B94A5', fontSize: 14, marginRight: 4 }}>Room ID:</span>
-          <span style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }}>{currentRoom.roomId}</span>
+          <span style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 14, marginRight: 4 }}>Room ID:</span>
+          <span style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 16, fontWeight: 'bold' }}>{currentRoom.roomId}</span>
         </div>
       </div>
 
@@ -206,14 +206,14 @@ export const GameOverlayView: React.FC = () => {
           {/* ЛЕВАЯ ЧАСТЬ: ИГРОВОЕ ПОЛЕ */}
           <div
             style={{
-              backgroundColor: '#111620',
+              backgroundColor: 'var(--surface-panel, #111620)',
               borderRadius: 24,
-              border: `2px solid ${isMyTurn ? '#00D2FF' : '#1C2331'}`,
-              boxShadow: isMyTurn ? '0 0 30px rgba(0, 210, 255, 0.3)' : 'none',
+              border: `2px solid ${isMyTurn ? 'var(--accent-primary, #00D2FF)' : 'var(--border-primary, #1C2331)'}`,
+              boxShadow: isMyTurn ? '0 0 30px var(--surface-accent, rgba(0, 210, 255, 0.3))' : 'none',
               padding: 0,
             }}
           >
-            <div style={{ backgroundColor: '#0B0E14', borderRadius: 24, padding: 5 }}>
+            <div style={{ backgroundColor: 'var(--surface-recessed, #0B0E14)', borderRadius: 24, padding: 5 }}>
 
               {/* 1. КЛАССИЧЕСКИЕ ИГРЫ (TicTacToe, Checkers, Chess) */}
               {isClassicGame && (
@@ -313,7 +313,7 @@ export const GameOverlayView: React.FC = () => {
                 <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: 5 }}>
                   {/* Мой флот */}
                   <div style={{ marginRight: 15 }}>
-                    <div style={{ color: '#8B94A5', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>MY FLEET</div>
+                    <div style={{ color: 'var(--text-secondary, #8B94A5)', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>MY FLEET</div>
                     <div style={{ width: 300, height: 300, display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gridTemplateRows: 'repeat(10, 1fr)' }}>
                       {myBattleshipCells.map((cell) => {
                         let bg = '#0A1428';
@@ -350,8 +350,8 @@ export const GameOverlayView: React.FC = () => {
                     {currentRoom.isSetupPhase ? (
                       /* ФАЗА 1: РАССТАНОВКА */
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ color: '#00D2FF', fontWeight: 'bold', textAlign: 'center', marginBottom: 5 }}>FLEET SETUP</div>
-                        <div style={{ color: '#8B94A5', fontSize: 11, textAlign: 'center', height: 32, marginBottom: 15 }}>
+                        <div style={{ color: 'var(--link-colour, #00D2FF)', fontWeight: 'bold', textAlign: 'center', marginBottom: 5 }}>FLEET SETUP</div>
+                        <div style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 11, textAlign: 'center', height: 32, marginBottom: 15 }}>
                           {remainingShipsText}
                         </div>
 
@@ -361,9 +361,9 @@ export const GameOverlayView: React.FC = () => {
                           onClick={toggleOrientation}
                           style={{
                             height: 36,
-                            backgroundColor: '#1C212D',
-                            border: '1px solid #2A303C',
-                            color: '#FFFFFF',
+                            backgroundColor: 'var(--surface-control, #1C212D)',
+                            border: '1px solid var(--border-primary, #2A303C)',
+                            color: 'var(--text-body, #FFFFFF)',
                             borderRadius: 8,
                             cursor: isMyReady ? 'not-allowed' : 'pointer',
                             display: 'flex',
@@ -372,7 +372,7 @@ export const GameOverlayView: React.FC = () => {
                             marginBottom: 10,
                           }}
                         >
-                          <svg viewBox="0 0 24 24" width={18} height={18} fill="#FFFFFF" style={{ marginRight: 8 }}><path d={mdiRotateRight} /></svg>
+                          <svg viewBox="0 0 24 24" width={18} height={18} fill="var(--text-body, #FFFFFF)" style={{ marginRight: 8 }}><path d={mdiRotateRight} /></svg>
                           <span>{placementOrientationText}</span>
                         </button>
 
@@ -385,8 +385,8 @@ export const GameOverlayView: React.FC = () => {
                               onClick={() => setShipSize(size)}
                               style={{
                                 height: 36,
-                                backgroundColor: selectedShipSize === size ? '#1A212F' : 'transparent',
-                                color: selectedShipSize === size ? '#FFFFFF' : '#8B94A5',
+                                backgroundColor: selectedShipSize === size ? 'var(--surface-control, #1A212F)' : 'transparent',
+                                color: selectedShipSize === size ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #8B94A5)',
                                 border: 'none',
                                 borderRadius: 8,
                                 fontWeight: 'bold',
@@ -403,14 +403,14 @@ export const GameOverlayView: React.FC = () => {
                           <button
                             disabled={isMyReady}
                             onClick={autoPlaceLocal}
-                            style={{ height: 36, backgroundColor: '#1C212D', border: '1px solid #2A303C', color: '#FFF', borderRadius: 8, fontSize: 12, cursor: isMyReady ? 'not-allowed' : 'pointer' }}
+                            style={{ height: 36, backgroundColor: 'var(--surface-control, #1C212D)', border: '1px solid var(--border-primary, #2A303C)', color: 'var(--text-body, #FFF)', borderRadius: 8, fontSize: 12, cursor: isMyReady ? 'not-allowed' : 'pointer' }}
                           >
                             AUTO
                           </button>
                           <button
                             disabled={isMyReady}
                             onClick={clearPlacements}
-                            style={{ height: 36, backgroundColor: '#1C212D', border: '1px solid #2A303C', color: '#FFF', borderRadius: 8, fontSize: 12, cursor: isMyReady ? 'not-allowed' : 'pointer' }}
+                            style={{ height: 36, backgroundColor: 'var(--surface-control, #1C212D)', border: '1px solid var(--border-primary, #2A303C)', color: 'var(--text-body, #FFF)', borderRadius: 8, fontSize: 12, cursor: isMyReady ? 'not-allowed' : 'pointer' }}
                           >
                             CLEAR
                           </button>
@@ -422,8 +422,8 @@ export const GameOverlayView: React.FC = () => {
                           onClick={confirmReady}
                           style={{
                             height: 42,
-                            backgroundColor: isMyReady ? '#1C212D' : '#00D2FF',
-                            color: isMyReady ? '#8B94A5' : '#0B0E14',
+                            backgroundColor: isMyReady ? 'var(--surface-control, #1C212D)' : 'var(--accent-primary, #00D2FF)',
+                            color: isMyReady ? 'var(--text-secondary, #8B94A5)' : '#0B0E14',
                             fontWeight: 'bold',
                             border: 'none',
                             borderRadius: 8,
@@ -436,7 +436,7 @@ export const GameOverlayView: React.FC = () => {
                     ) : (
                       /* ФАЗА 2: СТРЕЛЬБА */
                       <div>
-                        <div style={{ color: '#FF4B4B', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>ENEMY RADAR</div>
+                        <div style={{ color: 'var(--danger-text, #FF4B4B)', fontWeight: 'bold', textAlign: 'center', marginBottom: 10 }}>ENEMY RADAR</div>
                         <div style={{ width: 300, height: 300, display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gridTemplateRows: 'repeat(10, 1fr)' }}>
                           {enemyBattleshipCells.map((cell) => {
                             let bg = '#0A1428';
@@ -478,7 +478,7 @@ export const GameOverlayView: React.FC = () => {
                   {drawPhase !== 4 && (
                     <div
                       style={{
-                        backgroundColor: '#1A2130',
+                        backgroundColor: 'var(--surface-control, #1A2130)',
                         borderRadius: 12,
                         height: 40,
                         padding: '0 15px',
@@ -490,19 +490,19 @@ export const GameOverlayView: React.FC = () => {
                     >
                       {drawPhase === 2 && (
                         <div style={{ display: 'flex', alignItems: 'center' }}>
-                          <span style={{ color: '#8B94A5', fontWeight: 'bold', marginRight: 8 }}>TOPIC:</span>
-                          <span style={{ color: '#00D2FF', fontSize: 18, fontWeight: 900 }}>{selectedWord}</span>
+                          <span style={{ color: 'var(--text-secondary, #8B94A5)', fontWeight: 'bold', marginRight: 8 }}>TOPIC:</span>
+                          <span style={{ color: 'var(--link-colour, #00D2FF)', fontSize: 18, fontWeight: 900 }}>{selectedWord}</span>
                         </div>
                       )}
                       {drawPhase === 3 && (
                         <div style={{ display: 'flex', alignItems: 'center', margin: '0 auto' }}>
-                          <span style={{ color: '#8B94A5', fontSize: 15, fontWeight: 600 }}>Drawing by:</span>
-                          <span style={{ color: '#00D2FF', fontSize: 16, fontWeight: 'bold', marginLeft: 4 }}>{currentDrawingPlayerName}</span>
+                          <span style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 15, fontWeight: 600 }}>Drawing by:</span>
+                          <span style={{ color: 'var(--link-colour, #00D2FF)', fontSize: 16, fontWeight: 'bold', marginLeft: 4 }}>{currentDrawingPlayerName}</span>
                         </div>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
-                        <svg viewBox="0 0 24 24" width={22} height={22} fill="#FF4B4B" style={{ marginRight: 5 }}><path d={mdiTimerOutline} /></svg>
-                        <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>{phaseTimerText}</span>
+                        <svg viewBox="0 0 24 24" width={22} height={22} fill="var(--danger-text, #FF4B4B)" style={{ marginRight: 5 }}><path d={mdiTimerOutline} /></svg>
+                        <span style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 18, fontWeight: 'bold' }}>{phaseTimerText}</span>
                       </div>
                     </div>
                   )}
@@ -510,7 +510,7 @@ export const GameOverlayView: React.FC = () => {
                   {/* Фаза 1: Голосование за слово */}
                   {drawPhase === 1 && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 380 }}>
-                      <div style={{ color: '#FFFFFF', fontSize: 22, fontWeight: 'bold', marginBottom: 20 }}>VOTE FOR A TOPIC</div>
+                      <div style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 22, fontWeight: 'bold', marginBottom: 20 }}>VOTE FOR A TOPIC</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%' }}>
                         {proposedWords.map((word) => (
                           <button
@@ -518,9 +518,9 @@ export const GameOverlayView: React.FC = () => {
                             onClick={() => voteWord(word)}
                             style={{
                               height: 40,
-                              backgroundColor: '#1C212D',
-                              border: '1px solid #2A303C',
-                              color: '#FFFFFF',
+                              backgroundColor: 'var(--surface-control, #1C212D)',
+                              border: '1px solid var(--border-primary, #2A303C)',
+                              color: 'var(--text-body, #FFFFFF)',
                               borderRadius: 8,
                               fontWeight: 600,
                               cursor: 'pointer',
@@ -531,7 +531,7 @@ export const GameOverlayView: React.FC = () => {
                         ))}
                       </div>
                       {proposedWords.length === 0 && (
-                        <div style={{ color: '#8B94A5', marginTop: 20 }}>Waiting for players...</div>
+                        <div style={{ color: 'var(--text-secondary, #8B94A5)', marginTop: 20 }}>Waiting for players...</div>
                       )}
                     </div>
                   )}
@@ -560,7 +560,7 @@ export const GameOverlayView: React.FC = () => {
                             style={{
                               width: 40,
                               height: 40,
-                              backgroundColor: drawingMode === 'ink' ? 'var(--app-accent, #1E9BEB)' : '#1C212D',
+                              backgroundColor: drawingMode === 'ink' ? 'var(--app-accent, #1E9BEB)' : 'var(--surface-control, #1C212D)',
                               border: 'none',
                               borderRadius: 8,
                               cursor: 'pointer',
@@ -577,7 +577,7 @@ export const GameOverlayView: React.FC = () => {
                             style={{
                               width: 40,
                               height: 40,
-                              backgroundColor: drawingMode === 'erase' ? 'var(--app-accent, #1E9BEB)' : '#1C212D',
+                              backgroundColor: drawingMode === 'erase' ? 'var(--app-accent, #1E9BEB)' : 'var(--surface-control, #1C212D)',
                               border: 'none',
                               borderRadius: 8,
                               cursor: 'pointer',
@@ -594,7 +594,7 @@ export const GameOverlayView: React.FC = () => {
                             style={{
                               width: 40,
                               height: 40,
-                              backgroundColor: '#1C212D',
+                              backgroundColor: 'var(--surface-control, #1C212D)',
                               border: 'none',
                               borderRadius: 8,
                               cursor: 'pointer',
@@ -603,7 +603,7 @@ export const GameOverlayView: React.FC = () => {
                               justifyContent: 'center',
                             }}
                           >
-                            <svg viewBox="0 0 24 24" width={22} height={22} fill="#8B94A5"><path d={mdiFormatColorFill} /></svg>
+                            <svg viewBox="0 0 24 24" width={22} height={22} fill="var(--text-secondary, #8B94A5)"><path d={mdiFormatColorFill} /></svg>
                           </button>
 
                           {/* Кнопка открытия палитры */}
@@ -613,7 +613,7 @@ export const GameOverlayView: React.FC = () => {
                             style={{
                               width: 40,
                               height: 40,
-                              backgroundColor: '#1C212D',
+                              backgroundColor: 'var(--surface-control, #1C212D)',
                               border: 'none',
                               borderRadius: 8,
                               cursor: 'pointer',
@@ -623,8 +623,8 @@ export const GameOverlayView: React.FC = () => {
                               justifyContent: 'center',
                             }}
                           >
-                            <svg viewBox="0 0 24 24" width={22} height={22} fill="#8B94A5"><path d={mdiPalette} /></svg>
-                            <div style={{ position: 'absolute', right: 4, bottom: 4, width: 10, height: 10, borderRadius: 5, backgroundColor: customBrushColor, border: '2px solid #1C212D' }} />
+                            <svg viewBox="0 0 24 24" width={22} height={22} fill="var(--text-secondary, #8B94A5)"><path d={mdiPalette} /></svg>
+                            <div style={{ position: 'absolute', right: 4, bottom: 4, width: 10, height: 10, borderRadius: 5, backgroundColor: customBrushColor, border: '2px solid var(--border-primary, #1C212D)' }} />
                           </button>
 
                           {/* Всплывающий островок палитры */}
@@ -633,11 +633,11 @@ export const GameOverlayView: React.FC = () => {
                               style={{
                                 position: 'absolute',
                                 bottom: 50,
-                                backgroundColor: '#1E232E',
+                                backgroundColor: 'var(--surface-control, #1E232E)',
                                 borderRadius: 16,
                                 padding: 15,
-                                border: '1px solid rgba(255, 255, 255, 0.2)',
-                                boxShadow: '0 5px 25px rgba(0,0,0,0.5)',
+                                border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.2))',
+                                boxShadow: '0 5px 25px var(--shadow-colour, rgba(0,0,0,0.5))',
                                 zIndex: 100,
                               }}
                             >
@@ -651,7 +651,7 @@ export const GameOverlayView: React.FC = () => {
                                       height: 32,
                                       borderRadius: 16,
                                       backgroundColor: col,
-                                      border: customBrushColor === col ? '2px solid #FFF' : '1px solid #334155',
+                                      border: customBrushColor === col ? '2px solid #FFF' : '1px solid var(--border-primary, #334155)',
                                       cursor: 'pointer',
                                     }}
                                   />
@@ -693,7 +693,7 @@ export const GameOverlayView: React.FC = () => {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: '#FFFFFF',
+                            color: 'var(--text-body, #FFFFFF)',
                             fontSize: 20,
                             fontWeight: 'bold',
                           }}
@@ -729,7 +729,7 @@ export const GameOverlayView: React.FC = () => {
                                 height: 38,
                                 borderRadius: 8,
                                 backgroundColor: RATING_BRUSHES[score - 1],
-                                color: '#FFFFFF',
+                                color: 'var(--rating-label, #FFFFFF)',
                                 fontSize: 16,
                                 fontWeight: 900,
                                 border: 'none',
@@ -751,7 +751,7 @@ export const GameOverlayView: React.FC = () => {
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              color: '#00D2FF',
+                              color: 'var(--link-colour, #00D2FF)',
                               fontSize: 16,
                               fontWeight: 900,
                             }}
@@ -766,13 +766,13 @@ export const GameOverlayView: React.FC = () => {
                   {/* Фаза 4: Результаты */}
                   {drawPhase === 4 && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 420 }}>
-                      <div style={{ color: '#00D2FF', fontSize: 26, fontWeight: 900, marginBottom: 20 }}>TOTAL SCORES</div>
+                      <div style={{ color: 'var(--link-colour, #00D2FF)', fontSize: 26, fontWeight: 900, marginBottom: 20 }}>TOTAL SCORES</div>
                       <div style={{ width: 280, display: 'flex', flexDirection: 'column', gap: 5 }}>
                         {drawResults.map((res) => (
                           <div
                             key={res.key}
                             style={{
-                              backgroundColor: '#1C212D',
+                              backgroundColor: 'var(--surface-control, #1C212D)',
                               borderRadius: 8,
                               padding: '10px 20px',
                               display: 'flex',
@@ -780,15 +780,15 @@ export const GameOverlayView: React.FC = () => {
                               alignItems: 'center',
                             }}
                           >
-                            <span style={{ color: '#FFF', fontSize: 16, fontWeight: 600 }}>{res.key}</span>
-                            <span style={{ color: '#FFC107', fontSize: 16, fontWeight: 'bold' }}>{res.value} pts</span>
+                            <span style={{ color: 'var(--text-body, #FFF)', fontSize: 16, fontWeight: 600 }}>{res.key}</span>
+                            <span style={{ color: 'var(--warning-text, #FFC107)', fontSize: 16, fontWeight: 'bold' }}>{res.value} pts</span>
                           </div>
                         ))}
                       </div>
 
                       <div style={{ marginTop: 20 }}>
                         {!isGameOver && (
-                          <div style={{ color: '#8B94A5' }}>Next round starting soon...</div>
+                          <div style={{ color: 'var(--text-secondary, #8B94A5)' }}>Next round starting soon...</div>
                         )}
                         {isGameOver && (
                           <div>
@@ -813,9 +813,9 @@ export const GameOverlayView: React.FC = () => {
                                 <span>PLAY AGAIN</span>
                               </button>
                             ) : (
-                              <div style={{ backgroundColor: '#1C212D', border: '1px solid #2A303C', borderRadius: 12, padding: '0 25px', height: 42, display: 'flex', alignItems: 'center' }}>
-                                <svg viewBox="0 0 24 24" width={18} height={18} fill="#8B94A5" style={{ marginRight: 8 }}><path d={mdiTimerSand} /></svg>
-                                <span style={{ color: '#8B94A5', fontSize: 13, fontWeight: 600 }}>WAITING FOR HOST...</span>
+                              <div style={{ backgroundColor: 'var(--surface-control, #1C212D)', border: '1px solid var(--border-primary, #2A303C)', borderRadius: 12, padding: '0 25px', height: 42, display: 'flex', alignItems: 'center' }}>
+                                <svg viewBox="0 0 24 24" width={18} height={18} fill="var(--text-secondary, #8B94A5)" style={{ marginRight: 8 }}><path d={mdiTimerSand} /></svg>
+                                <span style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 13, fontWeight: 600 }}>WAITING FOR HOST...</span>
                               </div>
                             )}
                           </div>
@@ -832,7 +832,7 @@ export const GameOverlayView: React.FC = () => {
                   {/* Верхняя инфо-панель */}
                   <div
                     style={{
-                      backgroundColor: '#1A2130',
+                      backgroundColor: 'var(--surface-control, #1A2130)',
                       borderRadius: 12,
                       height: 40,
                       padding: '0 15px',
@@ -844,24 +844,24 @@ export const GameOverlayView: React.FC = () => {
                   >
                     {isMyTurn ? (
                       <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <span style={{ color: '#8B94A5', fontWeight: 'bold', marginRight: 8 }}>DRAW:</span>
-                        <span style={{ color: '#00D2FF', fontSize: 18, fontWeight: 900 }}>{selectedWord}</span>
+                        <span style={{ color: 'var(--text-secondary, #8B94A5)', fontWeight: 'bold', marginRight: 8 }}>DRAW:</span>
+                        <span style={{ color: 'var(--link-colour, #00D2FF)', fontSize: 18, fontWeight: 900 }}>{selectedWord}</span>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <span style={{ color: '#8B94A5', fontWeight: 'bold', marginRight: 8 }}>GUESS:</span>
-                        <span style={{ color: '#FFC107', fontSize: 18, fontWeight: 900 }}>{guessWordText}</span>
+                        <span style={{ color: 'var(--text-secondary, #8B94A5)', fontWeight: 'bold', marginRight: 8 }}>GUESS:</span>
+                        <span style={{ color: 'var(--warning-text, #FFC107)', fontSize: 18, fontWeight: 900 }}>{guessWordText}</span>
                       </div>
                     )}
 
                     <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <span style={{ color: '#8B94A5', fontSize: 15, fontWeight: 600 }}>Artist:</span>
-                      <span style={{ color: '#00D2FF', fontSize: 16, fontWeight: 'bold', marginLeft: 4 }}>{currentDrawingPlayerName}</span>
+                      <span style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 15, fontWeight: 600 }}>Artist:</span>
+                      <span style={{ color: 'var(--link-colour, #00D2FF)', fontSize: 16, fontWeight: 'bold', marginLeft: 4 }}>{currentDrawingPlayerName}</span>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <svg viewBox="0 0 24 24" width={22} height={22} fill="#FF4B4B" style={{ marginRight: 5 }}><path d={mdiTimerOutline} /></svg>
-                      <span style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>{phaseTimerText}</span>
+                      <svg viewBox="0 0 24 24" width={22} height={22} fill="var(--danger-text, #FF4B4B)" style={{ marginRight: 5 }}><path d={mdiTimerOutline} /></svg>
+                      <span style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 18, fontWeight: 'bold' }}>{phaseTimerText}</span>
                     </div>
                   </div>
 
@@ -885,28 +885,28 @@ export const GameOverlayView: React.FC = () => {
                             <div style={{ display: 'flex', justifyContent: 'center', gap: 6, position: 'relative' }}>
                               <button
                                 onClick={() => setDrawingMode('ink')}
-                                style={{ width: 40, height: 40, backgroundColor: drawingMode === 'ink' ? 'var(--app-accent, #1E9BEB)' : '#1C212D', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                style={{ width: 40, height: 40, backgroundColor: drawingMode === 'ink' ? 'var(--app-accent, #1E9BEB)' : 'var(--surface-control, #1C212D)', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
                                 <svg viewBox="0 0 24 24" width={22} height={22} fill="#FFF"><path d={mdiBrush} /></svg>
                               </button>
                               <button
                                 onClick={() => setDrawingMode('erase')}
-                                style={{ width: 40, height: 40, backgroundColor: drawingMode === 'erase' ? 'var(--app-accent, #1E9BEB)' : '#1C212D', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                style={{ width: 40, height: 40, backgroundColor: drawingMode === 'erase' ? 'var(--app-accent, #1E9BEB)' : 'var(--surface-control, #1C212D)', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
                                 <svg viewBox="0 0 24 24" width={22} height={22} fill="#FFF"><path d={mdiEraser} /></svg>
                               </button>
                               <button
                                 onClick={fillCanvas}
-                                style={{ width: 40, height: 40, backgroundColor: '#1C212D', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                style={{ width: 40, height: 40, backgroundColor: 'var(--surface-control, #1C212D)', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
-                                <svg viewBox="0 0 24 24" width={22} height={22} fill="#8B94A5"><path d={mdiFormatColorFill} /></svg>
+                                <svg viewBox="0 0 24 24" width={22} height={22} fill="var(--text-secondary, #8B94A5)"><path d={mdiFormatColorFill} /></svg>
                               </button>
                               <button
                                 onClick={() => setIsPaletteOpen(!isPaletteOpen)}
-                                style={{ width: 40, height: 40, backgroundColor: '#1C212D', border: 'none', borderRadius: 8, cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                style={{ width: 40, height: 40, backgroundColor: 'var(--surface-control, #1C212D)', border: 'none', borderRadius: 8, cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               >
-                                <svg viewBox="0 0 24 24" width={22} height={22} fill="#8B94A5"><path d={mdiPalette} /></svg>
-                                <div style={{ position: 'absolute', right: 4, bottom: 4, width: 10, height: 10, borderRadius: 5, backgroundColor: customBrushColor, border: '2px solid #1C212D' }} />
+                                <svg viewBox="0 0 24 24" width={22} height={22} fill="var(--text-secondary, #8B94A5)"><path d={mdiPalette} /></svg>
+                                <div style={{ position: 'absolute', right: 4, bottom: 4, width: 10, height: 10, borderRadius: 5, backgroundColor: customBrushColor, border: '2px solid var(--border-primary, #1C212D)' }} />
                               </button>
 
                               {isPaletteOpen && (
@@ -914,11 +914,11 @@ export const GameOverlayView: React.FC = () => {
                                   style={{
                                     position: 'absolute',
                                     bottom: 50,
-                                    backgroundColor: '#1E232E',
+                                    backgroundColor: 'var(--surface-control, #1E232E)',
                                     borderRadius: 16,
                                     padding: 15,
-                                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                                    boxShadow: '0 5px 25px rgba(0,0,0,0.5)',
+                                    border: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.2))',
+                                    boxShadow: '0 5px 25px var(--shadow-colour, rgba(0,0,0,0.5))',
                                     zIndex: 100,
                                   }}
                                 >
@@ -927,7 +927,7 @@ export const GameOverlayView: React.FC = () => {
                                       <button
                                         key={col}
                                         onClick={() => { changeBrushColor(col); setIsPaletteOpen(false); }}
-                                        style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: col, border: customBrushColor === col ? '2px solid #FFF' : '1px solid #334155', cursor: 'pointer' }}
+                                        style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: col, border: customBrushColor === col ? '2px solid #FFF' : '1px solid var(--border-primary, #334155)', cursor: 'pointer' }}
                                       />
                                     ))}
                                   </div>
@@ -954,26 +954,26 @@ export const GameOverlayView: React.FC = () => {
                   {/* Фаза 2: Результаты раунда */}
                   {drawPhase === 2 && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 420 }}>
-                      <div style={{ color: '#00D2FF', fontSize: 26, fontWeight: 900, marginBottom: 10 }}>ROUND RESULTS</div>
+                      <div style={{ color: 'var(--link-colour, #00D2FF)', fontSize: 26, fontWeight: 900, marginBottom: 10 }}>ROUND RESULTS</div>
                       <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-                        <span style={{ color: '#8B94A5', fontSize: 16 }}>The word was:</span>
-                        <span style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }}>{selectedWord}</span>
+                        <span style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 16 }}>The word was:</span>
+                        <span style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 16, fontWeight: 'bold' }}>{selectedWord}</span>
                       </div>
 
                       <div style={{ width: 280, display: 'flex', flexDirection: 'column', gap: 5 }}>
                         {drawResults.map((res) => (
                           <div
                             key={res.key}
-                            style={{ backgroundColor: '#1C212D', borderRadius: 8, padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                            style={{ backgroundColor: 'var(--surface-control, #1C212D)', borderRadius: 8, padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                           >
-                            <span style={{ color: '#FFF', fontSize: 16, fontWeight: 600 }}>{res.key}</span>
-                            <span style={{ color: '#FFC107', fontSize: 16, fontWeight: 'bold' }}>{res.value} pts</span>
+                            <span style={{ color: 'var(--text-body, #FFF)', fontSize: 16, fontWeight: 600 }}>{res.key}</span>
+                            <span style={{ color: 'var(--warning-text, #FFC107)', fontSize: 16, fontWeight: 'bold' }}>{res.value} pts</span>
                           </div>
                         ))}
                       </div>
 
                       <div style={{ marginTop: 20 }}>
-                        {!isGameOver && <div style={{ color: '#8B94A5' }}>Next round starting soon...</div>}
+                        {!isGameOver && <div style={{ color: 'var(--text-secondary, #8B94A5)' }}>Next round starting soon...</div>}
                         {isGameOver && (
                           <div>
                             {isHost ? (
@@ -985,9 +985,9 @@ export const GameOverlayView: React.FC = () => {
                                 <span>PLAY AGAIN</span>
                               </button>
                             ) : (
-                              <div style={{ backgroundColor: '#1C212D', border: '1px solid #2A303C', borderRadius: 12, padding: '0 25px', height: 42, display: 'flex', alignItems: 'center' }}>
-                                <svg viewBox="0 0 24 24" width={18} height={18} fill="#8B94A5" style={{ marginRight: 8 }}><path d={mdiTimerSand} /></svg>
-                                <span style={{ color: '#8B94A5', fontSize: 13, fontWeight: 600 }}>WAITING FOR HOST...</span>
+                              <div style={{ backgroundColor: 'var(--surface-control, #1C212D)', border: '1px solid var(--border-primary, #2A303C)', borderRadius: 12, padding: '0 25px', height: 42, display: 'flex', alignItems: 'center' }}>
+                                <svg viewBox="0 0 24 24" width={18} height={18} fill="var(--text-secondary, #8B94A5)" style={{ marginRight: 8 }}><path d={mdiTimerSand} /></svg>
+                                <span style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 13, fontWeight: 600 }}>WAITING FOR HOST...</span>
                               </div>
                             )}
                           </div>
@@ -1005,8 +1005,8 @@ export const GameOverlayView: React.FC = () => {
             style={{
               width: 270,
               height: 488,
-              backgroundColor: '#111620',
-              border: '1px solid #1C2331',
+              backgroundColor: 'var(--surface-panel, #111620)',
+              border: '1px solid var(--border-primary, #1C2331)',
               borderRadius: 20,
               padding: 15,
               display: 'grid',
@@ -1017,7 +1017,7 @@ export const GameOverlayView: React.FC = () => {
             {/* Переключатель вкладок */}
             <div
               style={{
-                backgroundColor: '#0B0E14',
+                backgroundColor: 'var(--surface-recessed, #0B0E14)',
                 borderRadius: 10,
                 padding: 4,
                 marginBottom: 15,
@@ -1029,8 +1029,8 @@ export const GameOverlayView: React.FC = () => {
                 onClick={() => setActiveTab('Chat')}
                 style={{
                   height: 36,
-                  backgroundColor: activeTab === 'Chat' ? '#1A212F' : 'transparent',
-                  color: activeTab === 'Chat' ? '#FFFFFF' : '#8B94A5',
+                  backgroundColor: activeTab === 'Chat' ? 'var(--surface-control, #1A212F)' : 'transparent',
+                  color: activeTab === 'Chat' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #8B94A5)',
                   border: 'none',
                   borderRadius: 8,
                   fontSize: 14,
@@ -1044,8 +1044,8 @@ export const GameOverlayView: React.FC = () => {
                 onClick={() => setActiveTab('Players')}
                 style={{
                   height: 36,
-                  backgroundColor: activeTab === 'Players' ? '#1A212F' : 'transparent',
-                  color: activeTab === 'Players' ? '#FFFFFF' : '#8B94A5',
+                  backgroundColor: activeTab === 'Players' ? 'var(--surface-control, #1A212F)' : 'transparent',
+                  color: activeTab === 'Players' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #8B94A5)',
                   border: 'none',
                   borderRadius: 8,
                   fontSize: 14,
@@ -1068,20 +1068,20 @@ export const GameOverlayView: React.FC = () => {
                   {chatMessages.map((msg, idx) => (
                     <div key={idx} style={{ marginBottom: 8, display: 'flex', flexDirection: 'column' }}>
                       {msg.isSystem ? (
-                        <div style={{ alignSelf: 'center', backgroundColor: 'rgba(255, 255, 255, 0.1)', padding: '4px 10px', borderRadius: 10 }}>
-                          <span style={{ color: '#8B94A5', fontSize: 11 }}>{msg.text}</span>
+                        <div style={{ alignSelf: 'center', backgroundColor: 'var(--surface-hover, rgba(255, 255, 255, 0.1))', padding: '4px 10px', borderRadius: 10 }}>
+                          <span style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 11 }}>{msg.text}</span>
                         </div>
                       ) : (
                         <div style={{ maxWidth: 220, alignSelf: msg.isMine ? 'flex-end' : 'flex-start' }}>
                           {!msg.isMine && (
-                            <div style={{ fontSize: 11, color: '#8B94A5', fontWeight: 600, marginLeft: 7, marginBottom: 2 }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary, #8B94A5)', fontWeight: 600, marginLeft: 7, marginBottom: 2 }}>
                               {msg.senderName}
                             </div>
                           )}
                           <div style={{ position: 'relative', display: 'flex' }}>
                             {/* Хвостик слева */}
                             {!msg.isMine && (
-                              <svg viewBox="0 0 8 8" width={8} height={8} fill="#1A212F" style={{ position: 'absolute', left: -7, bottom: 0 }}>
+                              <svg viewBox="0 0 8 8" width={8} height={8} fill="var(--text-secondary, #1A212F)" style={{ position: 'absolute', left: -7, bottom: 0 }}>
                                 <path d="M 8,8 L 0,8 L 8,0 Z" />
                               </svg>
                             )}
@@ -1089,7 +1089,7 @@ export const GameOverlayView: React.FC = () => {
                             <div
                               style={{
                                 padding: '8px 10px',
-                                backgroundColor: msg.isMine ? 'var(--app-accent, #1E9BEB)' : '#1A212F',
+                                backgroundColor: msg.isMine ? 'var(--app-accent, #1E9BEB)' : 'var(--surface-control, #1A212F)',
                                 borderRadius: msg.isMine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                                 color: '#FFFFFF',
                                 fontSize: 13,
@@ -1116,7 +1116,7 @@ export const GameOverlayView: React.FC = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
                   <div
                     style={{
-                      backgroundColor: '#0B0E14',
+                      backgroundColor: 'var(--surface-recessed, #0B0E14)',
                       borderRadius: 10,
                       padding: '0 10px',
                       display: 'flex',
@@ -1134,7 +1134,7 @@ export const GameOverlayView: React.FC = () => {
                         width: '100%',
                         backgroundColor: 'transparent',
                         border: 'none',
-                        color: '#FFFFFF',
+                        color: 'var(--text-body, #FFFFFF)',
                         outline: 'none',
                         fontSize: 13,
                       }}
@@ -1167,8 +1167,8 @@ export const GameOverlayView: React.FC = () => {
                   <div
                     key={p.userId}
                     style={{
-                      backgroundColor: '#1A212F',
-                      border: '1px solid #252D3D',
+                      backgroundColor: 'var(--surface-control, #1A212F)',
+                      border: '1px solid var(--border-primary, #252D3D)',
                       borderRadius: 12,
                       padding: 12,
                       marginBottom: 10,
@@ -1183,22 +1183,22 @@ export const GameOverlayView: React.FC = () => {
                           width: 36,
                           height: 36,
                           borderRadius: 18,
-                          backgroundColor: '#0B0E14',
-                          border: '1px solid #2A3245',
+                          backgroundColor: 'var(--surface-recessed, #0B0E14)',
+                          border: '1px solid var(--border-primary, #2A3245)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           marginRight: 12,
-                          color: '#00D2FF',
+                          color: 'var(--link-colour, #00D2FF)',
                           fontWeight: 'bold',
                         }}
                       >
                         {p.symbol || p.nickName.charAt(0)}
                       </div>
-                      <span style={{ color: '#FFFFFF', fontSize: 16 }}>{p.nickName}</span>
+                      <span style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 16 }}>{p.nickName}</span>
                     </div>
 
-                    <span style={{ color: '#FFC107', fontWeight: 'bold', fontSize: 16 }}>
+                    <span style={{ color: 'var(--warning-text, #FFC107)', fontWeight: 'bold', fontSize: 16 }}>
                       {p.score}
                     </span>
                   </div>
@@ -1225,12 +1225,12 @@ export const GameOverlayView: React.FC = () => {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: '#111620',
-              border: '2px solid #1C2331',
+              backgroundColor: 'var(--surface-panel, #111620)',
+              border: '2px solid var(--border-primary, #1C2331)',
               borderRadius: 24,
               padding: 15,
               minWidth: 450,
-              boxShadow: '0 0 50px rgba(0, 0, 0, 0.8)',
+              boxShadow: '0 0 50px var(--shadow-colour, rgba(0, 0, 0, 0.8))',
               position: 'relative',
               boxSizing: 'border-box',
             }}
@@ -1247,19 +1247,19 @@ export const GameOverlayView: React.FC = () => {
                 borderRadius: 16,
                 backgroundColor: 'transparent',
                 border: 'none',
-                color: '#8B94A5',
+                color: 'var(--text-secondary, #8B94A5)',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <svg viewBox="0 0 24 24" width={24} height={24} fill="#8B94A5"><path d={mdiClose} /></svg>
+              <svg viewBox="0 0 24 24" width={24} height={24} fill="var(--text-secondary, #8B94A5)"><path d={mdiClose} /></svg>
             </button>
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '25px 25px 35px 25px' }}>
-              <div style={{ color: '#8B94A5', fontSize: 14, fontWeight: 600, marginBottom: 10 }}>MATCH RESULT</div>
-              <div style={{ color: '#FFFFFF', fontSize: 42, fontWeight: 900, marginBottom: 40, textAlign: 'center' }}>
+              <div style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 14, fontWeight: 600, marginBottom: 10 }}>MATCH RESULT</div>
+              <div style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 42, fontWeight: 900, marginBottom: 40, textAlign: 'center' }}>
                 {gameStatusText}
               </div>
 
@@ -1269,10 +1269,10 @@ export const GameOverlayView: React.FC = () => {
                   onClick={leaveRoom}
                   style={{
                     height: 48,
-                    backgroundColor: '#1C212D',
-                    border: '1px solid #2A303C',
+                    backgroundColor: 'var(--surface-control, #1C212D)',
+                    border: '1px solid var(--border-primary, #2A303C)',
                     borderRadius: 12,
-                    color: '#FFFFFF',
+                    color: 'var(--text-body, #FFFFFF)',
                     fontWeight: 'bold',
                     padding: '0 25px',
                     cursor: 'pointer',
@@ -1281,7 +1281,7 @@ export const GameOverlayView: React.FC = () => {
                     gap: 8,
                   }}
                 >
-                  <svg viewBox="0 0 24 24" width={20} height={20} fill="#FFF"><path d={mdiExitToApp} /></svg>
+                  <svg viewBox="0 0 24 24" width={20} height={20} fill="var(--text-body, #FFF)"><path d={mdiExitToApp} /></svg>
                   <span style={{ fontSize: 14 }}>LEAVE ROOM</span>
                 </button>
 
@@ -1291,7 +1291,7 @@ export const GameOverlayView: React.FC = () => {
                     onClick={startGame}
                     style={{
                       height: 48,
-                      backgroundColor: '#00D2FF',
+                      backgroundColor: 'var(--accent-primary, #00D2FF)',
                       color: '#0B0E14',
                       fontWeight: 'bold',
                       borderRadius: 12,
@@ -1309,8 +1309,8 @@ export const GameOverlayView: React.FC = () => {
                 ) : (
                   <div
                     style={{
-                      backgroundColor: '#1C212D',
-                      border: '1px solid #2A303C',
+                      backgroundColor: 'var(--surface-control, #1C212D)',
+                      border: '1px solid var(--border-primary, #2A303C)',
                       borderRadius: 12,
                       padding: '0 25px',
                       height: 48,
@@ -1318,10 +1318,10 @@ export const GameOverlayView: React.FC = () => {
                       alignItems: 'center',
                     }}
                   >
-                    <svg viewBox="0 0 24 24" width={20} height={20} fill="#8B94A5" style={{ marginRight: 8 }}>
+                    <svg viewBox="0 0 24 24" width={20} height={20} fill="var(--text-secondary, #8B94A5)" style={{ marginRight: 8 }}>
                       <path d={mdiTimerSand} />
                     </svg>
-                    <span style={{ color: '#8B94A5', fontSize: 14, fontWeight: 600 }}>WAITING FOR HOST...</span>
+                    <span style={{ color: 'var(--text-secondary, #8B94A5)', fontSize: 14, fontWeight: 600 }}>WAITING FOR HOST...</span>
                   </div>
                 )}
               </div>

@@ -247,11 +247,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           overflow-y: auto !important;
           overflow-x: hidden !important;
           scrollbar-width: thin;
-          scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+          scrollbar-color: var(--surface-hover, rgba(255, 255, 255, 0.3)) transparent;
           transition: scrollbar-color 0.3s ease;
         }
         .wpf-scroll-viewer:hover {
-          scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
+          scrollbar-color: var(--surface-hover, rgba(255, 255, 255, 0.5)) transparent;
         }
         .wpf-scroll-viewer::-webkit-scrollbar {
           width: 4px !important;
@@ -261,15 +261,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           background: transparent !important;
         }
         .wpf-scroll-viewer::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.25) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.25)) !important;
           border-radius: 3px !important;
           transition: background 0.2s ease !important;
         }
         .wpf-scroll-viewer:hover::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.45) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.45)) !important;
         }
         .wpf-scroll-viewer::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.7) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.7)) !important;
         }
         .wpf-scroll-viewer::-webkit-scrollbar-button {
           display: none !important;
@@ -287,7 +287,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           height: 720,
           backgroundColor: Theme.ProfileCardBackground,
           borderRadius: 16,
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6)',
+          boxShadow: '0 20px 60px var(--shadow-colour, rgba(0, 0, 0, 0.6))',
           display: 'flex',
           overflow: 'hidden',
           opacity: isVisible ? 1 : 0,
@@ -418,7 +418,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               backgroundColor: Theme.ProfileCardBackground,
               borderRadius: 16,
               padding: 24,
-              boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+              boxShadow: '0 20px 60px var(--shadow-colour, rgba(0,0,0,0.6))',
               border: `1px solid ${Theme.ProfileLeftPanelBorder}`,
             }}
           >
@@ -626,7 +626,7 @@ const dropdownMenuStyle: React.CSSProperties = {
   border: `1px solid ${Theme.SidebarContextMenuBorder}`,
   borderRadius: 8,
   padding: '6px 0',
-  boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+  boxShadow: '0 10px 30px var(--shadow-colour, rgba(0,0,0,0.5))',
 };
 
 const dropdownItemStyle: React.CSSProperties = {

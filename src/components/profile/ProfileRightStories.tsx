@@ -155,7 +155,7 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
                   transition: 'transform 0.15s ease, border-color 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                  e.currentTarget.style.borderColor = 'var(--surface-hover, rgba(255, 255, 255, 0.2))';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.borderColor = 'transparent';
@@ -182,13 +182,13 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
                     display: 'flex',
                     alignItems: 'flex-end',
                     padding: 8,
-                    color: '#FFFFFF',
+                    color: 'var(--text-body, #FFFFFF)',
                     fontSize: 10.5,
                     fontWeight: 600,
                     gap: 4,
                   }}
                 >
-                  <svg width={12} height={12} viewBox="0 0 24 24" fill="#FFFFFF">
+                  <svg width={12} height={12} viewBox="0 0 24 24" fill="var(--text-body, #FFFFFF)">
                     <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
                   </svg>
                   <span>{story.viewsCount}</span>
@@ -227,7 +227,7 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
             style={dropdownItemStyle}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <svg width={16} height={16} viewBox="0 0 24 24" fill="#FFFFFF">
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="var(--text-body, #FFFFFF)">
                 <path d="M14.06,9L15,9.94L5.92,19H5V18.08L14.06,9M17.66,3C17.41,3 17.15,3.1 16.96,3.29L15.13,5.12L18.88,8.87L20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18.17,3.09 17.92,3 17.66,3M14.06,6.19L3,17.25V21H6.75L17.81,9.94L14.06,6.19Z" />
               </svg>
               <span>Edit Story</span>
@@ -240,10 +240,10 @@ export const ProfileRightStories: React.FC<ProfileRightStoriesProps> = ({
               setContextMenu(null);
               useStoriesStore.getState().requestDeleteStoryWithConfirmation(target);
             }}
-            style={{ ...dropdownItemStyle, color: '#FF3B30' }}
+            style={{ ...dropdownItemStyle, color: 'var(--danger-text, #FF3B30)' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <svg width={16} height={16} viewBox="0 0 24 24" fill="#FF3B30">
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="var(--danger-text, #FF3B30)">
                 <path d="M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19M8,9H16V19H8V9M15.5,4L14.5,3H9.5L8.5,4H5V6H19V4H15.5Z" />
               </svg>
               <span>Delete Story</span>
@@ -276,7 +276,7 @@ const dropdownMenuStyle: React.CSSProperties = {
   border: `1px solid ${Theme.SidebarContextMenuBorder}`,
   borderRadius: 8,
   padding: '6px 0',
-  boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+  boxShadow: '0 10px 30px var(--shadow-colour, rgba(0,0,0,0.5))',
   zIndex: 1000,
 };
 
@@ -289,6 +289,6 @@ const dropdownItemStyle: React.CSSProperties = {
 
 const separatorStyle: React.CSSProperties = {
   height: 1,
-  backgroundColor: 'rgba(255,255,255,0.08)',
+  backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.08))',
   margin: '4px 0',
 };

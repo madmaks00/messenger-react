@@ -46,7 +46,7 @@ export const ProfileRightGroup: React.FC<ProfileRightGroupProps> = ({ vm, onClos
     {!managing && <div className="wpf-scroll-viewer profile-group-scroll">
       {vm.isGroupMembersLoading ? <div className="profile-group-empty" role="status"><p>Loading members…</p></div> : activeMembersList.length === 0 ?
         <div className="profile-group-empty" role="status">
-          <div className="profile-group-empty-icon"><Icons.BlockHelper size={34} color="#46505f" /></div>
+          <div className="profile-group-empty-icon"><Icons.BlockHelper size={34} color="var(--text-secondary, #46505f)" /></div>
           <h3>{isBlacklist ? 'No blocked members' : 'No members found'}</h3>
           <p>{isBlacklist ? "The group's blacklist is empty." : 'Members will appear here.'}</p>
         </div> : <div className="profile-group-members">{activeMembersList.map(member => {

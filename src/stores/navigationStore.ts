@@ -1,5 +1,6 @@
 import { useAuthStore } from './authStore';
 import { create } from 'zustand';
+import { readTheme, saveTheme, applyTheme, THEME_STORAGE_KEY } from '../theme/theme';
 import { MainTab } from '../types/enums';
 import { IUserSearchResult } from '../types/models';
 import { userService } from '../services/user.service';
@@ -62,7 +63,7 @@ function getCurrentSessionUser(): any {
 
 export const useNavigationStore = create<NavigationState>((set, get) => ({
   currentTab: MainTab.Chats,
-  isDarkTheme: true,
+  isDarkTheme: readTheme() !== 'light',
   isProfileOpen: false,
   hasUnreadChats: false,
   hasDueTasks: false,
@@ -80,7 +81,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   toggleTheme: () => {
     const nextTheme = !get().isDarkTheme;
     set({ isDarkTheme: nextTheme });
-    document.documentElement.setAttribute('data-theme', nextTheme ? 'dark' : 'light');
+    saveTheme(nextTheme ? 'dark' : 'light');
   },
 
   openOwnProfile: async (initialTab = 'stories') => {
@@ -260,3 +261,9 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   setHasUnreadChats: (has) => set({ hasUnreadChats: has }),
   setHasDueTasks: (has) => set({ hasDueTasks: has }),
 }));
+window.addEventListener('storage', event => {
+  if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;
+  const theme = readTheme();
+  applyTheme(theme);
+  useNavigationStore.setState({ isDarkTheme: theme === 'dark' });
+});

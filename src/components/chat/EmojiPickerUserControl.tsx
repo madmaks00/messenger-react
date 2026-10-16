@@ -84,10 +84,10 @@ export const EmojiPickerUserControl: React.FC = () => {
         right: 16,
         width: 320,
         height: 440,
-        backgroundColor: '#1E2330',
+        backgroundColor: 'var(--surface-control, #1E2330)',
         borderRadius: 16,
-        border: '1.2px solid #334155',
-        boxShadow: '0 12px 36px rgba(0, 0, 0, 0.55)',
+        border: '1.2px solid var(--border-primary, #334155)',
+        boxShadow: '0 12px 36px var(--shadow-colour, rgba(0, 0, 0, 0.55))',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 1000,
@@ -97,7 +97,7 @@ export const EmojiPickerUserControl: React.FC = () => {
       <style>{`
         .wpf-emoji-scroll {
           scrollbar-width: thin !important;
-          scrollbar-color: rgba(255, 255, 255, 0.22) transparent !important;
+          scrollbar-color: var(--surface-hover, rgba(255, 255, 255, 0.22)) transparent !important;
         }
         .wpf-emoji-scroll::-webkit-scrollbar {
           width: 4px !important;
@@ -107,11 +107,11 @@ export const EmojiPickerUserControl: React.FC = () => {
           background: transparent !important;
         }
         .wpf-emoji-scroll::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.22) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.22)) !important;
           border-radius: 2px !important;
         }
         .wpf-emoji-scroll::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.45) !important;
+          background: var(--surface-hover, rgba(255, 255, 255, 0.45)) !important;
         }
         .wpf-emoji-scroll::-webkit-scrollbar-button {
           display: none !important;
@@ -121,13 +121,13 @@ export const EmojiPickerUserControl: React.FC = () => {
       `}</style>
 
       {/* 1. Верхние вкладки: Emoji / GIF */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', height: 45, borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', height: 45, borderBottom: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.08))' }}>
         <button
           onClick={() => selectMainTab('Emoji')}
           style={{
             background: 'transparent',
             border: 'none',
-            color: selectedMainTab === 'Emoji' ? 'var(--app-accent, #3B82F6)' : '#94A3B8',
+            color: selectedMainTab === 'Emoji' ? 'var(--app-accent, #3B82F6)' : 'var(--text-secondary, #94A3B8)',
             fontSize: 13.5,
             fontWeight: 'bold',
             cursor: 'pointer',
@@ -141,7 +141,7 @@ export const EmojiPickerUserControl: React.FC = () => {
           style={{
             background: 'transparent',
             border: 'none',
-            color: selectedMainTab === 'GIF' ? 'var(--app-accent, #3B82F6)' : '#94A3B8',
+            color: selectedMainTab === 'GIF' ? 'var(--app-accent, #3B82F6)' : 'var(--text-secondary, #94A3B8)',
             fontSize: 13.5,
             fontWeight: 'bold',
             cursor: 'pointer',
@@ -174,7 +174,7 @@ export const EmojiPickerUserControl: React.FC = () => {
                   justifyContent: 'center',
                   transition: 'background-color 0.1s ease',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover, rgba(255, 255, 255, 0.08))')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
               >
                 {emoji}
@@ -185,9 +185,9 @@ export const EmojiPickerUserControl: React.FC = () => {
           /* РЕЖИМ 2: Сетка уникальных GIF (3 колонки по ~94px) */
           <div>
             {isGifsLoading && uniqueGifs.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#94A3B8', marginTop: 80 }}>Loading GIFs...</div>
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary, #94A3B8)', marginTop: 80 }}>Loading GIFs...</div>
             ) : uniqueGifs.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#94A3B8', marginTop: 80, fontSize: 13 }}>No saved GIFs yet</div>
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary, #94A3B8)', marginTop: 80, fontSize: 13 }}>No saved GIFs yet</div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
                 {uniqueGifs.map((gif) => (
@@ -208,14 +208,14 @@ export const EmojiPickerUserControl: React.FC = () => {
         <div
           style={{
             height: 40,
-            backgroundColor: '#161B26',
+            backgroundColor: 'var(--surface-panel, #161B26)',
             borderBottomLeftRadius: 16,
             borderBottomRightRadius: 16,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-around',
             padding: '0 4px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+            borderTop: '1px solid var(--border-subtle, rgba(255, 255, 255, 0.05))',
           }}
         >
           {CATEGORY_ICONS.map((cat) => (
@@ -226,7 +226,7 @@ export const EmojiPickerUserControl: React.FC = () => {
               style={{
                 width: 32,
                 height: 32,
-                background: selectedCategory === cat.key ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
+                background: selectedCategory === cat.key ? 'var(--surface-hover, rgba(255, 255, 255, 0.12))' : 'transparent',
                 border: 'none',
                 borderRadius: 6,
                 fontSize: 16,
@@ -274,7 +274,7 @@ const GifGridItem: React.FC<{ gif: ISavedGif; onSelect: () => void }> = ({ gif, 
         borderRadius: 8,
         overflow: 'hidden',
         cursor: 'pointer',
-        backgroundColor: '#161B26',
+        backgroundColor: 'var(--surface-panel, #161B26)',
         position: 'relative',
         display: 'flex',
         alignItems: 'center',

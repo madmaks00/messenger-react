@@ -118,7 +118,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
         <div
           style={{
             position: 'relative',
-            borderBottom: `1px solid ${hasError ? '#FF4D4D' : '#232836'}`,
+            borderBottom: `1px solid ${hasError ? '#FF4D4D' : 'var(--border-primary, #232836)'}`,
             padding: `13px ${isPasswordBox ? '30px' : '0'} 3px 0`,
           }}
         >
@@ -128,7 +128,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
               left: 0,
               top: 13,
               fontSize: 14.5,
-              color: hasError ? '#FF4D4D' : isFocused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.56)',
+              color: hasError ? 'var(--danger-text, #FF4D4D)' : isFocused ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, rgba(255, 255, 255, 0.56))',
               transformOrigin: 'top left',
               transform: isFieldActive ? 'translateY(-17px) scale(0.8)' : 'translateY(0) scale(1)',
               transition: 'transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), color 0.18s ease',
@@ -148,7 +148,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
               width: '100%',
               background: 'transparent',
               border: 'none',
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               fontSize: 14.5,
               outline: 'none',
               caretColor: 'var(--app-accent, #1E9BEB)',
@@ -167,7 +167,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                 bottom: 4,
                 background: 'transparent',
                 border: 'none',
-                color: '#7D8494',
+                color: 'var(--text-secondary, #7D8494)',
                 cursor: 'pointer',
                 padding: 0,
                 display: 'flex',
@@ -175,7 +175,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                 justifyContent: 'center',
               }}
             >
-              <svg viewBox="0 0 24 24" width={19} height={19} fill="#7D8494">
+              <svg viewBox="0 0 24 24" width={19} height={19} fill="var(--text-secondary, #7D8494)">
                 <path d={showPassToggle ? mdiEyeOff : mdiEye} />
               </svg>
             </button>
@@ -212,10 +212,10 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
     >
       {/* 🟢 ШАПКА */}
       <div style={{ flexShrink: 0, marginBottom: 14 }}>
-        <h1 style={{ color: '#FFFFFF', fontSize: 26, fontWeight: 'bold', textAlign: 'center', margin: '0 0 2px 0' }}>
+        <h1 style={{ color: 'var(--text-body, #FFFFFF)', fontSize: 26, fontWeight: 'bold', textAlign: 'center', margin: '0 0 2px 0' }}>
           {title}
         </h1>
-        <div style={{ color: '#7D8494', fontSize: 13, textAlign: 'center', margin: 0 }}>
+        <div style={{ color: 'var(--text-secondary, #7D8494)', fontSize: 13, textAlign: 'center', margin: 0 }}>
           {subtitle}
         </div>
       </div>
@@ -242,7 +242,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                 width: 104,
                 height: 104,
                 borderRadius: 52,
-                backgroundColor: '#232836',
+                backgroundColor: 'var(--surface-control, #232836)',
                 border: '2px solid var(--app-accent, #1E9BEB)',
                 display: 'flex',
                 alignItems: 'center',
@@ -260,7 +260,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               ) : (
-                <svg viewBox="0 0 24 24" width={38} height={38} fill="#7D8494">
+                <svg viewBox="0 0 24 24" width={38} height={38} fill="var(--text-secondary, #7D8494)">
                   <path d={mdiCameraPlus} />
                 </svg>
               )}
@@ -282,7 +282,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
             <div style={{ position: 'relative', marginBottom: 12 }}>
               <div
                 style={{
-                  borderBottom: `1px solid ${registerFieldErrors.birthday ? '#FF4D4D' : '#232836'}`,
+                  borderBottom: `1px solid ${registerFieldErrors.birthday ? '#FF4D4D' : 'var(--border-primary, #232836)'}`,
                   padding: '13px 0 3px 0',
                   position: 'relative',
                 }}
@@ -294,10 +294,10 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                     top: 13,
                     fontSize: 14.5,
                     color: registerFieldErrors.birthday
-                      ? '#FF4D4D'
+                      ? 'var(--danger-text, #FF4D4D)'
                       : focusedField === 'birthday'
-                      ? '#FFFFFF'
-                      : 'rgba(255, 255, 255, 0.56)',
+                      ? 'var(--text-body, #FFFFFF)'
+                      : 'var(--text-secondary, rgba(255, 255, 255, 0.56))',
                     transformOrigin: 'top left',
                     transform: 'translateY(-17px) scale(0.8)',
                     pointerEvents: 'none',
@@ -316,10 +316,10 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                     width: '100%',
                     background: 'transparent',
                     border: 'none',
-                    color: '#FFFFFF',
+                    color: 'var(--text-body, #FFFFFF)',
                     fontSize: 14.5,
                     outline: 'none',
-                    colorScheme: 'dark',
+                    colorScheme: 'inherit',
                     cursor: 'pointer',
                     boxSizing: 'border-box',
                     padding: 0,
@@ -331,14 +331,14 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
 
             {/* ComboBox Gender */}
             <div style={{ position: 'relative', marginBottom: 12 }}>
-              <div style={{ borderBottom: '1px solid #232836', padding: '13px 0 3px 0', position: 'relative' }}>
+              <div style={{ borderBottom: '1px solid var(--border-primary, #232836)', padding: '13px 0 3px 0', position: 'relative' }}>
                 <label
                   style={{
                     position: 'absolute',
                     left: 0,
                     top: 13,
                     fontSize: 14.5,
-                    color: focusedField === 'gender' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.56)',
+                    color: focusedField === 'gender' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, rgba(255, 255, 255, 0.56))',
                     transformOrigin: 'top left',
                     transform: 'translateY(-17px) scale(0.8)',
                     pointerEvents: 'none',
@@ -356,7 +356,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                     width: '100%',
                     background: 'transparent',
                     border: 'none',
-                    color: '#FFFFFF',
+                    color: 'var(--text-body, #FFFFFF)',
                     fontSize: 14.5,
                     outline: 'none',
                     cursor: 'pointer',
@@ -366,7 +366,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                   }}
                 >
                   {GENDER_OPTIONS.map((g) => (
-                    <option key={g} value={g} style={{ backgroundColor: '#1E2330', color: '#FFFFFF' }}>
+                    <option key={g} value={g} style={{ backgroundColor: 'var(--surface-control, #1E2330)', color: 'var(--text-body, #FFFFFF)' }}>
                       {g}
                     </option>
                   ))}
@@ -385,7 +385,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
           <div style={{ gridColumn: 'span 2', position: 'relative', marginBottom: 12 }}>
             <div
               style={{
-                borderBottom: `1px solid ${registerFieldErrors.description ? '#FF4D4D' : '#232836'}`,
+                borderBottom: `1px solid ${registerFieldErrors.description ? '#FF4D4D' : 'var(--border-primary, #232836)'}`,
                 padding: '13px 0 3px 0',
                 position: 'relative',
               }}
@@ -397,10 +397,10 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                   top: 13,
                   fontSize: 14.5,
                   color: registerFieldErrors.description
-                    ? '#FF4D4D'
+                    ? 'var(--danger-text, #FF4D4D)'
                     : focusedField === 'description'
-                    ? '#FFFFFF'
-                    : 'rgba(255, 255, 255, 0.56)',
+                    ? 'var(--text-body, #FFFFFF)'
+                    : 'var(--text-secondary, rgba(255, 255, 255, 0.56))',
                   transformOrigin: 'top left',
                   transform:
                     focusedField === 'description' || registerUser.description
@@ -423,7 +423,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
                   height: 52,
                   background: 'transparent',
                   border: 'none',
-                  color: '#FFFFFF',
+                  color: 'var(--text-body, #FFFFFF)',
                   fontSize: 14.5,
                   outline: 'none',
                   resize: 'none',
@@ -467,7 +467,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
         <div
           style={{
             minHeight: 18,
-            color: '#FF4D4D',
+            color: 'var(--danger-text, #FF4D4D)',
             fontSize: 13,
             fontWeight: 600,
             textAlign: 'center',
@@ -492,7 +492,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
             fontSize: 15.5,
             fontWeight: 'bold',
             cursor: loading ? 'wait' : 'pointer',
-            boxShadow: '0 5px 20px rgba(30, 155, 235, 0.4)',
+            boxShadow: '0 5px 20px var(--surface-accent, rgba(30, 155, 235, 0.4))',
             opacity: loading ? 0.8 : 1,
             transition: 'opacity 0.2s ease, box-shadow 0.2s ease',
           }}
@@ -501,7 +501,7 @@ export const RegisterFormUserControl: React.FC<RegisterFormUserControlProps> = (
         </button>
 
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 12 }}>
-          <span style={{ color: '#7D8494', fontSize: 13.5 }}>Have another account?</span>
+          <span style={{ color: 'var(--text-secondary, #7D8494)', fontSize: 13.5 }}>Have another account?</span>
           <button
             type="button"
             onClick={onSwitchToLogin}

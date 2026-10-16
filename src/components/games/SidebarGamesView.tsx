@@ -133,7 +133,7 @@ export const SidebarGamesView: React.FC = () => {
                 <div style={{ margin: '0 12px 15px 12px', textAlign: 'center' }}>
                   <span
                     style={{
-                      color: '#FFFFFF',
+                      color: 'var(--text-body, #FFFFFF)',
                       fontSize: 14,
                       fontWeight: 'bold',
                       display: '-webkit-box',

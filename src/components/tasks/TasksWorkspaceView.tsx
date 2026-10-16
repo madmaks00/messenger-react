@@ -86,32 +86,32 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string }> = {
-  Work: { bg: '#172554', text: '#60A5FA' },
-  Personal: { bg: '#064E3B', text: '#34D399' },
-  Calls: { bg: '#134E4A', text: '#2DD4BF' },
-  Shopping: { bg: '#164E63', text: '#22D3EE' },
-  Health: { bg: '#4C0519', text: '#FB7185' },
-  Learning: { bg: '#4A044E', text: '#E879F9' },
-  Family: { bg: '#7C2D12', text: '#FB923C' },
-  Finance: { bg: '#713F12', text: '#FACC15' },
-  Quick: { bg: '#451A03', text: '#FBBF24' },
-  DeepWork: { bg: '#2E1065', text: '#A78BFA' },
-  Someday: { bg: '#1E293B', text: '#94A3B8' },
+  Work: { bg: 'var(--surface-accent, #172554)', text: 'var(--link-colour, #60A5FA)' },
+  Personal: { bg: 'var(--surface-success, #064E3B)', text: 'var(--success-text, #34D399)' },
+  Calls: { bg: 'var(--surface-success, #134E4A)', text: 'var(--success-text, #2DD4BF)' },
+  Shopping: { bg: 'var(--surface-accent, #164E63)', text: 'var(--link-colour, #22D3EE)' },
+  Health: { bg: 'var(--surface-danger, #4C0519)', text: 'var(--warning-text, #FB7185)' },
+  Learning: { bg: 'var(--surface-violet, #4A044E)', text: 'var(--violet-text, #E879F9)' },
+  Family: { bg: 'var(--surface-warning, #7C2D12)', text: 'var(--warning-text, #FB923C)' },
+  Finance: { bg: 'var(--surface-warning, #713F12)', text: 'var(--warning-text, #FACC15)' },
+  Quick: { bg: 'var(--surface-danger, #451A03)', text: 'var(--warning-text, #FBBF24)' },
+  DeepWork: { bg: 'var(--surface-violet, #2E1065)', text: 'var(--violet-text, #A78BFA)' },
+  Someday: { bg: 'var(--surface-hover, #1E293B)', text: 'var(--text-secondary, #94A3B8)' },
 };
 
 const PRIORITY_STYLES: Record<string, { bg: string; text: string; border: string }> = {
-  High: { bg: '#331E23', text: '#EF4444', border: '#EF4444' },
-  Medium: { bg: '#332A1B', text: '#F59E0B', border: '#F59E0B' },
-  Low: { bg: '#1D283A', text: '#3B82F6', border: '#3B82F6' },
-  None: { bg: 'transparent', text: '#94A3B8', border: '#4B5563' },
+  High: { bg: 'var(--surface-control, #331E23)', text: 'var(--danger-text, #EF4444)', border: '#EF4444' },
+  Medium: { bg: 'var(--surface-control, #332A1B)', text: 'var(--warning-text, #F59E0B)', border: '#F59E0B' },
+  Low: { bg: 'var(--surface-hover, #1D283A)', text: 'var(--link-colour, #3B82F6)', border: '#3B82F6' },
+  None: { bg: 'transparent', text: 'var(--text-secondary, #94A3B8)', border: 'var(--border-primary, #4B5563)' },
 };
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
-  Review: { bg: '#1E3A8A', text: '#93C5FD' },
-  Waiting: { bg: '#3B2F00', text: '#FDE047' },
-  InProgress: { bg: '#281B3A', text: '#A78BFA' },
-  Blocked: { bg: '#3A1B24', text: '#FB7185' },
-  Todo: { bg: '#2A303C', text: '#94A3B8' },
+  Review: { bg: 'var(--surface-accent, #1E3A8A)', text: 'var(--link-colour, #93C5FD)' },
+  Waiting: { bg: 'var(--surface-danger, #3B2F00)', text: 'var(--warning-text, #FDE047)' },
+  InProgress: { bg: 'var(--surface-hover, #281B3A)', text: 'var(--violet-text, #A78BFA)' },
+  Blocked: { bg: 'var(--surface-hover, #3A1B24)', text: 'var(--warning-text, #FB7185)' },
+  Todo: { bg: 'var(--surface-hover, #2A303C)', text: 'var(--text-secondary, #94A3B8)' },
 };
 
 export const TasksWorkspaceView: React.FC = () => {
@@ -184,7 +184,7 @@ export const TasksWorkspaceView: React.FC = () => {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: '#11141B',
+        backgroundColor: 'var(--surface-page, #11141B)',
         userSelect: 'none',
         boxSizing: 'border-box',
       }}
@@ -200,7 +200,7 @@ export const TasksWorkspaceView: React.FC = () => {
         }
 
         .wpf-scroll-viewer:hover {
-          scrollbar-color: rgba(255, 255, 255, 0.3) transparent !important;
+          scrollbar-color: var(--surface-hover, rgba(255, 255, 255, 0.3)) transparent !important;
         }
 
         .wpf-scroll-viewer::-webkit-scrollbar {
@@ -219,15 +219,15 @@ export const TasksWorkspaceView: React.FC = () => {
         }
 
         .wpf-scroll-viewer:hover::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.3) !important; /* #4DFFFFFF */
+          background: var(--surface-hover, rgba(255, 255, 255, 0.3)) !important; /* #4DFFFFFF */
         }
 
         .wpf-scroll-viewer::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.45) !important; /* #66FFFFFF */
+          background: var(--surface-hover, rgba(255, 255, 255, 0.45)) !important; /* #66FFFFFF */
         }
 
         .wpf-scroll-viewer::-webkit-scrollbar-thumb:active {
-          background: rgba(255, 255, 255, 0.6) !important; /* #99FFFFFF */
+          background: var(--surface-hover, rgba(255, 255, 255, 0.6)) !important; /* #99FFFFFF */
         }
 
         .wpf-scroll-viewer::-webkit-scrollbar-button {
@@ -244,12 +244,12 @@ export const TasksWorkspaceView: React.FC = () => {
             <MdiIcon
               path={headerListIcon}
               size={26}
-              color={selectedTaskList.iconColor || '#7D8494'}
+              color={selectedTaskList.iconColor || 'var(--text-secondary, #7D8494)'}
               style={{ marginRight: 12 }}
             />
             <span
               style={{
-                color: '#FFFFFF',
+                color: 'var(--text-body, #FFFFFF)',
                 fontSize: 24,
                 fontWeight: 'bold',
               }}
@@ -275,9 +275,9 @@ export const TasksWorkspaceView: React.FC = () => {
                 width: 115,
                 height: 40,
                 borderRadius: 10,
-                backgroundColor: isFiltersExpanded ? '#232A3B' : 'transparent',
-                border: '1px solid #2A3143',
-                color: isFiltersExpanded ? '#E2E8F0' : '#94A3B8',
+                backgroundColor: isFiltersExpanded ? 'var(--surface-hover, #232A3B)' : 'transparent',
+                border: '1px solid var(--border-primary, #2A3143)',
+                color: isFiltersExpanded ? 'var(--text-body, #E2E8F0)' : 'var(--text-secondary, #94A3B8)',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -322,9 +322,9 @@ export const TasksWorkspaceView: React.FC = () => {
                     padding: '0 16px 0 14px',
                     margin: '0 10px 10px 0',
                     borderRadius: 17,
-                    backgroundColor: isChecked ? chip.activeBg : '#161A23',
-                    border: isChecked ? `1px solid ${chip.glow}` : '1px solid #2A3143',
-                    color: isChecked ? '#FFFFFF' : '#94A3B8',
+                    backgroundColor: isChecked ? chip.activeBg : 'var(--surface-panel, #161A23)',
+                    border: isChecked ? `1px solid ${chip.glow}` : '1px solid var(--border-primary, #2A3143)',
+                    color: isChecked ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #94A3B8)',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
@@ -348,11 +348,11 @@ export const TasksWorkspaceView: React.FC = () => {
       <div style={{ margin: '0 30px 25px 30px' }}>
         <div
           style={{
-            backgroundColor: '#1C212D',
+            backgroundColor: 'var(--surface-control, #1C212D)',
             borderRadius: 16,
-            border: '1px solid #2A303C',
+            border: '1px solid var(--border-primary, #2A303C)',
             padding: '15px 12px',
-            boxShadow: '0 6px 20px rgba(0,0,0,0.2)',
+            boxShadow: '0 6px 20px var(--shadow-colour, rgba(0,0,0,0.2))',
             display: 'flex',
             alignItems: 'flex-start',
             boxSizing: 'border-box',
@@ -361,7 +361,7 @@ export const TasksWorkspaceView: React.FC = () => {
           <MdiIcon
             path={mdiPlusCircleOutline}
             size={26}
-            color="#1E9BEB"
+            color="var(--link-colour, #1E9BEB)"
             style={{ margin: '5px 15px 0 0', flexShrink: 0 }}
           />
 
@@ -377,7 +377,7 @@ export const TasksWorkspaceView: React.FC = () => {
                 background: 'transparent',
                 border: 'none',
                 outline: 'none',
-                color: '#FFFFFF',
+                color: 'var(--text-body, #FFFFFF)',
                 fontSize: 16,
                 padding: '2px 0 8px 0',
                 fontFamily: "'Segoe UI', -apple-system, sans-serif",
@@ -393,8 +393,8 @@ export const TasksWorkspaceView: React.FC = () => {
                 }}
                 style={parameterBadgeStyle}
               >
-                <MdiIcon path={mdiCalendarMonth} size={16} color="#94A3B8" style={{ marginRight: 8 }} />
-                <span style={{ color: newTaskDueDate ? '#FFFFFF' : '#94A3B8', fontSize: 13, fontWeight: 500 }}>
+                <MdiIcon path={mdiCalendarMonth} size={16} color="var(--text-secondary, #94A3B8)" style={{ marginRight: 8 }} />
+                <span style={{ color: newTaskDueDate ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #94A3B8)', fontSize: 13, fontWeight: 500 }}>
                   {newTaskDueDate
                     ? new Date(newTaskDueDate).toLocaleDateString([], { month: 'short', day: 'numeric' })
                     : 'Due Date'}
@@ -410,9 +410,9 @@ export const TasksWorkspaceView: React.FC = () => {
                         setActivePopup(null);
                       }}
                       style={{
-                        background: '#161A23',
+                        background: 'var(--surface-panel, #161A23)',
                         border: '1px solid #3B82F6',
-                        color: '#FFF',
+                        color: 'var(--text-body, #FFF)',
                         borderRadius: 6,
                         padding: '6px 8px',
                         outline: 'none',
@@ -433,10 +433,10 @@ export const TasksWorkspaceView: React.FC = () => {
                 <MdiIcon
                   path={CATEGORY_ICONS[newTaskCategoryString] || mdiTagOutline}
                   size={16}
-                  color="#94A3B8"
+                  color="var(--text-secondary, #94A3B8)"
                   style={{ marginRight: 8 }}
                 />
-                <span style={{ color: newTaskCategoryString !== 'Auto' ? '#FFFFFF' : '#94A3B8', fontSize: 13, fontWeight: 500 }}>
+                <span style={{ color: newTaskCategoryString !== 'Auto' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #94A3B8)', fontSize: 13, fontWeight: 500 }}>
                   {newTaskCategoryString}
                 </span>
 
@@ -455,7 +455,7 @@ export const TasksWorkspaceView: React.FC = () => {
                           <MdiIcon
                             path={CATEGORY_ICONS[cat] || mdiTagOutline}
                             size={15}
-                            color="#94A3B8"
+                            color="var(--text-secondary, #94A3B8)"
                             style={{ marginRight: 8 }}
                           />
                           <span>{cat}</span>
@@ -474,8 +474,8 @@ export const TasksWorkspaceView: React.FC = () => {
                 }}
                 style={parameterBadgeStyle}
               >
-                <MdiIcon path={mdiFlagOutline} size={16} color="#94A3B8" style={{ marginRight: 8 }} />
-                <span style={{ color: newTaskPriorityString !== 'None' ? '#FFFFFF' : '#94A3B8', fontSize: 13, fontWeight: 500 }}>
+                <MdiIcon path={mdiFlagOutline} size={16} color="var(--text-secondary, #94A3B8)" style={{ marginRight: 8 }} />
+                <span style={{ color: newTaskPriorityString !== 'None' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #94A3B8)', fontSize: 13, fontWeight: 500 }}>
                   {newTaskPriorityString === 'None' ? 'Priority' : newTaskPriorityString}
                 </span>
 
@@ -491,7 +491,7 @@ export const TasksWorkspaceView: React.FC = () => {
                         style={{
                           ...popoverItemStyle,
                           color:
-                            pri === 'High' ? '#EF4444' : pri === 'Medium' ? '#F59E0B' : pri === 'Low' ? '#3B82F6' : '#94A3B8',
+                            pri === 'High' ? 'var(--danger-text, #EF4444)' : pri === 'Medium' ? 'var(--warning-text, #F59E0B)' : pri === 'Low' ? 'var(--link-colour, #3B82F6)' : 'var(--text-secondary, #94A3B8)',
                         }}
                       >
                         {pri}
@@ -509,8 +509,8 @@ export const TasksWorkspaceView: React.FC = () => {
                 }}
                 style={parameterBadgeStyle}
               >
-                <MdiIcon path={mdiListStatus} size={16} color="#94A3B8" style={{ marginRight: 8 }} />
-                <span style={{ color: newTaskStatusString !== 'Todo' ? '#FFFFFF' : '#94A3B8', fontSize: 13, fontWeight: 500 }}>
+                <MdiIcon path={mdiListStatus} size={16} color="var(--text-secondary, #94A3B8)" style={{ marginRight: 8 }} />
+                <span style={{ color: newTaskStatusString !== 'Todo' ? 'var(--text-body, #FFFFFF)' : 'var(--text-secondary, #94A3B8)', fontSize: 13, fontWeight: 500 }}>
                   {newTaskStatusString}
                 </span>
 
@@ -541,9 +541,9 @@ export const TasksWorkspaceView: React.FC = () => {
                   height: 32,
                   padding: '0 12px',
                   borderRadius: 8,
-                  backgroundColor: isAiParseEnabled ? '#7C3AED' : '#242A38',
+                  backgroundColor: isAiParseEnabled ? '#7C3AED' : 'var(--surface-hover, #242A38)',
                   border: 'none',
-                  color: '#FFFFFF',
+                  color: isAiParseEnabled ? '#FFFFFF' : 'var(--text-body, #FFFFFF)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -551,7 +551,7 @@ export const TasksWorkspaceView: React.FC = () => {
                   transition: 'background-color 0.15s ease',
                 }}
               >
-                <MdiIcon path={mdiAutoFix} size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <MdiIcon path={mdiAutoFix} size={16} color={isAiParseEnabled ? '#FFFFFF' : 'var(--text-body, #FFFFFF)'} style={{ marginRight: 8 }} />
                 <span style={{ fontSize: 13, fontWeight: 600 }}>AI Auto</span>
               </button>
             </div>
@@ -563,7 +563,7 @@ export const TasksWorkspaceView: React.FC = () => {
               height: 40,
               padding: '0 20px',
               borderRadius: 20,
-              backgroundColor: '#1E9BEB',
+              backgroundColor: 'var(--accent-primary, #1E9BEB)',
               border: 'none',
               color: '#FFFFFF',
               fontSize: 14,
@@ -571,7 +571,7 @@ export const TasksWorkspaceView: React.FC = () => {
               cursor: 'pointer',
               marginLeft: 15,
               alignSelf: 'flex-end',
-              boxShadow: '0 3px 10px rgba(0,0,0,0.4)',
+              boxShadow: '0 3px 10px var(--shadow-colour, rgba(0,0,0,0.4))',
               outline: 'none',
               flexShrink: 0,
             }}
@@ -658,9 +658,9 @@ const TaskCardItem: React.FC<{
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        backgroundColor: task.isCompleted ? '#12151D' : isHovered ? '#232A3B' : '#1E232F',
+        backgroundColor: task.isCompleted ? 'var(--surface-recessed, #12151D)' : isHovered ? 'var(--surface-hover, #232A3B)' : 'var(--surface-control, #1E232F)',
         borderRadius: 12,
-        border: task.isCompleted ? '1px solid transparent' : '1px solid #2A303C',
+        border: task.isCompleted ? '1px solid transparent' : '1px solid var(--border-primary, #2A303C)',
         opacity: task.isCompleted ? 0.6 : 1,
         padding: 12,
         marginBottom: 8,
@@ -690,7 +690,7 @@ const TaskCardItem: React.FC<{
             transition: 'all 0.15s ease',
           }}
         >
-          {task.isCompleted && <MdiIcon path={mdiCheck} size={16} color="#FFFFFF" />}
+          {task.isCompleted && <MdiIcon path={mdiCheck} size={16} color="var(--text-body, #FFFFFF)" />}
         </div>
 
         {/* Текст или инпут редактирования */}
@@ -717,9 +717,9 @@ const TaskCardItem: React.FC<{
               }}
               onBlur={handleCommit}
               style={{
-                backgroundColor: '#161A23',
+                backgroundColor: 'var(--surface-panel, #161A23)',
                 border: '1px solid #3B82F6',
-                color: '#FFFFFF',
+                color: 'var(--text-body, #FFFFFF)',
                 fontSize: 15,
                 fontWeight: 500,
                 padding: '6px 4px',
@@ -734,7 +734,7 @@ const TaskCardItem: React.FC<{
               style={{
                 fontSize: 15,
                 fontWeight: 500,
-                color: '#E2E8F0',
+                color: 'var(--text-body, #E2E8F0)',
                 textDecoration: task.isCompleted ? 'line-through' : 'none',
                 wordBreak: 'break-word',
                 lineHeight: '20px',
@@ -749,8 +749,8 @@ const TaskCardItem: React.FC<{
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, alignItems: 'center' }}>
               {task.dueDate && (
                 <div style={{ display: 'flex', alignItems: 'center', marginRight: 10 }}>
-                  <MdiIcon path={mdiCalendarBlankOutline} size={14} color="#3B82F6" style={{ marginRight: 4 }} />
-                  <span style={{ fontSize: 12, color: '#3B82F6', fontWeight: 600 }}>
+                  <MdiIcon path={mdiCalendarBlankOutline} size={14} color="var(--link-colour, #3B82F6)" style={{ marginRight: 4 }} />
+                  <span style={{ fontSize: 12, color: 'var(--link-colour, #3B82F6)', fontWeight: 600 }}>
                     {new Date(task.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                   </span>
                 </div>
@@ -824,7 +824,7 @@ const TaskCardItem: React.FC<{
               title="Break down with AI"
               style={actionBtnItemStyle}
             >
-              <MdiIcon path={mdiAutoFix} size={18} color="#8B5CF6" />
+              <MdiIcon path={mdiAutoFix} size={18} color="var(--violet-text, #8B5CF6)" />
             </button>
 
             {/* Редактирование */}
@@ -836,7 +836,7 @@ const TaskCardItem: React.FC<{
               title="Edit"
               style={actionBtnItemStyle}
             >
-              <MdiIcon path={mdiPencilOutline} size={18} color="#94A3B8" />
+              <MdiIcon path={mdiPencilOutline} size={18} color="var(--text-secondary, #94A3B8)" />
             </button>
 
             {/* Выбор даты */}
@@ -849,7 +849,7 @@ const TaskCardItem: React.FC<{
                 title="Set Due Date"
                 style={actionBtnItemStyle}
               >
-                <MdiIcon path={mdiCalendarMonth} size={18} color="#94A3B8" />
+                <MdiIcon path={mdiCalendarMonth} size={18} color="var(--text-secondary, #94A3B8)" />
               </button>
 
               {activePopup === `date_${task.localId}` && (
@@ -865,9 +865,9 @@ const TaskCardItem: React.FC<{
                       setActivePopup(null);
                     }}
                     style={{
-                      background: '#161A23',
+                      background: 'var(--surface-panel, #161A23)',
                       border: '1px solid #3B82F6',
-                      color: '#FFF',
+                      color: 'var(--text-body, #FFF)',
                       borderRadius: 6,
                       padding: '6px 8px',
                       outline: 'none',
@@ -887,7 +887,7 @@ const TaskCardItem: React.FC<{
                 title="Set Priority"
                 style={actionBtnItemStyle}
               >
-                <MdiIcon path={mdiFlagOutline} size={18} color="#94A3B8" />
+                <MdiIcon path={mdiFlagOutline} size={18} color="var(--text-secondary, #94A3B8)" />
               </button>
 
               {activePopup === `pri_${task.localId}` && (
@@ -902,7 +902,7 @@ const TaskCardItem: React.FC<{
                       style={{
                         ...popoverItemStyle,
                         color:
-                          pri === 'High' ? '#EF4444' : pri === 'Medium' ? '#F59E0B' : pri === 'Low' ? '#3B82F6' : '#94A3B8',
+                          pri === 'High' ? 'var(--danger-text, #EF4444)' : pri === 'Medium' ? 'var(--warning-text, #F59E0B)' : pri === 'Low' ? 'var(--link-colour, #3B82F6)' : 'var(--text-secondary, #94A3B8)',
                       }}
                     >
                       {pri}
@@ -922,7 +922,7 @@ const TaskCardItem: React.FC<{
                 title="Set Status"
                 style={actionBtnItemStyle}
               >
-                <MdiIcon path={mdiListStatus} size={18} color="#94A3B8" />
+                <MdiIcon path={mdiListStatus} size={18} color="var(--text-secondary, #94A3B8)" />
               </button>
 
               {activePopup === `st_${task.localId}` && (
@@ -953,7 +953,7 @@ const TaskCardItem: React.FC<{
                 title="Set Category"
                 style={actionBtnItemStyle}
               >
-                <MdiIcon path={categoryIcon} size={18} color="#94A3B8" />
+                <MdiIcon path={categoryIcon} size={18} color="var(--text-secondary, #94A3B8)" />
               </button>
 
               {activePopup === `cat_${task.localId}` && (
@@ -971,7 +971,7 @@ const TaskCardItem: React.FC<{
                         <MdiIcon
                           path={CATEGORY_ICONS[cat] || mdiTagOutline}
                           size={15}
-                          color="#94A3B8"
+                          color="var(--text-secondary, #94A3B8)"
                           style={{ marginRight: 8 }}
                         />
                         <span>{cat}</span>
@@ -983,8 +983,8 @@ const TaskCardItem: React.FC<{
             </div>
 
             {/* Удаление */}
-            <button onClick={() => deleteTask(task)} title="Delete" style={{ ...actionBtnItemStyle, color: '#EF4444' }}>
-              <MdiIcon path={mdiTrashCanOutline} size={18} color="#EF4444" />
+            <button onClick={() => deleteTask(task)} title="Delete" style={{ ...actionBtnItemStyle, color: 'var(--danger-text, #EF4444)' }}>
+              <MdiIcon path={mdiTrashCanOutline} size={18} color="var(--danger-text, #EF4444)" />
             </button>
           </div>
         )}
@@ -995,15 +995,15 @@ const TaskCardItem: React.FC<{
         <div
           style={{
             margin: '10px 0 5px 40px',
-            backgroundColor: '#181F2E',
+            backgroundColor: 'var(--surface-control, #181F2E)',
             borderRadius: 10,
             padding: 12,
             border: '1px solid #8B5CF6',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-            <MdiIcon path={mdiAutoFix} size={16} color="#8B5CF6" style={{ marginRight: 6 }} />
-            <span style={{ fontSize: 12, fontWeight: 'bold', color: '#A78BFA' }}>
+            <MdiIcon path={mdiAutoFix} size={16} color="var(--violet-text, #8B5CF6)" style={{ marginRight: 6 }} />
+            <span style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--violet-text, #A78BFA)' }}>
               AI Subtask Suggestions
             </span>
           </div>
@@ -1025,17 +1025,17 @@ const TaskCardItem: React.FC<{
                   }}
                   style={{ cursor: 'pointer', marginRight: 8 }}
                 />
-                <span style={{ color: '#E2E8F0', fontSize: 13, flex: 1 }}>{sub.text}</span>
+                <span style={{ color: 'var(--text-body, #E2E8F0)', fontSize: 13, flex: 1 }}>{sub.text}</span>
 
                 {sub.category !== TaskCategory.None && (
                   <span
                     style={{
-                      backgroundColor: '#2B364E',
+                      backgroundColor: 'var(--surface-hover, #2B364E)',
                       borderRadius: 4,
                       padding: '2px 6px',
                       fontSize: 10,
                       fontWeight: 'bold',
-                      color: '#3B82F6',
+                      color: 'var(--link-colour, #3B82F6)',
                       marginLeft: 10,
                     }}
                   >
@@ -1046,12 +1046,12 @@ const TaskCardItem: React.FC<{
                 {sub.priority !== TaskPriority.None && (
                   <span
                     style={{
-                      backgroundColor: '#2B364E',
+                      backgroundColor: 'var(--surface-hover, #2B364E)',
                       borderRadius: 4,
                       padding: '2px 6px',
                       fontSize: 10,
                       fontWeight: 'bold',
-                      color: '#EF4444',
+                      color: 'var(--danger-text, #EF4444)',
                       marginLeft: 4,
                     }}
                   >
@@ -1068,7 +1068,7 @@ const TaskCardItem: React.FC<{
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#9CA3AF',
+                color: 'var(--text-secondary, #9CA3AF)',
                 cursor: 'pointer',
                 fontSize: 12,
                 padding: '0 12px',
@@ -1081,7 +1081,7 @@ const TaskCardItem: React.FC<{
               onClick={() => acceptDraftSubtasks(task)}
               style={{
                 backgroundColor: '#8B5CF6',
-                color: '#FFFFFF',
+                color: 'var(--text-body, #FFFFFF)',
                 border: 'none',
                 borderRadius: 6,
                 padding: '0 14px',
@@ -1101,7 +1101,7 @@ const TaskCardItem: React.FC<{
 };
 
 const parameterBadgeStyle: React.CSSProperties = {
-  backgroundColor: '#242A38',
+  backgroundColor: 'var(--surface-hover, #242A38)',
   borderRadius: 8,
   padding: '4px 12px',
   display: 'flex',
@@ -1115,18 +1115,18 @@ const popoverCardStyle: React.CSSProperties = {
   top: '100%',
   left: 0,
   marginTop: 6,
-  backgroundColor: '#2B2D31',
-  border: '1px solid #333E4A',
+  backgroundColor: 'var(--surface-control, #2B2D31)',
+  border: '1px solid var(--border-primary, #333E4A)',
   borderRadius: 8,
   padding: '4px 0',
   zIndex: 100,
   minWidth: 140,
-  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+  boxShadow: '0 8px 24px var(--shadow-colour, rgba(0,0,0,0.5))',
 };
 
 const popoverItemStyle: React.CSSProperties = {
   padding: '8px 16px',
-  color: '#E2E8F0',
+  color: 'var(--text-body, #E2E8F0)',
   fontSize: 13,
   cursor: 'pointer',
   transition: 'background-color 0.1s ease',

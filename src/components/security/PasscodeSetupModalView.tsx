@@ -82,7 +82,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
           backgroundColor: Theme.ProfileCardBackground,
           borderRadius: 16,
           padding: 24,
-          boxShadow: '0 40px 80px rgba(0, 0, 0, 0.6)',
+          boxShadow: '0 40px 80px var(--shadow-colour, rgba(0, 0, 0, 0.6))',
           border: `1px solid ${Theme.ProfileInputContainerBorder}`,
           boxSizing: 'border-box',
           display: 'flex',
@@ -111,7 +111,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
         {/* ЗАГОЛОВОК */}
         <div
           style={{
-            color: '#FFFFFF',
+            color: 'var(--text-body, #FFFFFF)',
             fontSize: 18,
             fontWeight: 'bold',
             marginBottom: 4,
@@ -168,7 +168,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
                 background: 'transparent',
                 border: 'none',
                 outline: 'none',
-                color: '#FFFFFF',
+                color: 'var(--text-body, #FFFFFF)',
                 fontSize: 18,
                 fontWeight: 'bold',
                 fontFamily: "'Segoe UI', sans-serif",
@@ -213,7 +213,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
                 background: 'transparent',
                 border: 'none',
                 outline: 'none',
-                color: '#FFFFFF',
+                color: 'var(--text-body, #FFFFFF)',
                 fontSize: 18,
                 fontWeight: 'bold',
                 fontFamily: "'Segoe UI', sans-serif",
@@ -239,7 +239,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
               cursor: 'pointer',
               transition: 'background-color 0.15s ease',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover, rgba(255, 255, 255, 0.08))')}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
             Cancel
@@ -257,7 +257,7 @@ export const PasscodeSetupModalView: React.FC<PasscodeSetupModalViewProps> = ({
               fontSize: 13.5,
               fontWeight: 'bold',
               cursor: 'pointer',
-              boxShadow: '0 0 12px rgba(30, 155, 235, 0.3)',
+              boxShadow: '0 0 12px var(--surface-accent, rgba(30, 155, 235, 0.3))',
               transition: 'filter 0.15s ease',
             }}
             onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.1)')}

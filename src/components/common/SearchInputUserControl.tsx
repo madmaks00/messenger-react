@@ -61,7 +61,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
           viewBox="0 0 24 24"
           width={18}
           height={18}
-          fill="#8E95A5"
+          fill="var(--text-secondary, #8E95A5)"
           style={{ marginRight: 10, flexShrink: 0 }}
         >
           <path d={mdiMagnify} />
@@ -88,7 +88,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
             outline: 'none',
             padding: 0,
             margin: 0,
-            color: '#FFFFFF',
+            color: 'var(--text-body, #FFFFFF)',
             fontSize: 14,
             fontFamily: "'Segoe UI', -apple-system, sans-serif",
             boxSizing: 'border-box',
@@ -113,7 +113,7 @@ export const SearchInputUserControl: React.FC<SearchInputProps> = ({
               marginLeft: 4,
             }}
           >
-            <svg viewBox="0 0 24 24" width={18} height={18} fill="#8E95A5">
+            <svg viewBox="0 0 24 24" width={18} height={18} fill="var(--text-secondary, #8E95A5)">
               <path d={mdiCloseCircle} />
             </svg>
           </button>

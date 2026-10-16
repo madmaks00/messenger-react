@@ -97,11 +97,11 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .app-dialog-pin .btn-close:hover {
-          background-color: rgba(255, 255, 255, 0.08) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.08)) !important;
           color: #FFFFFF !important;
         }
         .app-dialog-pin .btn-close:active {
-          background-color: rgba(255, 255, 255, 0.16) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.16)) !important;
         }
 
         .app-dialog-pin .btn-cancel {
@@ -118,17 +118,17 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
           transition: background-color 0.15s ease, color 0.15s ease !important;
         }
         .app-dialog-pin .btn-cancel:hover {
-          background-color: rgba(255, 255, 255, 0.08) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.08)) !important;
           color: #FFFFFF !important;
         }
         .app-dialog-pin .btn-cancel:active {
-          background-color: rgba(255, 255, 255, 0.14) !important;
+          background-color: var(--surface-hover, rgba(255, 255, 255, 0.14)) !important;
         }
 
         .app-dialog-pin .btn-primary {
           height: 34px;
           padding: 0 18px;
-          background-color: #1E9BEB !important;
+          background-color: var(--accent-primary, #1E9BEB) !important;
           border: none;
           border-radius: 7px;
           color: #FFFFFF !important;
@@ -151,11 +151,11 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
         style={{
           width: 340,
           maxWidth: '92vw',
-          backgroundColor: '#161A23',
+          backgroundColor: 'var(--surface-panel, #161A23)',
           borderRadius: 12,
           padding: '16px 18px 14px 18px',
-          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65)',
-          border: '1px solid #2A3342',
+          boxShadow: '0 20px 50px var(--shadow-colour, rgba(0, 0, 0, 0.65))',
+          border: '1px solid var(--border-primary, #2A3342)',
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
@@ -171,7 +171,7 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
             flexShrink: 0,
           }}
         >
-          <span style={{ fontSize: 17, fontWeight: 600, color: '#FFFFFF' }}>
+          <span style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-body, #FFFFFF)' }}>
             {pinDialogActionText === 'Unpin' ? 'Unpin Message' : 'Pin Message'}
           </span>
 
@@ -187,7 +187,7 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
           </button>
         </div>
 
-        <div style={{ fontSize: 14.5, color: '#FFFFFF', lineHeight: '21px', marginBottom: 14, wordBreak: 'break-word' }}>
+        <div style={{ fontSize: 14.5, color: 'var(--text-body, #FFFFFF)', lineHeight: '21px', marginBottom: 14, wordBreak: 'break-word' }}>
           {pinDialogTitle || 'Do you want to pin this message?'}
         </div>
 
@@ -200,7 +200,7 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
               cursor: 'pointer',
               marginBottom: 18,
               fontSize: 14,
-              color: '#FFFFFF',
+              color: 'var(--text-body, #FFFFFF)',
               userSelect: 'none',
             }}
           >
@@ -208,9 +208,9 @@ export const PinMessageDialog: React.FC<PinMessageDialogProps> = ({
               type="checkbox"
               checked={pinForAll}
               onChange={(e) => setPinForAll(e.target.checked)}
-              style={{ width: 17, height: 17, accentColor: '#1E9BEB', cursor: 'pointer' }}
+              style={{ width: 17, height: 17, accentColor: 'var(--link-colour, #1E9BEB)', cursor: 'pointer' }}
             />
-            <span style={{ color: '#E2E8F0' }}>{pinForAllText || 'Also apply for everyone'}</span>
+            <span style={{ color: 'var(--text-body, #E2E8F0)' }}>{pinForAllText || 'Also apply for everyone'}</span>
           </label>
         )}
 

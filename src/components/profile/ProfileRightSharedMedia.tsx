@@ -141,10 +141,10 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                             alignItems: 'center',
                             justifyContent: 'center',
                             backgroundColor: 'rgba(0,0,0,0.3)',
-                            color: '#FFF',
+                            color: 'var(--text-body, #FFF)',
                           }}
                         >
-                          <Icons.PlayCircleOutline size={32} color="#FFF" />
+                          <Icons.PlayCircleOutline size={32} color="var(--text-body, #FFF)" />
                         </div>
                       )}
 
@@ -159,7 +159,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                             borderRadius: 4,
                             fontSize: 9.5,
                             fontWeight: 'bold',
-                            color: '#FFF',
+                            color: 'var(--text-body, #FFF)',
                           }}
                         >
                           GIF
@@ -171,7 +171,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                           style={{
                             position: 'absolute',
                             inset: 0,
-                            backgroundColor: 'rgba(30, 155, 235, 0.22)',
+                            backgroundColor: 'var(--surface-accent, rgba(30, 155, 235, 0.22))',
                           }}
                         />
                       )}
@@ -346,7 +346,7 @@ export const ProfileRightSharedMedia: React.FC<ProfileRightSharedMediaProps> = (
                           width: 36,
                           height: 36,
                           borderRadius: 8,
-                          backgroundColor: 'rgba(30, 155, 235, 0.15)',
+                          backgroundColor: 'var(--surface-accent, rgba(30, 155, 235, 0.15))',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',

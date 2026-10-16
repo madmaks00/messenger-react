@@ -1,4 +1,4 @@
-import { mediaCacheService } from '../../services/mediaCache.service';
+﻿import { mediaCacheService } from '../../services/mediaCache.service';
 import { UrlHelper } from '../../utils/helpers';
 import { AttachmentType } from '../../types/enums';
 import { apiClient } from '../../services/apiClient';
@@ -32,21 +32,21 @@ interface MessageItemProps {
 }
 
 const PALETTE = {
-  myBubbleBg: '#16699B',
-  otherBubbleBg: '#1C212D',
-  tgCheckmark: '#80BFFF',
-  authorName: '#5E92CE',
-  textMuted: '#7D8494',
-  contextMenuBg: '#1C212D',
-  contextMenuBorder: '#2A303C',
-  contextMenuHover: '#232A3B',
-  accent: '#1E9BEB',
+  myBubbleBg: 'var(--bubble-outgoing, #16699B)',
+  otherBubbleBg: 'var(--other-bubble-bg, #1C212D)',
+  tgCheckmark: 'var(--delivery-mark, #80BFFF)',
+  authorName: 'var(--link-colour, #5E92CE)',
+  textMuted: 'var(--text-secondary, #7D8494)',
+  contextMenuBg: 'var(--surface-control, #1C212D)',
+  contextMenuBorder: 'var(--border-primary, #2A303C)',
+  contextMenuHover: 'var(--surface-hover, #232A3B)',
+  accent: 'var(--accent-primary, #1E9BEB)',
   destructive: '#FF3B30',
   mediaStatusPillBg: 'rgba(0, 0, 0, 0.47)',
   selectionBg: 'rgba(94, 146, 206, 0.1)',
-  callSummaryTitle: '#FFFFFF',
+  callSummaryTitle: 'var(--text-body, #FFFFFF)',
   callSummaryDetails: '#A0B0C0',
-  callSummaryIcon: 'rgba(255, 255, 255, 0.25)',
+  callSummaryIcon: 'var(--text-secondary, rgba(255, 255, 255, 0.25))',
 };
 
 const ICONS = {
@@ -185,9 +185,9 @@ export const MessageAudioItemRow: React.FC<{
         onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
       >
         {isPlayingThis ? (
-          <SvgIcon path={ICONS.pause} size={22} color="#FFFFFF" />
+          <SvgIcon path={ICONS.pause} size={22} color="var(--text-on-accent, #FFFFFF)" />
         ) : (
-          <SvgIcon path={ICONS.play} size={22} color="#FFFFFF" style={{ marginLeft: 2 }} />
+          <SvgIcon path={ICONS.play} size={22} color="var(--text-on-accent, #FFFFFF)" style={{ marginLeft: 2 }} />
         )}
       </button>
 
@@ -195,7 +195,7 @@ export const MessageAudioItemRow: React.FC<{
         <span
           title={attachment.fileName}
           style={{
-            color: '#FFFFFF',
+            color: 'var(--text-body, #FFFFFF)',
             fontWeight: 600,
             fontSize: 14,
             overflow: 'hidden',
@@ -213,7 +213,7 @@ export const MessageAudioItemRow: React.FC<{
           style={{
             marginTop: 1,
             fontSize: 11.5,
-            color: '#FFFFFF',
+            color: 'var(--text-body, #FFFFFF)',
             opacity: isCurrent ? 0.9 : 0.7,
             fontWeight: isCurrent ? 600 : 'normal',
             whiteSpace: 'nowrap',
@@ -288,9 +288,9 @@ export const MessageVoiceItemRow: React.FC<{
         onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
       >
         {isPlayingThis ? (
-          <SvgIcon path={ICONS.pause} size={20} color="#FFFFFF" />
+          <SvgIcon path={ICONS.pause} size={20} color="var(--text-on-accent, #FFFFFF)" />
         ) : (
-          <SvgIcon path={ICONS.play} size={20} color="#FFFFFF" style={{ marginLeft: 2 }} />
+          <SvgIcon path={ICONS.play} size={20} color="var(--text-on-accent, #FFFFFF)" style={{ marginLeft: 2 }} />
         )}
       </button>
 
@@ -309,7 +309,7 @@ export const MessageVoiceItemRow: React.FC<{
           style={{
             marginTop: 1,
             fontSize: 11.5,
-            color: '#FFFFFF',
+            color: 'var(--text-body, #FFFFFF)',
             opacity: isCurrent ? 0.9 : 0.7,
             fontWeight: isCurrent ? 600 : 'normal',
           }}
@@ -393,7 +393,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
   let callTitle = model.callTitle;
   let callTimeAndDuration = model.callTimeAndDuration;
-  let callArrowColor = model.callArrowColor || '#4CAF50';
+  let callArrowColor = model.callArrowColor || 'var(--success-text, #4CAF50)';
   let isOut = isMy;
 
   if (isCall && (!callTitle || callTitle === 'Call' || callTitle === 'Звонок')) {
@@ -627,7 +627,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                   position: 'absolute',
                   inset: 0,
                   borderRadius: bubbleRadius,
-                  backgroundColor: '#000000',
+                  backgroundColor: 'var(--surface-recessed, #000000)',
                   opacity: 0.15,
                   pointerEvents: 'none',
                   zIndex: 21,
@@ -734,7 +734,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                       <span
                         style={{
                           fontSize: 13.5,
-                          color: '#FFFFFF',
+                          color: 'var(--text-body, #FFFFFF)',
                           fontWeight: 600,
                           lineHeight: '18px',
                           whiteSpace: 'nowrap',
@@ -772,7 +772,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     style={{
                       display: 'flex',
                       cursor: 'pointer',
-                      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      backgroundColor: 'var(--surface-hover, rgba(255, 255, 255, 0.08))',
                       borderRadius: '0 6px 6px 0',
                       borderLeft: '2.5px solid #FFFFFF',
                       padding: '3px 8px',
@@ -780,10 +780,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     }}
                   >
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 'bold', color: '#FFFFFF', lineHeight: '18px' }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 'bold', color: 'var(--text-body, #FFFFFF)', lineHeight: '18px' }}>
                         {rep.senderName || 'User'}
                       </div>
-                      <div style={{ fontSize: 13, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#FFFFFF' }}>
+                      <div style={{ fontSize: 13, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-body, #FFFFFF)' }}>
                         {getMessageReplyText(rep)}
                       </div>
                     </div>
@@ -865,13 +865,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '2px 0 6px 0', cursor: 'pointer' }}
                   >
                     <div style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: PALETTE.authorName, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <SvgIcon path={ICONS.arrowDown} size={22} color="#FFFFFF" />
+                      <SvgIcon path={ICONS.arrowDown} size={22} color="var(--text-on-accent, #FFFFFF)" />
                     </div>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 320 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-body, #FFFFFF)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 320 }}>
                         {doc.fileName}
                       </div>
-                      <div style={{ fontSize: 12, color: '#A0B0C0', marginTop: 2 }}>{doc.fileSizeStr}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary, #A0B0C0)', marginTop: 2 }}>{doc.fileSizeStr}</div>
                     </div>
                   </div>
                 ))}
@@ -931,12 +931,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 }}
               >
                 {model.isEdited && !model.isDeletedForMe && (
-                  <span style={{ fontSize: 11, color: '#FFFFFF', opacity: 0.7, marginRight: 2 }}>edited</span>
+                  <span style={{ fontSize: 11, color: model.isMediaOnly ? 'var(--text-body, #FFFFFF)' : 'var(--text-body, #FFFFFF)', opacity: 0.7, marginRight: 2 }}>edited</span>
                 )}
                 {model.isChannel && (
-                  <span style={{ fontSize: 11, color: '#FFFFFF', opacity: 0.7, marginRight: 4 }}>👁 {model.viewsCount}</span>
+                  <span style={{ fontSize: 11, color: model.isMediaOnly ? 'var(--text-body, #FFFFFF)' : 'var(--text-body, #FFFFFF)', opacity: 0.7, marginRight: 4 }}>👁 {model.viewsCount}</span>
                 )}
-                <span style={{ fontSize: 11, color: '#FFFFFF', opacity: 0.85 }}>{timeFormatted}</span>
+                <span style={{ fontSize: 11, color: model.isMediaOnly ? 'var(--text-body, #FFFFFF)' : 'var(--text-body, #FFFFFF)', opacity: 0.85 }}>{timeFormatted}</span>
 
                 {isMy && !model.isDeletedForMe && (
                   <div style={{ display: 'flex', alignItems: 'center', marginLeft: 2 }}>
@@ -949,7 +949,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                           event.stopPropagation();
                           void chatService.retryMessageAsync(model.id).then(() => useChatStore.getState().triggerDeltaSync());
                         }}
-                        style={{ pointerEvents: 'auto', cursor: 'pointer', color: '#FF5C5C', background: 'transparent', border: 0, padding: '0 3px', fontWeight: 700 }}
+                        style={{ pointerEvents: 'auto', cursor: 'pointer', color: 'var(--danger-text, #FF5C5C)', background: 'transparent', border: 0, padding: '0 3px', fontWeight: 700 }}
                       >!</button>
                     ) : !model.isSentToServer ? (
                       <SvgIcon path={ICONS.clock} size={15} color={PALETTE.tgCheckmark} />
@@ -971,12 +971,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             >
               {isMy && !model.isMediaOnly && (
                 <svg width="8" height="8" viewBox="0 0 8 8" style={{ position: 'absolute', right: -7, bottom: 0, display: 'block' }}>
-                  <path d="M 0,8 L 8,8 L 0,0 Z" fill="#FFFFFF" />
+                  <path d="M 0,8 L 8,8 L 0,0 Z" fill="var(--text-body, #FFFFFF)" />
                 </svg>
               )}
               {!isMy && !model.isMediaOnly && (
                 <svg width="8" height="8" viewBox="0 0 8 8" style={{ position: 'absolute', left: -7, bottom: 0, display: 'block' }}>
-                  <path d="M 8,8 L 0,8 L 8,0 Z" fill="#FFFFFF" />
+                  <path d="M 8,8 L 0,8 L 8,0 Z" fill="var(--text-body, #FFFFFF)" />
                 </svg>
               )}
               <div style={{ position: 'absolute', inset: 0, borderRadius: bubbleRadius, backgroundColor: '#FFFFFF' }} />
@@ -1009,7 +1009,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             boxSizing: 'border-box',
           }}
         >
-          {model.isSelected && <SvgIcon path={ICONS.check} size={16} color="#FFFFFF" />}
+          {model.isSelected && <SvgIcon path={ICONS.check} size={16} color="var(--text-on-accent, #FFFFFF)" />}
         </div>
       )}
 
@@ -1028,7 +1028,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             padding: '4px 0',
             zIndex: 99999,
             minWidth: 175,
-            boxShadow: '0 8px 25px rgba(0,0,0,0.45)',
+            boxShadow: '0 8px 25px var(--shadow-colour, rgba(0,0,0,0.45))',
           }}
         >
           {!model.isDeletedForMe && (
@@ -1068,7 +1068,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           {!model.isDeletedForMe && model.sourceMessage.attachments?.some(a => a.type === AttachmentType.Photo) && (
             <ContextMenuItem icon={ICONS.copy} text="Копировать изображение" onClick={copyPhoto} />
           )}
-          {copyImageError && <div role="alert" style={{ color: '#FF6B6B', fontSize: 12, padding: '6px 14px', maxWidth: 250 }}>{copyImageError}</div>}
+          {copyImageError && <div role="alert" style={{ color: 'var(--danger-text, #FF6B6B)', fontSize: 12, padding: '6px 14px', maxWidth: 250 }}>{copyImageError}</div>}
 
           {model.text && !isCall && !model.isDeletedForMe && (
             <ContextMenuItem
@@ -1138,7 +1138,7 @@ const ContextMenuItem: React.FC<{
         borderRadius: 6,
         fontSize: 14,
         cursor: 'pointer',
-        color: isDestructive ? PALETTE.destructive : '#FFFFFF',
+        color: isDestructive ? PALETTE.destructive : 'var(--text-body, #FFFFFF)',
         backgroundColor: hover ? PALETTE.contextMenuHover : 'transparent',
         display: 'flex',
         alignItems: 'center',
@@ -1146,7 +1146,7 @@ const ContextMenuItem: React.FC<{
       }}
     >
       <div style={{ transform: rotate ? `rotate(${rotate}deg)` : undefined, display: 'flex' }}>
-        <SvgIcon path={icon} size={18} color={isDestructive ? PALETTE.destructive : '#FFFFFF'} />
+        <SvgIcon path={icon} size={18} color={isDestructive ? PALETTE.destructive : 'var(--text-body, #FFFFFF)'} />
       </div>
       <span style={{ whiteSpace: 'nowrap' }}>{text}</span>
     </div>

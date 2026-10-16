@@ -12,8 +12,8 @@ interface LightweightChatTextBoxProps {
 // Регулярка 1-в-1 из TokenRegex в C#
 const TOKEN_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+|@[a-zA-Z0-9_]+|\/join\/[a-zA-Z0-9_-]+)/gi;
 
-const MENTION_LINK_COLOR = '#82B1FF';
-const DELETED_TEXT_COLOR = '#80FFFFFF';
+const MENTION_LINK_COLOR = 'var(--link-colour, #82B1FF)';
+const DELETED_TEXT_COLOR = 'var(--text-muted, rgba(255,255,255,.5))';
 
 export const LightweightChatTextBox: React.FC<LightweightChatTextBoxProps> = ({
   text,

@@ -7,10 +7,10 @@
 .app-dialog:not(.app-dialog-media) > div { background: rgba(0,0,0,.5) !important; backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important; opacity: 1 !important; transition: none !important;
   padding: 16px !important; box-sizing: border-box; }
-.app-dialog:not(.app-dialog-media) > div > div:not([class]) { background-color: #161A23 !important;
+.app-dialog:not(.app-dialog-media) > div > div:not([class]) { background-color: var(--surface-panel, #161A23) !important;
   border: 0 !important; border-radius: 12px !important; box-sizing: border-box;
   max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px);
-  box-shadow: 0 4px 28px rgba(0,0,0,.35) !important; transform: none !important;
+  box-shadow: 0 4px 28px var(--shadow-colour, rgba(0,0,0,.35)) !important; transform: none !important;
   opacity: 1 !important; transition: none !important; }
 .app-dialog button { font-family: inherit; display: inline-flex; align-items: center; justify-content: center;
   text-align: center; flex-shrink: 0; box-sizing: border-box; }
@@ -20,18 +20,18 @@
 .app-dialog :is(.btn-create,.btn-primary,.btn-confirm-modal) { height: 36px !important; padding: 0 22px !important;
   border-radius: 8px; font-size: 13.5px !important; font-weight: 600; }
 .app-dialog :is(input,textarea) { font-family: inherit; }
-.app-dialog .wpf-scroll-viewer { min-height: 0; scrollbar-width: thin; scrollbar-color: #4A505C transparent; }
+.app-dialog .wpf-scroll-viewer { min-height: 0; scrollbar-width: thin; scrollbar-color: var(--text-secondary, #4A505C) transparent; }
 .app-dialog .wpf-scroll-viewer::-webkit-scrollbar { width: 6px; }
 .app-dialog .wpf-scroll-viewer::-webkit-scrollbar-track { background: transparent; }
-.app-dialog .wpf-scroll-viewer::-webkit-scrollbar-thumb { background: #4A505C; border-radius: 3px; }
+.app-dialog .wpf-scroll-viewer::-webkit-scrollbar-thumb { background: var(--surface-hover, #4A505C); border-radius: 3px; }
 .app-dialog-forward > div > div { box-shadow: none !important; }
 .app-dialog-forward :is(.btn-cancel,.btn-primary) { background: transparent !important;
-  padding: 0 12px !important; font-size: 14px !important; color: #7D8494 !important; }
-.app-dialog-forward .btn-primary { color: #1E9BEB !important; }
-.app-dialog-forward .btn-primary:disabled { color: #4B5563 !important; background: transparent !important; }
-.app-dialog-forward .forward-row:hover { background: #232A3B !important; }
-.app-dialog-forward .forward-row.selected { background: #2C3344 !important; }
-.app-dialog-forward .forward-row.selected:hover { background: #323A4C !important; }
+  padding: 0 12px !important; font-size: 14px !important; color: var(--text-secondary, #7D8494) !important; }
+.app-dialog-forward .btn-primary { color: var(--link-colour, #1E9BEB) !important; }
+.app-dialog-forward .btn-primary:disabled { color: var(--text-secondary, #4B5563) !important; background: transparent !important; }
+.app-dialog-forward .forward-row:hover { background: var(--surface-hover, #232A3B) !important; }
+.app-dialog-forward .forward-row.selected { background: var(--surface-hover, #2C3344) !important; }
+.app-dialog-forward .forward-row.selected:hover { background: var(--surface-hover, #323A4C) !important; }
 .app-dialog-forward .forward-check { transition: transform 150ms ease-out; }
 .app-dialog-group > div > div { border-radius: 14px !important; overflow-y: auto; }
 .app-dialog-folder .wpf-color-ring { width: 40px !important; height: 40px !important; border-width: 1px; }
@@ -39,12 +39,12 @@
 .app-dialog-folder .wpf-color-cell:hover .wpf-color-dot,
 .app-dialog-folder .wpf-color-cell:hover .wpf-color-ring,
 .app-dialog-folder .wpf-icon-cell:hover { transform: none !important; }
-.app-dialog-folder .wpf-icon-cell.selected { background: #232A3B !important; }
-.app-dialog-folder .wpf-icon-cell.selected svg { fill: #7D8494 !important; }
+.app-dialog-folder .wpf-icon-cell.selected { background: var(--surface-hover, #232A3B) !important; }
+.app-dialog-folder .wpf-icon-cell.selected svg { fill: var(--text-secondary, #7D8494) !important; }
 
 .app-dialog-media > div { opacity: 1; transition: none; }
 
-.app-dialog-group .group-access:not(.selected):hover { background: #222B38 !important; border-color: #232A3B !important; }
+.app-dialog-group .group-access:not(.selected):hover { background: var(--surface-hover, #222B38) !important; border-color: var(--border-primary, #232A3B) !important; }
 .app-dialog-forward .btn-primary:hover:not(:disabled),
-.app-dialog-forward .btn-cancel:hover { background: rgba(255,255,255,.08) !important; }
+.app-dialog-forward .btn-cancel:hover { background: var(--surface-hover, rgba(255,255,255,.08)) !important; }
 .app-dialog-join > div > div, .app-dialog-passcode > div > div { padding: 20px 24px 16px !important; }

@@ -74,3 +74,101 @@
     transform: scale(0.85);
   }
 }
+/* UI surfaces use semantic variables; artwork, avatars and media keep their colours. */
+:root {
+  color-scheme: dark;
+  --native-colour-scheme: dark;
+  --text-on-accent: #FFFFFF;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --native-colour-scheme: light;
+  --color-accent: #0078B8;
+  --app-accent: #0078B8;
+  --tg-accent: #0078B8;
+  --accent-primary: #0078B8;
+  --link-colour: #0078B8;
+  --accent-muted: #DDEFFD;
+  --text-primary: #17212B;
+  --main-window-text: #17212B;
+  --text-body: #17212B;
+  --text-heading: #52677C;
+  --text-muted: #607080;
+  --text-secondary: #607080;
+  --text-on-accent: #FFFFFF;
+  --bg-nav: #F8FAFC;
+  --bg-list: #FFFFFF;
+  --bg-chat: #F3F5F7;
+  --surface-nav: #F8FAFC;
+  --surface-page: #F3F5F7;
+  --surface-recessed: #F3F5F7;
+  --surface-panel: #FFFFFF;
+  --surface-control: #EDF1F5;
+  --surface-hover: #E5ECF2;
+  --surface-accent: #E3F2FD;
+  --surface-success: #E7F5EC;
+  --surface-warning: #FFF4DB;
+  --success-text: #237143;
+  --warning-text: #8A5100;
+  --danger-text: #C93838;
+  --violet-text: #7343A2;
+  --rating-label: #17212B;
+  --surface-danger: #FFF0EF;
+  --surface-violet: #F1E9FB;
+  --border-primary: #DCE3EB;
+  --border-subtle: #E5EAF0;
+  --divider-color: #DCE3EB;
+  --my-bubble-bg: #DDEFFD;
+  --bubble-outgoing: #DDEFFD;
+  --other-bubble-bg: #FFFFFF;
+  --bubble-received: #FFFFFF;
+  --my-time-color: #52738D;
+  --delivery-mark: #0078B8;
+  --other-time-color: #738392;
+  --message-selection-bg: rgba(0,120,184,.15);
+  --media-status-pill-bg: rgba(0,0,0,.47);
+  --sidebar-search-bg: #EDF1F5;
+  --sidebar-search-focus-bg: #E5EBF0;
+  --sidebar-search-text: #17212B;
+  --chat-item-hover: #F2F6FA;
+  --chat-item-active: #E3F2FD;
+  --active-chat-highlight: #E3F2FD;
+  --hover-chat-highlight: #F2F6FA;
+  --accounts-active-bg: #E3F2FD;
+  --accounts-active-border: #B6D9EF;
+  --game-tile-bg: #FFFFFF;
+  --game-tile-border: #DCE3EB;
+  --game-tile-hover-bg: #F2F6FA;
+  --game-tile-hover-border: #B6D9EF;
+  --game-tile-badge-bg: #E3F2FD;
+  --item-count-badge-bg: #E5ECF2;
+  --context-menu-bg: #FFFFFF;
+  --context-menu-border: #DCE3EB;
+  --context-menu-hover: #EDF1F5;
+  --destructive-action: #C93838;
+  --overlay-backdrop: rgba(18,31,48,.38);
+  --modal-container-bg: #FFFFFF;
+  --passcode-overlay: #F3F5F7;
+  --input-border: #DCE3EB;
+  --input-area-bg: #FFFFFF;
+  --online-indicator: #238636;
+  --chat-fade: rgba(243,245,247,.96);
+  --chat-fade-transparent: rgba(243,245,247,0);
+  --shadow-colour: rgba(23,43,64,.14);
+}
+
+:root[data-theme="light"] :is(h1,h2,h3) { color: var(--text-heading); }
+:root[data-theme="light"] .wpf-message-input::placeholder,
+:root[data-theme="light"] .wpf-search-input::placeholder { color: #7A8A99 !important; }
+:root[data-theme="light"] .wpf-scroll-viewer { scrollbar-color: #CAD5DF transparent; }
+:root[data-theme="light"] .wpf-scroll-viewer::-webkit-scrollbar-thumb { background: #CAD5DF; }
+:root[data-theme="light"] .wpf-scroll-viewer:hover::-webkit-scrollbar-thumb { background: #A7B8C8; }
+:root[data-theme="light"] .profile-group-shell { color-scheme: light; }
+:root[data-theme="light"] .profile-group-heading h2 { color: var(--text-heading); }
+:root[data-theme="light"] .makc-auth-form { color-scheme: light; }
+:root[data-theme="light"] .makc-auth-form input:is(:autofill, :-webkit-autofill) {
+  -webkit-text-fill-color: #17212B !important;
+  -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+  box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+}

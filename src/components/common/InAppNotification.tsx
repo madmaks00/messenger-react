@@ -25,11 +25,11 @@ export const InAppNotification: React.FC = () => {
           key={n.id}
           style={{
             width: 320,
-            backgroundColor: '#1E2330',
-            border: '1px solid #334155',
+            backgroundColor: 'var(--surface-control, #1E2330)',
+            border: '1px solid var(--border-primary, #334155)',
             borderRadius: 12,
             padding: '12px 14px',
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
+            boxShadow: '0 10px 30px var(--shadow-colour, rgba(0, 0, 0, 0.5))',
             display: 'flex',
             alignItems: 'center',
             gap: 12,
@@ -61,17 +61,17 @@ export const InAppNotification: React.FC = () => {
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 'bold', color: '#FFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 'bold', color: 'var(--text-body, #FFF)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {n.title}
             </div>
-            <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary, #94A3B8)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {n.message}
             </div>
           </div>
 
           <button
             onClick={() => removeNotification(n.id)}
-            style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer', fontSize: 14 }}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary, #64748B)', cursor: 'pointer', fontSize: 14 }}
           >
             ✕
           </button>

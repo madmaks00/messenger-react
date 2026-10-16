@@ -63,9 +63,9 @@ export const SegmentedStoryRing: React.FC<SegmentedStoryRingProps> = ({
     <svg width={size} height={size} style={{ display: 'block' }}>
       <defs>
         <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#F59E0B" />
-          <stop offset="50%" stopColor="#EC4899" />
-          <stop offset="100%" stopColor="#8B5CF6" />
+          <stop offset="0%" stopColor="var(--warning-text, #F59E0B)" />
+          <stop offset="50%" stopColor="var(--danger-text, #EC4899)" />
+          <stop offset="100%" stopColor="var(--violet-text, #8B5CF6)" />
         </linearGradient>
       </defs>
 

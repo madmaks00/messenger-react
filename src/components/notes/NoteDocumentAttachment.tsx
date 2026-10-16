@@ -32,8 +32,8 @@ export const NoteDocumentAttachment: React.FC<{ attachment: IAttachment; url: st
     finally { setBusy(false); }
   };
   return <div>
-    <button onClick={() => void activate()} disabled={busy} aria-label={localUrl ? 'Открыть файл' : 'Скачать файл'} title={localUrl ? 'Открыть файл' : 'Скачать файл'} style={{ color: '#FFFFFF', background: 'transparent', border: 0, cursor: 'pointer', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, textAlign: 'left' }}>
-      <span style={{ width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg viewBox="0 0 24 24" width={24} height={24} fill="currentColor"><path d={localUrl ? mdiFileDocumentOutline : mdiDownload}/></svg></span>
+    <button onClick={() => void activate()} disabled={busy} aria-label={localUrl ? 'Открыть файл' : 'Скачать файл'} title={localUrl ? 'Открыть файл' : 'Скачать файл'} style={{ color: 'var(--text-body, #FFFFFF)', background: 'transparent', border: 0, cursor: 'pointer', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, textAlign: 'left' }}>
+      <span style={{ width: 44, height: 44, borderRadius: '50%', backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg viewBox="0 0 24 24" width={24} height={24} fill="currentColor"><path d={localUrl ? mdiFileDocumentOutline : mdiDownload}/></svg></span>
       <span style={{ minWidth: 0 }}><span style={{ display: 'block', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachment.fileName}</span><small style={{ display: 'block', opacity: 0.7, marginTop: 3 }}>{busy ? 'Скачивание…' : attachment.fileSizeStr}</small></span>
     </button>
     {error && <small role="alert">{error}</small>}
