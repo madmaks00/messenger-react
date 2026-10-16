@@ -1,6 +1,7 @@
 import './CallWindow.css';
+import { CALL_RESIZE_EDGES, useCallWindowBounds } from './useCallWindowBounds';
 import { normalizeCallAvatar } from '../../utils/callAvatar';
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   mdiWindowMinimize,
   mdiWindowMaximize,
@@ -187,60 +188,19 @@ export const CallWindow: React.FC = () => {
     );
   }, [availableScreenSources, selectedScreenSourceId]);
 
-  const [position, setPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
   const [isHeroFullScreen, setIsHeroFullScreen] = useState(false);
   const [isHeroHovered, setIsHeroHovered] = useState(false);
 
-  const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number }>({
-    mouseX: 0,
-    mouseY: 0,
-    startX: 0,
-    startY: 0,
-  });
-
   const isPresenterMode = availableScreenSources.length > 0 || spotlightUserId !== null;
-  const currentWindowWidth = isGroupCall || isPresenterMode || isVideoOn ? 1060 : 440;
-  const currentWindowHeight = isGroupCall || isPresenterMode || isVideoOn ? 690 : 580;
-
-  useEffect(() => {
-    if (isWindowOpen && windowState === 'normal') {
-      const centerX = Math.max(10, (window.innerWidth - currentWindowWidth) / 2);
-      const centerY = Math.max(10, (window.innerHeight - currentWindowHeight) / 2);
-      setPosition({ x: centerX, y: centerY });
-    }
-  }, [isWindowOpen, currentWindowWidth, currentWindowHeight]);
-
-  const handleMouseDownHeader = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (windowState !== 'normal' || (e.target as Element).closest('button')) return;
-    setIsDragging(true);
-    dragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, startX: position.x, startY: position.y };
-  };
-
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging || windowState !== 'normal') return;
-      const dx = e.clientX - dragStartRef.current.mouseX;
-      const dy = e.clientY - dragStartRef.current.mouseY;
-      const newX = Math.max(0, Math.min(window.innerWidth - currentWindowWidth, dragStartRef.current.startX + dx));
-      const newY = Math.max(0, Math.min(window.innerHeight - currentWindowHeight, dragStartRef.current.startY + dy));
-      setPosition({ x: newX, y: newY });
-    },
-    [isDragging, windowState, currentWindowWidth, currentWindowHeight]
-  );
-
-  const handleMouseUp = useCallback(() => setIsDragging(false), []);
-
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  const isLargeCall = isGroupCall || isPresenterMode || isVideoOn;
+  const { bounds, interactionCursor, beginInteraction } = useCallWindowBounds({
+    isOpen: isWindowOpen,
+    windowState,
+    defaultWidth: isLargeCall ? 1060 : 440,
+    defaultHeight: isLargeCall ? 690 : 580,
+    minWidth: isLargeCall ? 560 : 360,
+    minHeight: isLargeCall ? 420 : 400,
+  });
 
   if (!isWindowOpen) return null;
 
@@ -303,10 +263,10 @@ export const CallWindow: React.FC = () => {
       }
     : {
         position: 'fixed',
-        left: position.x,
-        top: position.y,
-        width: currentWindowWidth,
-        height: currentWindowHeight,
+        left: bounds.x,
+        top: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
         backgroundColor: PALETTE.windowBg,
         border: `1px solid ${PALETTE.windowBorder}`,
         borderRadius: 18,
@@ -330,10 +290,18 @@ export const CallWindow: React.FC = () => {
     : 'Презентация';
 
   return (
-    <div style={containerStyle}>
+    <div className="call-window" role="dialog" aria-label="Окно звонка"
+      data-interacting={interactionCursor !== null}
+      style={{ ...containerStyle, boxSizing: 'border-box', '--call-window-cursor': interactionCursor ?? undefined } as React.CSSProperties}>
+      {!isMaximized && CALL_RESIZE_EDGES.map(edge => (
+        <div key={edge} className={`call-resize-handle call-resize-${edge}`}
+          aria-hidden="true" title="Изменить размер окна звонка"
+          onPointerDown={event => beginInteraction(event, edge)} />
+      ))}
       {/* ШАПКА ОКНА */}
       <div
-        onMouseDown={handleMouseDownHeader}
+        className="call-window-header"
+        onPointerDown={event => beginInteraction(event)}
         style={{
           height: 48,
           minHeight: 48,
@@ -370,6 +338,7 @@ export const CallWindow: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             className="call-action call-window-control"
+            aria-label="Свернуть окно звонка"
             onClick={minimizeWindow}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: PALETTE.textControls, padding: 6 }}
           >
@@ -377,6 +346,7 @@ export const CallWindow: React.FC = () => {
           </button>
           <button
             className="call-action call-window-control"
+            aria-label={isMaximized ? 'Восстановить размер окна звонка' : 'Развернуть окно звонка'}
             onClick={isMaximized ? restoreWindow : maximizeWindow}
             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: PALETTE.textControls, padding: 6 }}
           >
@@ -537,15 +507,17 @@ export const CallWindow: React.FC = () => {
 
       {/* ОСНОВНОЙ ЭКРАН АКТИВНОГО ЗВОНКА */}
       {isActiveCallVisible && (
-        <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden', padding: 12 }}>
+        <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', position: 'relative', overflow: 'hidden', padding: 12 }}>
           {isPresenterMode ? (
             /* РЕЖИМ 1: ПРЕЗЕНТАЦИЯ / МУЛЬТИ-СКРИН */
-            <div style={{ flex: 1, display: 'flex', gap: 12, width: '100%', height: '100%' }}>
+            <div className="call-presenter-layout">
               <div
                 onMouseEnter={() => setIsHeroHovered(true)}
                 onMouseLeave={() => setIsHeroHovered(false)}
                 style={{
                   flex: 1,
+                  minWidth: 0,
+                  minHeight: 0,
                   backgroundColor: '#000000',
                   borderRadius: 14,
                   overflow: 'hidden',
@@ -665,8 +637,8 @@ export const CallWindow: React.FC = () => {
               </div>
 
               {!isHeroFullScreen && (
-                <div style={{ width: 250, display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
-                  <div style={{ height: 140, minHeight: 140 }}>
+                <div className="call-participant-strip">
+                  <div className="call-strip-tile">
                     <MeetParticipantTile
                       name={myDisplayName === 'Вы' ? 'Вы' : `${myDisplayName} (Вы)`}
                       avatarPath={myDisplayAvatar}
@@ -680,7 +652,7 @@ export const CallWindow: React.FC = () => {
                   </div>
 
                   {activeParticipants.map((p) => (
-                    <div key={p.userId} style={{ height: 140, minHeight: 140 }}>
+                    <div key={p.userId} className="call-strip-tile">
                       <MeetParticipantTile
                         name={p.username}
                         avatarPath={p.avatarPath || (p as any).avatar}
@@ -709,7 +681,9 @@ export const CallWindow: React.FC = () => {
                     : activeParticipants.length <= 3
                     ? 'repeat(2, minmax(0, 1fr))'
                     : 'repeat(3, minmax(0, 1fr))',
-                gridAutoRows: '1fr',
+                gridAutoRows: 'minmax(140px, 1fr)',
+                minHeight: 0,
+                overflowY: 'auto',
                 gap: 12,
                 width: '100%',
                 height: '100%',

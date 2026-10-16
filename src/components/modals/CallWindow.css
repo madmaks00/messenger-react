@@ -29,3 +29,31 @@
 }
 .call-action[data-tone="danger"] { --call-accent: #f0445e; }
 .call-action[data-tone="accept"] { --call-accent: #2ecc71; }
+
+/* Resize zones sit inside the border so rounded corners remain clipped. */
+.call-window { container-type: inline-size; container-name: call-window; }
+.call-window-header { touch-action: none; user-select: none; }
+.call-window[data-interacting="true"],
+.call-window[data-interacting="true"] * { user-select: none !important; cursor: var(--call-window-cursor) !important; }
+.call-resize-handle { position: absolute; z-index: 50; touch-action: none; }
+.call-resize-n, .call-resize-s { left: 16px; right: 16px; height: 6px; cursor: ns-resize; }
+.call-resize-e, .call-resize-w { top: 16px; bottom: 16px; width: 6px; cursor: ew-resize; }
+.call-resize-n { top: 0; } .call-resize-s { bottom: 0; }
+.call-resize-e { right: 0; } .call-resize-w { left: 0; }
+.call-resize-ne, .call-resize-se, .call-resize-sw, .call-resize-nw { width: 16px; height: 16px; }
+.call-resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+.call-resize-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.call-resize-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.call-resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+.call-resize-se::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 7px; height: 7px; border-right: 2px solid #8b9197; border-bottom: 2px solid #8b9197; opacity: .65; }
+.call-presenter-layout { flex: 1; display: flex; gap: 12px; width: 100%; height: 100%; min-width: 0; min-height: 0; }
+.call-participant-strip { width: clamp(140px, 28cqw, 250px); flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.call-strip-tile { height: 140px; min-height: 140px; flex-shrink: 0; }
+@container call-window (max-width: 600px) {
+  .call-presenter-layout { flex-direction: column; }
+  .call-participant-strip { width: 100%; height: 110px; flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+  .call-strip-tile { width: 160px; height: 110px; min-height: 110px; }
+}
+.call-window-header > div:first-child { flex: 1; min-width: 0; overflow: hidden; margin-right: 8px; }
+.call-window-header > div:first-child > div, .call-window-header > div:last-child { flex-shrink: 0; }
+.call-window-header > div:first-child > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
