@@ -426,9 +426,7 @@ export const useGamesStore = create<GamesState>((set, get) => ({
     const { currentRoom, drawPhase, hasSubmittedDrawing, drawStrokes, drawCanvasBackground } = get();
     if (!currentRoom || drawPhase !== 2 || hasSubmittedDrawing) return;
 
-    const base64 = drawStrokes.length > 0
-      ? InkCanvasService.renderStrokesToBase64(drawStrokes, drawCanvasBackground, 400, 400)
-      : '';
+    const base64 = InkCanvasService.renderStrokesToBase64(drawStrokes, drawCanvasBackground, 400, 400);
 
     set({ hasSubmittedDrawing: true });
     await gameSignalrService.submitDrawingAsync(currentRoom.roomId, base64);
@@ -446,7 +444,7 @@ export const useGamesStore = create<GamesState>((set, get) => ({
     const { currentRoom, drawPhase, hasVotedCurrentRating } = get();
     if (!currentRoom || drawPhase !== 3 || hasVotedCurrentRating) return;
     set({ hasVotedCurrentRating: true });
-    await gameSignalrService.rateDrawingAsync(currentRoom.roomId, score);
+    await gameSignalrService.rateDrawingAsync(currentRoom.roomId, score, currentRoom.currentDrawingUserId);
   },
 }));
 
@@ -558,7 +556,10 @@ function updateCanStartGame(room: GameRoomDto | null, set: any, get: any) {
   }
 }
 
+let currentRatingKey = "";
+
 function clearDrawAndRateState(set: any) {
+  currentRatingKey = "";
   set({
     drawPhase: 0,
     phaseTimerText: '',
@@ -617,8 +618,11 @@ function updateBoardUI(serverBoard: string[] | null | undefined, set: any, get: 
       set({ selectedWord: currentRoom.selectedWord || '' });
     } else if (drawPhase === 3) {
       const drawer = currentRoom.players?.find((p: GamePlayerDto) => p.userId === currentRoom.currentDrawingUserId);
+      const ratingKey = `${currentRoom.roomId}:${currentRoom.currentDrawingUserId}`;
+      const alreadyVoted = currentRatingKey === ratingKey && get().hasVotedCurrentRating;
+      currentRatingKey = ratingKey;
       set({
-        hasVotedCurrentRating: currentRoom.currentDrawingUserId === userSession.userId,
+        hasVotedCurrentRating: currentRoom.currentDrawingUserId === userSession.userId || alreadyVoted,
         currentDrawingPlayerName: drawer ? drawer.nickName : 'Unknown',
         currentDrawingImage: currentRoom.currentDrawingBase64 || null,
       });

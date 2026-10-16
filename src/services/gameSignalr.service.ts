@@ -120,9 +120,9 @@ export class GameSignalRService {
     await this.hubConnection!.invoke('SubmitDrawing', roomId, base64Image);
   }
 
-  public async rateDrawingAsync(roomId: string, score: number): Promise<void> {
+  public async rateDrawingAsync(roomId: string, score: number, drawingUserId: number): Promise<void> {
     if (!this.isConnected) return;
-    await this.hubConnection!.invoke('RateDrawing', roomId, score);
+    await this.hubConnection!.invoke('RateDrawingFor', roomId, drawingUserId, score);
   }
 
   public async syncDrawingAsync(roomId: string, base64Image: string): Promise<void> {
