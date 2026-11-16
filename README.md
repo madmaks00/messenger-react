@@ -1,6 +1,10 @@
-# React + TypeScript + Vite
+# MessengerReact
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Веб-клиент мессенджера на React, TypeScript и Vite.
+
+[Открыть MessengerReact](https://madmaks00.github.io/messenger-react/)
+
+## Vite plugins
 
 Currently, two official plugins are available:
 
